@@ -48,3 +48,27 @@ print('From the other side:', zstate.get_state_when_change())
 input()
 zproc.kill()
 ```
+
+### Exhibit C
+#### same example, but done asynchronously
+
+```
+from time import sleep
+from zproc import ZeroProcess
+
+
+def other_process(zstate, props):
+    print('Other side got props:', props)
+    sleep(5)
+    print('From the other side:', zstate.get_state())
+
+
+zproc, zstate = ZeroProcess(other_process).run()
+
+zstate.set_state({'foo': 'bar'}, foobar='abcd')
+print('From this side:', zstate.get_state())
+print('Wait 5 sec for other side to wake up')
+
+input()
+zproc.kill()
+```

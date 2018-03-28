@@ -133,17 +133,3 @@ class ZeroProcess:
             self._zstate.kill()
 
         self._main_sock.close()
-
-
-def other_process(zstate, props):
-    print('Other side got props:', props)
-    print('From the other side:', zstate.get_state_when_change())
-
-
-zproc, zstate = ZeroProcess(other_process).run()
-
-zstate.set_state({'foo': 'bar'}, foobar='abcd')
-print('From this side:', zstate.get_state())
-
-input()
-zproc.kill()
