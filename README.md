@@ -8,6 +8,10 @@ zproc aims to reduce the pain of multi-processing by
 - 🌠
     - Giving you the freedom to build any combination of synchronous or asynchronous systems
 
+# Install
+`pip install zproc` ( Python >= 3.6 )
+
+
 # Enough talk, here's code
 
 ### Exhibit A
