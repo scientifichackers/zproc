@@ -4,9 +4,10 @@ verify_ssl = true
 name = "pypi"
 
 [packages]
-zmq = "*"
+pyzmq = "*"
 
 [dev-packages]
+twine = "*"
 
 [requires]
 python_version = "3.6"

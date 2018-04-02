@@ -1,22 +1,26 @@
-import secrets
-from multiprocessing import Process, Event
-from threading import Thread
-from time import sleep
+import atexit
+import os
+import signal
+from multiprocessing import Event, Process
 from pathlib import Path
+from threading import Thread
+from uuid import uuid1
+
 import zmq
 
 
 class ACTION:
     GET_STATE = 1
     SET_STATE = 2
-    TERMINATE = 3
-    STATE_RESPONSE = 4
+    STATE_RESPONSE = 3
+    KILL = 4
+    KILLED = 5
 
 
 class MSG:
-    ACTION = secrets.token_urlsafe(5)
-    UPDATE = secrets.token_urlsafe(5)
-    STATE = secrets.token_urlsafe(6)
+    ACTION = 'action'
+    UPDATE = 'update'
+    STATE = 'state'
 
 
 class ZeroState:
@@ -29,6 +33,11 @@ class ZeroState:
             self._msg_thread = Thread(target=self._parent_mainloop, daemon=True)
             self._msg_thread.start()
             self._state = {}
+
+    @property
+    def is_alive(self):
+        if not (self.is_child or self._msg_thread is None):
+            return self._msg_thread.is_alive()
 
     def _send_msg(self, msg):
         return self.sock.send_json(msg)
@@ -48,8 +57,7 @@ class ZeroState:
                 self._state.update(msg.get(MSG.UPDATE))
                 self.state_event.set()
 
-            elif action == ACTION.TERMINATE:
-                self.sock.close()
+            elif action == ACTION.KILL:
                 break
 
     def set_state(self, update_dict=None, **kwargs):
@@ -80,7 +88,7 @@ class ZeroState:
         return self.get_state()
 
     def kill(self):
-        self._send_msg({MSG.ACTION: ACTION.TERMINATE})
+        self._send_msg({MSG.ACTION: ACTION.KILL})
 
 
 class ZeroProcess:
@@ -92,44 +100,63 @@ class ZeroProcess:
         self._proc = None
         self._state_event = Event()
 
-        ipc_base_dir = Path().joinpath('/', 'tmp', 'zeroprocess')
-
+        ipc_base_dir = Path().joinpath('/', 'tmp', 'zproc')
         if not ipc_base_dir.exists():
             ipc_base_dir.mkdir()
+        self._ipc_path = 'ipc://' + str(ipc_base_dir.joinpath(str(uuid1())))
 
-        self._ipc_path = "ipc://" + str(ipc_base_dir) + secrets.token_urlsafe(5)
         self._zmq_ctx = zmq.Context()
-        self._main_sock = self._zmq_ctx.socket(zmq.PAIR)
-
-    @property
-    def is_alive(self):
-        return self._proc and self._proc.is_alive()
+        self._parent_sock = self._zmq_ctx.socket(zmq.PAIR)
+        self._parent_sock.bind(self._ipc_path)
 
     def run(self):
         if self._proc is not None and self._proc.is_alive():
             print("ZeroProcess is already running!")
         else:
-            self._proc = Process(target=self._mainloop, args=(self._ipc_path, self.props), daemon=True)
-            sleep(0.5)
+            self._proc = Process(target=self._child_mainloop, args=(self._ipc_path, self.props))
             self._proc.start()
-            self._main_sock.connect(self._ipc_path)
-            self._zstate = ZeroState(self._main_sock, self._state_event)
+            self._zstate = ZeroState(self._parent_sock, self._state_event)
+
+            pid = self._proc.pid
+
+            def cleanup():
+                try:
+                    os.kill(pid, signal.SIGTERM)
+                except ProcessLookupError:
+                    pass
+
+            atexit.register(cleanup)
 
         return self, self._zstate
 
-    def _mainloop(self, ipc_path, props):
+    def _child_mainloop(self, ipc_path, props):
         ctx = zmq.Context()
         child_sock = ctx.socket(zmq.PAIR)
-        child_sock.bind(ipc_path)
+        child_sock.connect(ipc_path)
         zstate = ZeroState(child_sock, self._state_event, is_child=True)
 
         self.child_mainloop(zstate, props)
 
-    def kill(self):
+    @property
+    def is_alive(self):
+        return self._proc and self._proc.is_alive()
+
+    @property
+    def pid(self):
         if self._proc is not None:
+            return self._proc.pid
+
+    @property
+    def exitcode(self):
+        if self._proc is not None:
+            result = self._proc.exitcode
+
+            if result is not None:
+                return -result
+
+    def kill(self):
+        if self.is_alive:
             self._proc.terminate()
 
-        if self._zstate is not None:
-            self._zstate.kill()
-
-        self._main_sock.close()
+            if self._zstate.is_alive:
+                self._zstate.kill()

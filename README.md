@@ -7,72 +7,84 @@ zproc aims to reduce the pain of multi-processing by
     - Managing application state for you across all processes
 - 🌠
     - Giving you the freedom to build any combination of synchronous or asynchronous systems
+- 🌠
+    - Remembers to kill processes when exiting, for general peace
 
 # Install
-`pip install zproc` ( Python >= 3.6 )
+`pip install zproc`
 
 
 # Enough talk, here's code
 
-### Exhibit A
 #### Set state from the current process, and see the state change in a completely separate process, in real-time
 ```
 from zproc import ZeroProcess
+from time import sleep
+
 
 def other_process(zstate, props):
-    print('Other side got props:', props)
-    print('From the other side:', zstate.get_state_when_change())
+    print('got props:', props)
+    print('other process:', zstate.get_state_when_change())
 
 
 zproc, zstate = ZeroProcess(other_process).run()
 
 zstate.set_state({'foo': 'bar'}, foobar='abcd')
-print('From this side:', zstate.get_state())
+print('this process:', zstate.get_state())
 
-input()
-zproc.kill()
+print('is alive:', zproc.is_alive)
+print('pid:', zproc.pid)
 
-```
-### Exhibit B
-#### same example, but the other way round!
-```
-from zproc import ZeroProcess
+sleep(1)
 
-def other_process(zstate, props):
-    print('Other side got props:', props)
-
-    zstate.set_state({'foo': 'bar'}, foobar='abcd')
-    print('From this side:', zstate.get_state())
-
-
-zproc, zstate = ZeroProcess(other_process, props='hello there!').run()
-
-print('From the other side:', zstate.get_state_when_change())
-
-input()
-zproc.kill()
+print('is alive:', zproc.is_alive)
 ```
 
-### Exhibit C
+###### output
+
+```
+this process: {'foobar': 'abcd', 'foo': 'bar'}
+is alive: True
+pid: 4827
+got props: None
+other process: {'foobar': 'abcd', 'foo': 'bar'}
+is alive: False
+```
+
+
+
 #### same example, but done asynchronously
 
 ```
-from time import sleep
 from zproc import ZeroProcess
+from time import sleep
 
 
 def other_process(zstate, props):
-    print('Other side got props:', props)
+    print('got props:', props)
+    print('other process: sleeping for 5 sec')
     sleep(5)
-    print('From the other side:', zstate.get_state())
+    print('other process:', zstate.get_state())
 
 
 zproc, zstate = ZeroProcess(other_process).run()
 
 zstate.set_state({'foo': 'bar'}, foobar='abcd')
-print('From this side:', zstate.get_state())
-print('Wait 5 sec for other side to wake up')
+print('this process:', zstate.get_state())
+print('this process: sleeping for 10 sec')
 
-input()
-zproc.kill()
+sleep(10)
+
+print('this process: exit')
+```
+
+##### output
+
+```
+got props: None
+other process: sleeping for 5 sec
+this process: {'foobar': 'abcd', 'foo': 'bar'}
+this process: sleeping for 10 sec
+other process: {'foobar': 'abcd', 'foo': 'bar'}
+this process: exit
 ```
