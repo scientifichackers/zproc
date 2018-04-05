@@ -155,6 +155,7 @@ def state_server(ipc_path):
                 ipc_path = get_random_ipc()
                 condition_handlers.append((ipc_path, FunctionType(msg[MSG.TEST_FN], globals())))
                 pysend(ipc_path)
+                resolve_condition_handlers()
             elif action == ACTION.ADD_STATE_HANDLER:
                 ipc_path = get_random_ipc()
 
@@ -165,6 +166,7 @@ def state_server(ipc_path):
                     state_handlers[state_key].append((ipc_path, state.get(state_key)))
 
                 pysend(ipc_path)
+                resolve_state_handlers()
             else:
                 args, kwargs = msg.get(MSG.ARGS), msg.get(MSG.KWARGS)
                 fn = getattr(state, action)

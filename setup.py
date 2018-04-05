@@ -18,7 +18,7 @@ URL = 'https://github.com/devxpy/zproc'
 EMAIL = 'devxpy@gmail.com'
 AUTHOR = 'Dev Aggarwal'
 REQUIRES_PYTHON = '>=3'
-VERSION = 0.22
+VERSION = 0.23
 
 # What packages are required for this module to be executed?
 REQUIRED = [
