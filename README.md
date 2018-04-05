@@ -17,7 +17,7 @@ zproc aims to reduce the pain of multi-processing by
 
 - The parent process has a daemonic Process attached; responsible for the following
 
-    - storing the state whenever it is updated, by a child or a parent process.
+    - storing the state whenever it is updated, by another process.
 
     - transmitting the state whenever a process needs to access it.
 

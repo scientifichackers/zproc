@@ -13,12 +13,12 @@ from setuptools import Command, setup
 
 # Package meta-data.
 NAME = 'zproc'
-DESCRIPTION = "Python's Multiprocessing for Humans™"
+DESCRIPTION = "ZProc - Process on steroids"
 URL = 'https://github.com/devxpy/zproc'
 EMAIL = 'devxpy@gmail.com'
 AUTHOR = 'Dev Aggarwal'
 REQUIRES_PYTHON = '>=3'
-VERSION = 0.15
+VERSION = 0.21
 
 # What packages are required for this module to be executed?
 REQUIRED = [
