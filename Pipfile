@@ -5,9 +5,12 @@ name = "pypi"
 
 [packages]
 pyzmq = "*"
+rpyc = "*"
+"4ec7a7b" = {file = "https://github.com/zeromq/pyre/archive/master.zip"}
 
 [dev-packages]
 twine = "*"
+ipython = "*"
 
 [requires]
 python_version = "3.6"
