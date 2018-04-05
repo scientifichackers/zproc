@@ -293,7 +293,7 @@ class ZeroState:
         return self._get({MSG.ACTION: ACTION.SETITEM, MSG.ARGS: (key, value)})
 
     def __delitem__(self, key):
-        return self._get({MSG.ACTION: ACTION.DELITEM, MSG.ARGS: (key)})
+        return self._get({MSG.ACTION: ACTION.DELITEM, MSG.ARGS: (key,)})
 
     def __getitem__(self, item):
         return self._get({MSG.ACTION: ACTION.GETITEM, MSG.ARGS: (item,)})
