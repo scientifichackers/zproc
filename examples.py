@@ -20,12 +20,16 @@ procs = ctx.process_factory(child2, child1, props='hello!')
 print(procs)
 ctx.start_all()
 
+print(ctx.state)
+
 sleep(2)
 
 ctx.state['foo'] = 'foobar'
+print(ctx.state)
 
 sleep(2)
 
 ctx.state['bar'] = 'foo'
+print(ctx.state)
 
 input()

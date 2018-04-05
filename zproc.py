@@ -6,7 +6,7 @@ from collections import defaultdict
 from functools import partial
 from multiprocessing import Process
 from pathlib import Path
-from time import sleep
+# from time import sleep
 from types import FunctionType
 from uuid import uuid1
 
@@ -136,7 +136,7 @@ def state_server(ipc_path):
     ctx = zmq.Context()
     sock = ctx.socket(zmq.ROUTER)
     sock.bind(ipc_path)
-    sleep(1)
+    # sleep(1)
     state = {}
     condition_handlers = []
     state_handlers = defaultdict(list)
