@@ -15,7 +15,7 @@ zproc aims to reduce the pain of multi-processing by
 
 - The process(s) communicate over zmq sockets, over `ipc://`.
 
-- The parent process has a daemonic Process attached; responsible for the following
+- The parent process has its own Process attached; responsible for the following
 
     - storing the state whenever it is updated, by another process.
 

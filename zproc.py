@@ -321,13 +321,12 @@ class ZeroProcess:
         """
         assert callable(target), "Mainloop must be a callable!"
 
-        self.target_name = target.__name__
-
         def child(ipc_path, target, props):
             zstate = ZeroState(ipc_path)
             target(zstate, props)
 
         self._child_proc = Process(target=child, args=(ipc_path, target, props))
+        self.target = target
 
     def start(self):
         """
@@ -385,9 +384,9 @@ class Context:
         self.child_procs = []
 
         self._ipc_path = get_random_ipc()
-        self._state_proc = Process(target=state_server, args=(self._ipc_path,), daemon=True)
+        self._state_proc = Process(target=state_server, args=(self._ipc_path,))
         self._state_proc.start()
-        # atexit.register(partial(kill_if_alive, pid=self._state_proc.pid))
+        atexit.register(partial(kill_if_alive, pid=self._state_proc.pid))
 
         self.state = ZeroState(self._ipc_path)
 
