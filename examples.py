@@ -17,7 +17,7 @@ def child2(state, props):
 ctx = zproc.Context()
 
 procs = ctx.process_factory(child2, child1, props='hello!')
-print(procs)
+print(procs[0].target_name)
 ctx.start_all()
 
 print(ctx.state)

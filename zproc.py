@@ -321,6 +321,8 @@ class ZeroProcess:
         """
         assert callable(target), "Mainloop must be a callable!"
 
+        self.target_name = target.__name__
+
         def child(ipc_path, target, props):
             zstate = ZeroState(ipc_path)
             target(zstate, props)
