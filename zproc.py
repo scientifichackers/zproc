@@ -380,8 +380,9 @@ class ZeroProcess:
 class Context:
     def __init__(self):
         self.child_pids = set()
+        self.child_procs = []
+
         self._ipc_path = get_random_ipc()
-        self._child_procs = []
         self._state_proc = Process(target=state_server, args=(self._ipc_path,), daemon=True)
         self._state_proc.start()
         # atexit.register(partial(kill_if_alive, pid=self._state_proc.pid))
@@ -401,7 +402,7 @@ class Context:
         """
         proc = ZeroProcess(self._ipc_path, target, props)
 
-        self._child_procs.append(proc)
+        self.child_procs.append(proc)
 
         return proc
 
@@ -422,18 +423,18 @@ class Context:
             for _ in range(count):
                 child_procs.append(ZeroProcess(self._ipc_path, target, props))
 
-        self._child_procs += child_procs
+        self.child_procs += child_procs
 
         return child_procs
 
     def stop_all(self):
-        for proc in self._child_procs:
+        for proc in self.child_procs:
             proc.stop()
 
     def start_all(self):
         pids = set()
 
-        for proc in self._child_procs:
+        for proc in self.child_procs:
             pids.add(proc.start())
 
         self.child_pids.update(pids)
@@ -444,5 +445,5 @@ class Context:
         if self._state_proc.is_alive:
             self._state_proc.terminate()
 
-        for proc in self._child_procs:
+        for proc in self.child_procs:
             proc.stop()

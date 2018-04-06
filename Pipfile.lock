@@ -1,7 +1,7 @@
 {
     "_meta": {
         "hash": {
-            "sha256": "d0a8f9b4f7380de5f8e848ddce5453448afef61e7c74c150b7239d2fa5b9273b"
+            "sha256": "f56c998dee05f4c8d10bbb05434b6a6b1ce407b0cb42da3ea3066ebd403a61a8"
         },
         "pipfile-spec": 6,
         "requires": {
@@ -18,14 +18,6 @@
     "default": {
         "4ec7a7b": {
             "file": "https://github.com/zeromq/pyre/archive/master.zip"
-        },
-        "plumbum": {
-            "hashes": [
-                "sha256:4b5af076fef56fe7345b67f7fa4c79185fa64ac5bc14a9de1aa1447b58b6cbd0",
-                "sha256:d179b90a9927f91427a28c1bac2864c61342cb43ef39aa7324c7c9a96bcc23eb",
-                "sha256:e4be6200df23b03926c27fe333356408f5212182675fcbacda06ecbfa83bf863"
-            ],
-            "version": "==1.6.6"
         },
         "pyzmq": {
             "hashes": [
@@ -55,15 +47,6 @@
             ],
             "index": "pypi",
             "version": "==17.0.0"
-        },
-        "rpyc": {
-            "hashes": [
-                "sha256:14a97520beb63d82002b8f023e04737908f24dc2163df43b4f317aa88e044481",
-                "sha256:62253884588d84db5580f17da2763bfcc961f30ace2639e87c53cdefdec1a6b4",
-                "sha256:a8991d0412a67d7299d105b4889b2b0b0d18e9b99404ea14eea56404fdb481c7"
-            ],
-            "index": "pypi",
-            "version": "==3.4.4"
         }
     },
     "develop": {
