@@ -39,6 +39,12 @@ zproc aims to reduce the pain of multi-processing by
 
 (from python [docs](https://docs.python.org/3/library/marshal.html))
 
+### Known issues
+
+- Processes inside processes are known to create wierd behavior like
+    - not being able to access state
+    - not shutting down properly on exit
+
 
 # Install
 `pip install zproc`
