@@ -4,14 +4,14 @@ zproc is short for [Zero](http://zguide.zeromq.org/page:all#The-Zen-of-Zero) - [
 zproc aims to reduce the pain of multi-processing by
 
 - 🌠
-    - Managing application state for you across all processes (without sharing memory!)
+    - Sync-ing  application state across all processes (without shared varialbes!).
 - 🌠
-    - Giving you the freedom to build any combination of synchronous or asynchronous systems wihtout changing your code too much.
+    - Giving you the freedom to build any combination of synchronous or asynchronous systems.
 - 🌠
     - Remembers to kill processes when exiting, for general peace.
 
 # Example
-###### `state` is NOT a shared varialbe!. It's actually a remote object that is wrapped to behave like a normal dict.
+###### `state` is NOT a shared variable!. It's actually a remote object that is wrapped to behave like a dict.
 
 
 ```
@@ -21,7 +21,7 @@ import zproc
 
 
 def child1(state, props):
-    state.get_val_when_change('foo')
+    state.get_when_change('foo')
     print("child1: foo got updated, so I wake")
 
     state['bar'] = 'xxx'
@@ -34,7 +34,7 @@ def bar_equals_xxx(state):
 
 
 def child2(state, props):
-    state.get_state_when(bar_equals_xxx)
+    state.get_when(bar_equals_xxx)
     print('child2: bar changed to xxx, so I wake')
     print('child2: I exit')
 

@@ -54,8 +54,6 @@ class MSGS:
     state_keys = 'state_keys'
     state_key = 'state_key'
 
-    change_logic = 'chng_logic'
-
 
 ipc_base_dir = Path.home().joinpath('.tmp')
 

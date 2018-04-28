@@ -74,7 +74,7 @@ class ZeroState:
         pysend(self._sock, msg)
         return pyrecv(self._sock)
 
-    def get_state_when_change(self, *keys, logic='OR'):
+    def get_when_change(self, *keys):
         """
         Block until a state change is observed,
         then return the state.
@@ -83,14 +83,12 @@ class ZeroState:
 
         Args:
             *keys: only watch for changes in these keys (of state dict)
-            logic: whether to use logical 'OR' or 'AND' while observing state change
 
         Returns:
             dict: containing the state
         """
-        assert logic in ('OR', 'AND'), '"logic" must be one of "OR" / "AND"'
 
-        ipc_path = self._get({MSGS.ACTION: ACTIONS.add_chng_hand, MSGS.state_keys: keys, MSGS.change_logic: logic})
+        ipc_path = self._get({MSGS.ACTION: ACTIONS.add_chng_hand, MSGS.state_keys: keys})
 
         sock = self._ctx.socket(zmq.PULL)
         sock.connect(ipc_path)
@@ -121,7 +119,7 @@ class ZeroState:
 
         return val
 
-    def get_state_when(self, test_fn):
+    def get_when(self, test_fn):
         """
         Block until the provided testfn returns a True boolean value,
         then return the state.
