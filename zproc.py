@@ -2,72 +2,37 @@ import atexit
 import marshal
 import os
 import signal
-from collections import defaultdict
 from functools import partial
-from multiprocessing import Process
-from pathlib import Path
+from multiprocessing import Process, current_process
 # from time import sleep
 from types import FunctionType
-from uuid import uuid1
 
 import zmq
 
+from zproc_server import ACTIONS, MSGS, state_server, get_random_ipc
 
-class ACTION:
-    POP = 'pop'
-    POPITEM = 'popitem'
-    CLEAR = 'clear'
-    UPDATE = 'update'
-    SETDEFAULT = 'setdefault'
-    SETITEM = '__setitem__'
-    DELITEM = '__delitem__'
+inception_msg = """
+Looks like you haven't had the usual lecture about doing multiprocessing. 
+Let me take some time to explain what you just did.
 
-    GET = 'get'
-    GETITEM = '__getitem__'
-    CONTAINS = '__contains__'
-    EQ = '__eq__'
+You launched a child process, inside a child process. 
+Let that sink in.
+What you just did is nothing short of the movie "Inception"
 
-    GET_STATE = 'get_state'
-    STOP = 'STOP'
+I'm not responsible for what comes after. 
+Don't come crying.
 
-    ADD_CONDITION_HANDLER = 'add_condition_handler'
-    ADD_STATE_HANDLER = 'add_state_handler'
+Here are the basic rules for multi-processing, as I understand them.
 
+1. Synchronization primitives (locks) are extremely hard to use correctly, so just don't use them at all.
+2. The existence of global mutable state indicates a flaw in the application’s design, which you should review and change.
+3. Don't launch processes inside processes.
+4. Don't launch processes inside processes.
+5. Don't launch processes inside processes.
+...
 
-ACTIONS_THAT_MUTATE = (
-    ACTION.SETITEM,
-    ACTION.DELITEM,
-    ACTION.SETDEFAULT,
-    ACTION.POP,
-    ACTION.POPITEM,
-    ACTION.CLEAR,
-    ACTION.UPDATE,
-)
-
-
-class MSG:
-    ACTION = 'action'
-    ARGS = 'args'
-    KWARGS = 'kwargs'
-
-    TEST_FN = 'callable'
-    IDENT = 'identity'
-
-    STATE_KEY = 'state_key'
-
-
-ipc_base_dir = Path.home().joinpath('.tmp')
-
-if not ipc_base_dir.exists():
-    ipc_base_dir.mkdir()
-
-
-def get_random_ipc():
-    return get_ipc_path(uuid1())
-
-
-def get_ipc_path(uuid):
-    return 'ipc://' + str(ipc_base_dir.joinpath(str(uuid)))
+Hope we all learned something today.
+"""
 
 
 def pysend(sock, msg):
@@ -91,104 +56,6 @@ def kill_if_alive(pid):
         pass
 
 
-def state_server(ipc_path):
-    def pysend(msg):
-        return sock.send_multipart([ident, marshal.dumps(msg)])
-
-    def pyrecv():
-        ident, msg = sock.recv_multipart()
-        return ident, marshal.loads(msg)
-
-    def resolve_state_handlers():
-        complete = []
-        for state_key, handler_list in state_handlers.items():
-            if state_key == '__all__':
-                new = state
-            else:
-                new = state.get(state_key)
-
-            for index, (ipc_path, old) in enumerate(handler_list):
-                if old != new:
-                    sock = ctx.socket(zmq.PUSH)
-                    sock.bind(ipc_path)
-                    sock.send(marshal.dumps(state))
-                    sock.close()
-
-                    complete.append((state_key, index))
-
-        for state_key, index in complete:
-            del state_handlers[state_key][index]
-
-    def resolve_condition_handlers():
-        complete = []
-        for index, (ipc_path, test_fn) in enumerate(condition_handlers):
-            if test_fn(state):
-                sock = ctx.socket(zmq.PUSH)
-                sock.bind(ipc_path)
-                sock.send(marshal.dumps(state))
-                sock.close()
-
-                complete.append(index)
-
-        for index in complete:
-            del condition_handlers[index]
-
-    ctx = zmq.Context()
-    sock = ctx.socket(zmq.ROUTER)
-    sock.bind(ipc_path)
-    # sleep(1)
-    state = {}
-    condition_handlers = []
-    state_handlers = defaultdict(list)
-
-    while True:
-        ident, msg = pyrecv()
-        # print('server', msg, 'from', ident)
-        action = msg.get(MSG.ACTION)
-
-        if action is not None:
-            if action == ACTION.GET_STATE:
-                pysend(state)
-            elif action == ACTION.STOP:
-                break
-            elif action == ACTION.ADD_CONDITION_HANDLER and MSG.TEST_FN in msg:
-                ipc_path = get_random_ipc()
-                condition_handlers.append((ipc_path, FunctionType(msg[MSG.TEST_FN], globals())))
-                pysend(ipc_path)
-                resolve_condition_handlers()
-            elif action == ACTION.ADD_STATE_HANDLER:
-                ipc_path = get_random_ipc()
-
-                state_key = msg.get(MSG.STATE_KEY)
-                if state_key is None:
-                    state_handlers['__all__'].append((ipc_path, state.copy()))
-                else:
-                    state_handlers[state_key].append((ipc_path, state.get(state_key)))
-
-                pysend(ipc_path)
-                resolve_state_handlers()
-            else:
-                args, kwargs = msg.get(MSG.ARGS), msg.get(MSG.KWARGS)
-                fn = getattr(state, action)
-
-                if args is None:
-                    if kwargs is None:
-                        pysend(fn())
-                    else:
-                        pysend(fn(**kwargs))
-                else:
-                    if kwargs is None:
-                        pysend(fn(*args))
-                    else:
-                        pysend(fn(*args, **kwargs))
-
-            if action in ACTIONS_THAT_MUTATE:
-                # print(state_handlers)
-                resolve_state_handlers()
-                resolve_condition_handlers()
-                # print(state_handlers)
-
-
 class ZeroState:
     """
     Allows accessing a remote state (dict) object, through a dict-like interface,
@@ -207,7 +74,7 @@ class ZeroState:
         pysend(self._sock, msg)
         return pyrecv(self._sock)
 
-    def get_state_when_change(self, key=None):
+    def get_state_when_change(self, *keys, logic='OR'):
         """
         Block until a state change is observed,
         then return the state.
@@ -215,12 +82,15 @@ class ZeroState:
         Useful for synchronization between processes
 
         Args:
-            key: only watch for changes in this key of state dict
+            *keys: only watch for changes in these keys (of state dict)
+            logic: whether to use logical 'OR' or 'AND' while observing state change
 
         Returns:
             dict: containing the state
         """
-        ipc_path = self._get({MSG.ACTION: ACTION.ADD_STATE_HANDLER, MSG.STATE_KEY: key})
+        assert logic in ('OR', 'AND'), '"logic" must be one of "OR" / "AND"'
+
+        ipc_path = self._get({MSGS.ACTION: ACTIONS.add_chng_hand, MSGS.state_keys: keys, MSGS.change_logic: logic})
 
         sock = self._ctx.socket(zmq.PULL)
         sock.connect(ipc_path)
@@ -228,6 +98,28 @@ class ZeroState:
         sock.close()
 
         return state
+
+    def get_val_when_change(self, key):
+        """
+        Block until a state change is observed in a key,
+        then return value of that key.
+
+        Useful for synchronization between processes
+
+        Args:
+            key: the key to watch for changes
+
+        Returns:
+            value corresponding to the key in state dict
+        """
+        ipc_path = self._get({MSGS.ACTION: ACTIONS.add_val_chng_hand, MSGS.state_key: key})
+
+        sock = self._ctx.socket(zmq.PULL)
+        sock.connect(ipc_path)
+        val = marshal.loads(sock.recv())
+        sock.close()
+
+        return val
 
     def get_state_when(self, test_fn):
         """
@@ -250,7 +142,7 @@ class ZeroState:
         """
         assert isinstance(test_fn, FunctionType), 'fn must be a user-defined function, not ' + str(test_fn.__class__)
 
-        ipc_path = self._get({MSG.ACTION: ACTION.ADD_CONDITION_HANDLER, MSG.TEST_FN: test_fn.__code__})
+        ipc_path = self._get({MSGS.ACTION: ACTIONS.add_cond_hand, MSGS.testfn: test_fn.__code__})
 
         sock = self._ctx.socket(zmq.PULL)
         sock.connect(ipc_path)
@@ -260,49 +152,49 @@ class ZeroState:
         return response
 
     def items(self):
-        return self._get({MSG.ACTION: ACTION.GET_STATE}).items()
+        return self._get({MSGS.ACTION: ACTIONS.get_state}).items()
 
     def keys(self):
-        return self._get({MSG.ACTION: ACTION.GET_STATE}).keys()
+        return self._get({MSGS.ACTION: ACTIONS.get_state}).keys()
 
     def values(self):
-        return self._get({MSG.ACTION: ACTION.GET_STATE}).values()
+        return self._get({MSGS.ACTION: ACTIONS.get_state}).values()
 
     def pop(self, key, default=None):
-        return self._get({MSG.ACTION: ACTION.POP, MSG.ARGS: (key, default)})
+        return self._get({MSGS.ACTION: ACTIONS.pop, MSGS.args: (key, default)})
 
     def popitem(self):
-        return self._get({MSG.ACTION: ACTION.POPITEM})
+        return self._get({MSGS.ACTION: ACTIONS.popitem})
 
     def get(self, key, default=None):
-        return self._get({MSG.ACTION: ACTION.GET, MSG.ARGS: (key, default)})
+        return self._get({MSGS.ACTION: ACTIONS.get, MSGS.args: (key, default)})
 
     def clear(self):
-        return self._get({MSG.ACTION: ACTION.CLEAR})
+        return self._get({MSGS.ACTION: ACTIONS.clear})
 
     def update(self, *args, **kwargs):
-        return self._get({MSG.ACTION: ACTION.UPDATE, MSG.ARGS: args, MSG.KWARGS: kwargs})
+        return self._get({MSGS.ACTION: ACTIONS.update, MSGS.args: args, MSGS.kwargs: kwargs})
 
     def setdefault(self, key, default=None):
-        return self._get({MSG.ACTION: ACTION.SETDEFAULT, MSG.ARGS: (key, default)})
+        return self._get({MSGS.ACTION: ACTIONS.setdefault, MSGS.args: (key, default)})
 
     def __str__(self):
-        return str(self._get({MSG.ACTION: ACTION.GET_STATE}))
+        return str(self._get({MSGS.ACTION: ACTIONS.get_state}))
 
     def __setitem__(self, key, value):
-        return self._get({MSG.ACTION: ACTION.SETITEM, MSG.ARGS: (key, value)})
+        return self._get({MSGS.ACTION: ACTIONS.setitem, MSGS.args: (key, value)})
 
     def __delitem__(self, key):
-        return self._get({MSG.ACTION: ACTION.DELITEM, MSG.ARGS: (key,)})
+        return self._get({MSGS.ACTION: ACTIONS.delitem, MSGS.args: (key,)})
 
     def __getitem__(self, item):
-        return self._get({MSG.ACTION: ACTION.GETITEM, MSG.ARGS: (item,)})
+        return self._get({MSGS.ACTION: ACTIONS.getitem, MSGS.args: (item,)})
 
     def __contains__(self, item):
-        return self._get({MSG.ACTION: ACTION.CONTAINS, MSG.ARGS: (item,)})
+        return self._get({MSGS.ACTION: ACTIONS.contains, MSGS.args: (item,)})
 
     def __eq__(self, other):
-        return self._get({MSG.ACTION: ACTION.EQ, MSG.ARGS: (other,)})
+        return self._get({MSGS.ACTION: ACTIONS.eq, MSGS.args: (other,)})
 
 
 class ZeroProcess:
@@ -312,12 +204,14 @@ class ZeroProcess:
     the target is start inside a child process and shares state with the parent using a ZeroState object.
     """
 
-    def __init__(self, ipc_path, target, props):
+    def __init__(self, ipc_path, target, props, background=False):
         """
         Args:
             ipc_path: the ipc path for the state server (associated with the context)
             target: the callable object to be invoked by the start() method (inside a child process)
             props: passed on to the target at start(), useful for composing re-usable processes
+            background: background: Whether to run processes as background tasks.
+                        Background tasks keep running even when your main (parent) script exits.
         """
         assert callable(target), "Mainloop must be a callable!"
 
@@ -327,6 +221,7 @@ class ZeroProcess:
 
         self._child_proc = Process(target=child, args=(ipc_path, target, props))
         self.target = target
+        self.background = background
 
     def start(self):
         """
@@ -335,10 +230,13 @@ class ZeroProcess:
         Returns:
             the process PID
         """
+        if current_process().name != 'MainProcess': print(inception_msg)
+
         if not self.is_alive:
             self._child_proc.start()
 
-        atexit.register(partial(kill_if_alive, pid=self._child_proc.pid))
+        if not self.background:
+            atexit.register(partial(kill_if_alive, pid=self._child_proc.pid))
 
         return self._child_proc.pid
 
@@ -379,14 +277,24 @@ class ZeroProcess:
 
 
 class Context:
-    def __init__(self):
+    def __init__(self, background=False):
+        """
+        Initiate the context, by starting a state-manager server,
+         and generate a random ipc path to communicate with it
+        Args:
+            background: Whether to run processes as background tasks.
+                        Background tasks keep running even when your main (parent) script exits.
+        """
         self.child_pids = set()
         self.child_procs = []
+        self.background = background
 
         self._ipc_path = get_random_ipc()
         self._state_proc = Process(target=state_server, args=(self._ipc_path,))
         self._state_proc.start()
-        atexit.register(partial(kill_if_alive, pid=self._state_proc.pid))
+
+        if not self.background:
+            atexit.register(partial(kill_if_alive, pid=self._state_proc.pid))
 
         self.state = ZeroState(self._ipc_path)
 
@@ -401,7 +309,7 @@ class Context:
         Returns:
             The ZeroProcess instance
         """
-        proc = ZeroProcess(self._ipc_path, target, props)
+        proc = ZeroProcess(self._ipc_path, target, props, self.background)
 
         self.child_procs.append(proc)
 
@@ -422,7 +330,7 @@ class Context:
         child_procs = []
         for target in targets:
             for _ in range(count):
-                child_procs.append(ZeroProcess(self._ipc_path, target, props))
+                child_procs.append(ZeroProcess(self._ipc_path, target, props, self.background))
 
         self.child_procs += child_procs
 

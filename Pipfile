@@ -5,7 +5,6 @@ name = "pypi"
 
 [packages]
 pyzmq = "*"
-"4ec7a7b" = {file = "https://github.com/zeromq/pyre/archive/master.zip"}
 
 [dev-packages]
 twine = "*"

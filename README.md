@@ -10,8 +10,70 @@ zproc aims to reduce the pain of multi-processing by
 - 🌠
     - Remembers to kill processes when exiting, for general peace.
 
+# Example
+###### `state` is NOT a shared varialbe!. It's actually a remote object that is wrapped to behave like a normal dict.
 
-### Inner Workings
+
+```
+import multiprocessing
+from time import sleep
+
+import zproc
+
+
+def child1(state, props):
+    print('child1:', multiprocessing.current_process())
+
+    state.get_val_when_change('foo')
+    print("child1: foo got updated, so I wake")
+
+    state['bar'] = 'xxx'
+    print('child1: I set bar to xxx')
+    print('child1: I exit')
+
+
+def bar_equals_xxx(state):
+    return state.get('bar') == 'xxx'
+
+
+def child2(state, props):
+    print('child2:', multiprocessing.current_process())
+
+    state.get_state_when(bar_equals_xxx)
+    print('child2: bar changed to xxx, so I wake')
+    print('child2: I exit')
+
+
+ctx = zproc.Context()
+
+ctx.process_factory(child1, child2, props='hello!')
+ctx.start_all()
+
+print('child0:', multiprocessing.current_process())
+
+sleep(1)
+
+ctx.state['foo'] = 'foobar'
+print('child0: I set foo to foobar')
+
+input()
+
+print('child0: I exit')
+```
+
+###### output
+```
+child0: I set foo to foobar
+child1: foo got updated, so I wake
+child1: I set bar to xxx
+child1: I exit
+child2: bar changed to xxx, so I wake
+child2: I exit
+
+child0: I exit
+```
+
+# Inner Workings
 
 - The process(s) communicate over zmq sockets, over `ipc://`.
 
@@ -29,7 +91,9 @@ zproc aims to reduce the pain of multi-processing by
 
     - zmq already has the mechanisms to block your application untill that tunnel is opened.
 
-### Caveats
+# Caveats
+
+- The state only gets updated if you do it directly. This means that if you mutate objects in the state, they wont get updated in global state.
 
 - It runs an extra daemonic process for managing the state. Its fairly lightweight though, and shouldn't add too much weight to your application.
 
@@ -39,7 +103,7 @@ zproc aims to reduce the pain of multi-processing by
 
 (from python [docs](https://docs.python.org/3/library/marshal.html))
 
-### Known issues
+# Known issues
 
 - Processes inside processes are known to create wierd behavior like
     - not being able to access state
@@ -48,86 +112,3 @@ zproc aims to reduce the pain of multi-processing by
 
 # Install
 `pip install zproc`
-
-
-<!-- # Short Introduction -->
-
-<!-- Context -->
-
-<!-- zproc provides you with a state object (ZeroState), which gives you a dict-like interface to the state. -->
-
-<!-- from -->
-
-
-<!-- #### Set state from the current process, and see the state change in a completely separate process, in real-time -->
-<!-- ``` -->
-<!-- from zproc import ZeroProcess -->
-<!-- from time import sleep -->
-
-
-<!-- def other_process(zstate, props): -->
-<!-- print('got props:', props) -->
-<!-- print('other process:', zstate.get_state_when_change()) -->
-
-
-<!-- zproc, zstate = ZeroProcess(other_process).start() -->
-
-<!-- zstate.set_state({'foo': 'bar'}, foobar='abcd') -->
-<!-- print('this process:', zstate.get_state()) -->
-
-<!-- print('is alive:', zproc.is_alive) -->
-<!-- print('pid:', zproc.pid) -->
-
-<!-- sleep(1) -->
-
-<!-- print('is alive:', zproc.is_alive) -->
-<!-- ``` -->
-
-<!-- ###### output -->
-
-<!-- ``` -->
-<!-- this process: {'foobar': 'abcd', 'foo': 'bar'} -->
-<!-- is alive: True -->
-<!-- pid: 4827 -->
-<!-- got props: None -->
-<!-- other process: {'foobar': 'abcd', 'foo': 'bar'} -->
-<!-- is alive: False -->
-<!-- ``` -->
-
-
-
-<!-- #### same example, but done asynchronously -->
-
-<!-- ``` -->
-<!-- from zproc import ZeroProcess -->
-<!-- from time import sleep -->
-
-
-<!-- def other_process(zstate, props): -->
-<!-- print('got props:', props) -->
-<!-- print('other process: sleeping for 5 sec') -->
-<!-- sleep(5) -->
-<!-- print('other process:', zstate.get_state()) -->
-
-
-<!-- zproc, zstate = ZeroProcess(other_process).start() -->
-
-<!-- zstate.set_state({'foo': 'bar'}, foobar='abcd') -->
-<!-- print('this process:', zstate.get_state()) -->
-<!-- print('this process: sleeping for 10 sec') -->
-
-<!-- sleep(10) -->
-
-<!-- print('this process: exit') -->
-<!-- ``` -->
-
-<!-- ###### output -->
-
-<!-- ``` -->
-<!-- got props: None -->
-<!-- other process: sleeping for 5 sec -->
-<!-- this process: {'foobar': 'abcd', 'foo': 'bar'} -->
-<!-- this process: sleeping for 10 sec -->
-<!-- other process: {'foobar': 'abcd', 'foo': 'bar'} -->
-<!-- this process: exit -->
-<!-- ``` -->
