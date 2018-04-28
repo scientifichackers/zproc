@@ -15,15 +15,12 @@ zproc aims to reduce the pain of multi-processing by
 
 
 ```
-import multiprocessing
 from time import sleep
 
 import zproc
 
 
 def child1(state, props):
-    print('child1:', multiprocessing.current_process())
-
     state.get_val_when_change('foo')
     print("child1: foo got updated, so I wake")
 
@@ -37,8 +34,6 @@ def bar_equals_xxx(state):
 
 
 def child2(state, props):
-    print('child2:', multiprocessing.current_process())
-
     state.get_state_when(bar_equals_xxx)
     print('child2: bar changed to xxx, so I wake')
     print('child2: I exit')
@@ -48,8 +43,6 @@ ctx = zproc.Context()
 
 ctx.process_factory(child1, child2, props='hello!')
 ctx.start_all()
-
-print('child0:', multiprocessing.current_process())
 
 sleep(1)
 
