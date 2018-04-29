@@ -9,7 +9,7 @@ from types import FunctionType
 
 import zmq
 
-from zproc.zproc_server import ACTIONS, MSGS, state_server, get_random_ipc
+from .zproc_server import ACTIONS, MSGS, state_server, get_random_ipc
 
 inception_msg = """
 Looks like you haven't had the usual lecture about doing multiprocessing. 
