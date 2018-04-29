@@ -9,7 +9,7 @@ import os
 import sys
 from shutil import rmtree
 
-from setuptools import Command, setup
+from setuptools import find_packages, Command, setup
 
 # Package meta-data.
 NAME = 'zproc'
@@ -93,9 +93,9 @@ setup(
     author_email=EMAIL,
     python_requires=REQUIRES_PYTHON,
     url=URL,
-    # packages=find_packages(exclude=('tests',)),
+    packages=find_packages(exclude=('tests',)),
     # If your package is a single module, use this instead of 'packages':
-    py_modules=['zproc', 'zproc_server'],
+    # py_modules=['zproc', 'zproc_server'],
 
     # entry_points={
     #     'console_scripts': ['mycli=mymodule:cli'],

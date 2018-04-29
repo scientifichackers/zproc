@@ -6,7 +6,7 @@ zproc aims to reduce the pain of multi-processing by
 - 🌠
     - Sync-ing  application state across all processes (without shared varialbes!).
 - 🌠
-    - Giving you the freedom to build any combination of synchronous or asynchronous systems.
+    - Giving you the freedom to _build any combination of synchronous or asynchronous systems.
 - 🌠
     - Remembers to kill processes when exiting, for general peace.
 

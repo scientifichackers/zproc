@@ -9,7 +9,7 @@ from types import FunctionType
 
 import zmq
 
-from zproc_server import ACTIONS, MSGS, state_server, get_random_ipc
+from zproc.zproc_server import ACTIONS, MSGS, state_server, get_random_ipc
 
 inception_msg = """
 Looks like you haven't had the usual lecture about doing multiprocessing. 
@@ -58,11 +58,25 @@ def kill_if_alive(pid):
 
 class ZeroState:
     """
-    Allows accessing a remote state (dict) object, through a dict-like interface,
+    Allows accessing a remote state (dict) object, through a dict-like interface,\n
     by communicating the state over zeromq.
-    """
 
-    # next_ident = 0
+    It supports the following methods, to make it feel like a dict
+
+    - get()
+    - pop()
+    - popitem()
+    - clear()
+    - update()
+    - setdefault()
+
+    - __setitem__()  :code:`state['foo'] = 'bar'`
+    - __delitem__()  :code:`del state['foo']`
+    - __getitem__()  :code:`state['foo']`
+    - __contains__() :code:`'foo' in state`
+    - __eq__ ()      :code:`{'foo': 'bar'} == state`
+
+    """
 
     def __init__(self, ipc_path):
         self._ctx = zmq.Context()
@@ -76,16 +90,13 @@ class ZeroState:
 
     def get_when_change(self, *keys):
         """
-        Block until a state change is observed,
+        Block until a state change is observed,\n
         then return the state.
 
         Useful for synchronization between processes
 
-        Args:
-            *keys: only watch for changes in these keys (of state dict)
-
-        Returns:
-            dict: containing the state
+        :param keys: only watch for changes in these keys (of state dict)
+        :return: dict containing the state
         """
 
         ipc_path = self._get({MSGS.ACTION: ACTIONS.add_chng_hand, MSGS.state_keys: keys})
@@ -99,16 +110,13 @@ class ZeroState:
 
     def get_val_when_change(self, key):
         """
-        Block until a state change is observed in a key,
-        then return value of that key.
+        Block until a state change is observed in a key,\n
+        then return value of that key.\n
 
-        Useful for synchronization between processes
+        Useful for synchronization between processes\n
 
-        Args:
-            key: the key to watch for changes
-
-        Returns:
-            value corresponding to the key in state dict
+        :param key: the key (of state dict) to watch for changes
+        :return: value corresponding to the key in state dict
         """
         ipc_path = self._get({MSGS.ACTION: ACTIONS.add_val_chng_hand, MSGS.state_key: key})
 
@@ -119,24 +127,29 @@ class ZeroState:
 
         return val
 
-    def get_when(self, test_fn):
+    def get_when(self, test_fn: callable):
         """
-        Block until the provided testfn returns a True boolean value,
-        then return the state.
+        Block until the provided testfn returns a True boolean value,\n
+        then return the state.\n
 
-        Args:
-            test_fn: A user-defined function that shall be called on each state-change
+        Useful for synchronization between processes\n
 
-        Notes:
-            The condition should be pure in general; meaning it shouldn't access global variables from your code.
-            (It actually can't since its run inside a different namespace)
+        :param test_fn: A user-defined function that shall be called on each state-change
+        :return: dict containing the state
 
-            It does have access to the global state dict though, which is enough for most use-cases.
+        .. code-block:: python
+            :caption: Example
 
-        Useful for synchronization between processes
+            def foo_is_bar(state):
+                return state['foo'] == 'bar'
 
-        Returns:
-            dict: containing the state
+            state.get_when(foo_is_bar) # blocks until foo is bar!
+
+
+        .. note:: The testfn should be pure in general; meaning it shouldn't access variables from your code.\n
+                  (It actually can't since its run inside a different namespace)\n
+
+                  It does have access to the global state dict though, which is enough for most use-cases.
         """
         assert isinstance(test_fn, FunctionType), 'fn must be a user-defined function, not ' + str(test_fn.__class__)
 
@@ -197,19 +210,18 @@ class ZeroState:
 
 class ZeroProcess:
     """
-    Provides a high level wrapper over multiprocessing.Process and zeromq
+    Provides a high level wrapper over multiprocessing.Process and zeromq\n
 
-    the target is start inside a child process and shares state with the parent using a ZeroState object.
+    the target is run inside a child process and shares state with the parent using a ZeroState object.
     """
 
     def __init__(self, ipc_path, target, props, background=False):
         """
-        Args:
-            ipc_path: the ipc path for the state server (associated with the context)
-            target: the callable object to be invoked by the start() method (inside a child process)
-            props: passed on to the target at start(), useful for composing re-usable processes
-            background: background: Whether to run processes as background tasks.
-                        Background tasks keep running even when your main (parent) script exits.
+        :ipc_path: the ipc path of the state server (associated with the context)
+        :target: the callable object to be invoked by the start() method (inside a child process)
+        :props: passed on to the target at start(), useful for composing re-usable processes
+        :background: background: Whether to run processes as background tasks.\n
+                    Background tasks keep running even when your main (parent) script exits.
         """
         assert callable(target), "Mainloop must be a callable!"
 
@@ -225,8 +237,7 @@ class ZeroProcess:
         """
         Start the child process
 
-        Returns:
-            the process PID
+        :return: the process PID
         """
         if current_process().name != 'MainProcess': print(inception_msg)
 
@@ -248,8 +259,8 @@ class ZeroProcess:
         """
         whether the child process is alive.
 
-        Roughly, a process object is alive
-            from the moment the start() method returns
+        Roughly, a process object is alive\n
+            from the moment the start() method returns\n
             until the child process is stopped manually (using stop()) or naturally exits
         """
         return self._child_proc and self._child_proc.is_alive()
@@ -257,7 +268,7 @@ class ZeroProcess:
     @property
     def pid(self):
         """
-        The process ID.
+        The process ID.\n
         Before the process is started, this will be None.
         """
         if self._child_proc is not None:
@@ -266,9 +277,9 @@ class ZeroProcess:
     @property
     def exitcode(self):
         """
-        The child’s exit code.
-        This will be None if the process has not yet terminated.
-        A negative value -N indicates that the child was terminated by signal N.
+        The child’s exit code.\n
+        This will be None if the process has not yet terminated.\n
+        A negative value -N indicates that the child was terminated by signal N.\n
         """
         if self._child_proc is not None:
             return self._child_proc.exitcode
@@ -277,12 +288,14 @@ class ZeroProcess:
 class Context:
     def __init__(self, background=False):
         """
-        Initiate the context, by starting a state-manager server,
-         and generate a random ipc path to communicate with it
-        Args:
-            background: Whether to run processes as background tasks.
-                        Background tasks keep running even when your main (parent) script exits.
+        Create a new Context,\n
+        by starting a state-manager server,\n
+        and generating a random ipc path to communicate with it
+
+        :param background: Whether to all run processes under this context as background tasks.\n
+                           Background tasks keep running even when your main (parent) script exits.
         """
+
         self.child_pids = set()
         self.child_procs = []
         self.background = background
@@ -298,14 +311,12 @@ class Context:
 
     def process(self, target, props=None):
         """
-        Produce a single ZeroProcess instance, bound to this context given a single target
+        Produce a single child process (ZeroProcesses instance),\n
+        bound to this context given a single target
 
-        Args:
-            target: the callable object to be invoked by the start() method (inside a child process)
-            props: passed on to the target at start(), useful for composing re-usable processes
-
-        Returns:
-            The ZeroProcess instance
+        :param targets: the callable object to be invoked by the start() method (inside a child process)
+        :param props: passed on to the target at start(), useful for composing re-usable processes
+        :return: A ZeroProcess instance
         """
         proc = ZeroProcess(self._ipc_path, target, props, self.background)
 
@@ -313,17 +324,15 @@ class Context:
 
         return proc
 
-    def process_factory(self, *targets, props=None, count=1):
+    def process_factory(self, *targets: callable, props=None, count=1):
         """
-        Produces multiple child process(s) (ZeroProcesses) provided some targets
+        Produces multiple child process(s) (ZeroProcesses instances),
+        bound to this context given a several targets
 
-        Args:
-            *targets: callable(s) to be invoked by the start() method (inside a child process)
-            props: passed on to all the targets at start(), useful for composing re-usable processes
-            count: The number of child processes to spawn for each target
-
-        Returns:
-            The ZeroProcess instances produced
+        :param targets: callable(s) to be invoked by the start() method (inside a child process)
+        :param props: passed on to all the targets at start(), useful for composing re-usable processes
+        :param count: The number of child processes to spawn for each target
+        :return: The ZeroProcess instances produced
         """
         child_procs = []
         for target in targets:
@@ -335,10 +344,12 @@ class Context:
         return child_procs
 
     def stop_all(self):
+        """Call stop on all the child processes of this Context"""
         for proc in self.child_procs:
             proc.stop()
 
     def start_all(self):
+        """Call start on all the child processes of this Context"""
         pids = set()
 
         for proc in self.child_procs:
@@ -349,6 +360,7 @@ class Context:
         return pids
 
     def close(self):
+        """Close this context and stop all processes associated with it."""
         if self._state_proc.is_alive:
             self._state_proc.terminate()
 
