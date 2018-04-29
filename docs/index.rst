@@ -9,6 +9,7 @@ Welcome to zproc's documentation!
 .. toctree::
     :maxdepth: 2
 
+    source/modules.rst
 
 Indices and tables
 ==================

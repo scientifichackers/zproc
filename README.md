@@ -1,12 +1,14 @@
 # ZProc - Process on steroids
 source is short for [Zero](http://zguide.zeromq.org/page:all#The-Zen-of-Zero) - [Process](https://docs.python.org/3.6/library/multiprocessing.html#multiprocessing.Process)
 
-source aims to reduce the pain of multi-processing by
+>generally, "zero" refers to the culture of minimalism that permeates the project. We add power by removing complexity rather than by exposing new functionality.
+
+zproc aims to reduce the pain of multi-processing by
 
 - 🌠
     - Sync-ing  application state across all processes (without shared varialbes!).
 - 🌠
-    - Giving you the freedom to _build any combination of synchronous or asynchronous systems.
+    - Giving you the freedom to build any combination of synchronous or asynchronous systems.
 - 🌠
     - Remembers to kill processes when exiting, for general peace.
 
@@ -76,25 +78,25 @@ child0: I exit
 
 - The process(s) communicate over zmq sockets, over `ipc://`.
 
-- The parent process has its own Process attached; responsible for the following
+- Zproc runs a zproc server, which is responsible for storing and managing the state.
 
-    - storing the state whenever it is updated, by another process.
+    - store the state whenever it is updated, by another process.
 
-    - transmitting the state whenever a process needs to access it.
+    - transmitt the state whenever a process needs to access it.
 
-- If a process wishes to synchronize at a certain condition, it can attach a handler to the source daemon.
+- If a process wishes to synchronize at a certain condition, it can attach a handler to the zproc server.
 
-    - The source daemon will check the condition on all state-changes.
+    - The zproc server will check the condition on all state-changes.
 
-    - If the condition is met, the source daemon shall open a tunnel to the application and send the state back.
+    - If the condition is met, the zproc server shall open a tunnel to the application and send the state back.
 
-    - zmq already has the mechanisms to block your application untill that tunnel is opened.
+    - zmq sockets block you application until that tunnel is opened.
 
 # Caveats
 
 - The state only gets updated if you do it directly. This means that if you mutate objects in the state, they wont get updated in global state.
 
-- It runs an extra daemonic process for managing the state. Its fairly lightweight though, and shouldn't add too much weight to your application.
+- It runs an extra daemonic server for managing the state. Its fairly lightweight though, and shouldn't add too much weight to your application.
 
 - The state is required to be marshal compatible, which means:
 
@@ -110,4 +112,12 @@ child0: I exit
 
 
 # Install
-`pip install source`
+`pip install zproc  `
+
+# Build documentation
+
+assuming you have sphinx installed
+```
+cd docs
+./build.sh
+```

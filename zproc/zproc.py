@@ -58,7 +58,8 @@ def kill_if_alive(pid):
 
 class ZeroState:
     """
-    Allows accessing a remote state (dict) object, through a dict-like interface,\n
+    Allows accessing state stored on the zproc server,\n
+    through a dict-like interface,\n
     by communicating the state over zeromq.
 
     It supports the following methods, to make it feel like a dict
@@ -96,7 +97,7 @@ class ZeroState:
         Useful for synchronization between processes
 
         :param keys: only watch for changes in these keys (of state dict)
-        :return: dict containing the state
+        :return: dict (state)
         """
 
         ipc_path = self._get({MSGS.ACTION: ACTIONS.add_chng_hand, MSGS.state_keys: keys})
@@ -110,13 +111,13 @@ class ZeroState:
 
     def get_val_when_change(self, key):
         """
-        Block until a state change is observed in a key,\n
+        Block until a state change is observed in provided key,\n
         then return value of that key.\n
 
         Useful for synchronization between processes\n
 
         :param key: the key (of state dict) to watch for changes
-        :return: value corresponding to the key in state dict
+        :return: value corresponding to the key, in the state
         """
         ipc_path = self._get({MSGS.ACTION: ACTIONS.add_val_chng_hand, MSGS.state_key: key})
 
@@ -129,13 +130,13 @@ class ZeroState:
 
     def get_when(self, test_fn: callable):
         """
-        Block until the provided testfn returns a True boolean value,\n
+        Block until testfn() returns a True-like value,\n
         then return the state.\n
 
         Useful for synchronization between processes\n
 
         :param test_fn: A user-defined function that shall be called on each state-change
-        :return: dict containing the state
+        :return: dict (state)
 
         .. code-block:: python
             :caption: Example
@@ -217,7 +218,7 @@ class ZeroProcess:
 
     def __init__(self, ipc_path, target, props, background=False):
         """
-        :ipc_path: the ipc path of the state server (associated with the context)
+        :ipc_path: the ipc path of the zproc server (associated with the context)
         :target: the callable object to be invoked by the start() method (inside a child process)
         :props: passed on to the target at start(), useful for composing re-usable processes
         :background: background: Whether to run processes as background tasks.\n
@@ -288,9 +289,13 @@ class ZeroProcess:
 class Context:
     def __init__(self, background=False):
         """
-        Create a new Context,\n
-        by starting a state-manager server,\n
-        and generating a random ipc path to communicate with it
+        | Create a new Context,
+        | by starting the zproc server,
+        | and generating a random ipc path to communicate with it.
+        |
+        | All child process under a Context are instances of ZeroProcess and hence, retain the same API as that of a ZeroProcess instance.\n\n
+        |
+        | A Context object is generally, thread-safe.\n
 
         :param background: Whether to all run processes under this context as background tasks.\n
                            Background tasks keep running even when your main (parent) script exits.
@@ -311,10 +316,9 @@ class Context:
 
     def process(self, target, props=None):
         """
-        Produce a single child process (ZeroProcesses instance),\n
-        bound to this context given a single target
+        Produce a child process bound to this context.
 
-        :param targets: the callable object to be invoked by the start() method (inside a child process)
+        :param targets: the callable to be invoked by the start() method (inside a child process)
         :param props: passed on to the target at start(), useful for composing re-usable processes
         :return: A ZeroProcess instance
         """
@@ -326,13 +330,12 @@ class Context:
 
     def process_factory(self, *targets: callable, props=None, count=1):
         """
-        Produces multiple child process(s) (ZeroProcesses instances),
-        bound to this context given a several targets
+        Produce multiple child process(s) bound to this context.
 
         :param targets: callable(s) to be invoked by the start() method (inside a child process)
         :param props: passed on to all the targets at start(), useful for composing re-usable processes
         :param count: The number of child processes to spawn for each target
-        :return: The ZeroProcess instances produced
+        :return: list containing ZeroProcess instances
         """
         child_procs = []
         for target in targets:
@@ -344,12 +347,12 @@ class Context:
         return child_procs
 
     def stop_all(self):
-        """Call stop on all the child processes of this Context"""
+        """Call ZeroProcess.stop() on all the child processes of this Context"""
         for proc in self.child_procs:
             proc.stop()
 
     def start_all(self):
-        """Call start on all the child processes of this Context"""
+        """Call ZeroProcess.start() on all the child processes of this Context"""
         pids = set()
 
         for proc in self.child_procs:
