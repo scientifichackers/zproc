@@ -1,7 +1,7 @@
 # ZProc - Process on steroids
-zproc is short for [Zero](http://zguide.zeromq.org/page:all#The-Zen-of-Zero) - [Process](https://docs.python.org/3.6/library/multiprocessing.html#multiprocessing.Process)
+source is short for [Zero](http://zguide.zeromq.org/page:all#The-Zen-of-Zero) - [Process](https://docs.python.org/3.6/library/multiprocessing.html#multiprocessing.Process)
 
-zproc aims to reduce the pain of multi-processing by
+source aims to reduce the pain of multi-processing by
 
 - 🌠
     - Sync-ing  application state across all processes (without shared varialbes!).
@@ -18,10 +18,12 @@ zproc aims to reduce the pain of multi-processing by
 ###### `state` is NOT a shared variable!. It's actually a remote object that is wrapped to behave like a dict.
 
 
-```
+```python
+# example.py
+
 from time import sleep
 
-from zproc import zproc
+import zproc
 
 
 def child1(state, props):
@@ -80,11 +82,11 @@ child0: I exit
 
     - transmitting the state whenever a process needs to access it.
 
-- If a process wishes to synchronize at a certain condition, it can attach a handler to the zproc daemon.
+- If a process wishes to synchronize at a certain condition, it can attach a handler to the source daemon.
 
-    - The zproc daemon will check the condition on all state-changes.
+    - The source daemon will check the condition on all state-changes.
 
-    - If the condition is met, the zproc daemon shall open a tunnel to the application and send the state back.
+    - If the condition is met, the source daemon shall open a tunnel to the application and send the state back.
 
     - zmq already has the mechanisms to block your application untill that tunnel is opened.
 
@@ -108,4 +110,4 @@ child0: I exit
 
 
 # Install
-`pip install zproc`
+`pip install source`

@@ -14,7 +14,7 @@ from setuptools import find_packages, Command, setup
 # Package meta-data.
 NAME = 'zproc'
 DESCRIPTION = "ZProc - Process on steroids"
-URL = 'https://github.com/devxpy/zproc'
+URL = 'https://github.com/devxpy/source'
 EMAIL = 'devxpy@gmail.com'
 AUTHOR = 'Dev Aggarwal'
 REQUIRES_PYTHON = '>=3'

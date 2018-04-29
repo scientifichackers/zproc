@@ -14,11 +14,11 @@
 #
 import os
 import sys
-sys.path.insert(0, os.path.abspath('../..'))
+sys.path.insert(0, os.path.abspath('..'))
 
 # -- Project information -----------------------------------------------------
 
-project = 'zproc'
+project = 'source'
 copyright = '2018, dev aggarwal'
 author = 'dev aggarwal'
 
@@ -129,7 +129,7 @@ latex_elements = {
 # (source start file, target name, title,
 #  author, documentclass [howto, manual, or own class]).
 latex_documents = [
-    (master_doc, 'zproc.tex', 'zproc Documentation',
+    (master_doc, 'source.tex', 'source Documentation',
      'dev aggarwal', 'manual'),
 ]
 
@@ -139,7 +139,7 @@ latex_documents = [
 # One entry per manual page. List of tuples
 # (source start file, name, description, authors, manual section).
 man_pages = [
-    (master_doc, 'zproc', 'zproc Documentation',
+    (master_doc, 'source', 'source Documentation',
      [author], 1)
 ]
 
@@ -150,8 +150,8 @@ man_pages = [
 # (source start file, target name, title, author,
 #  dir menu entry, description, category)
 texinfo_documents = [
-    (master_doc, 'zproc', 'zproc Documentation',
-     author, 'zproc', 'One line description of project.',
+    (master_doc, 'source', 'source Documentation',
+     author, 'source', 'One line description of project.',
      'Miscellaneous'),
 ]
 
