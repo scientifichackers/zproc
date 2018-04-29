@@ -10,6 +10,10 @@ zproc aims to reduce the pain of multi-processing by
 - 🌠
     - Remembers to kill processes when exiting, for general peace.
 
+# Documentation
+
+[Read the docs](http://zproc.readthedocs.io/en/latest/)
+
 # Example
 ###### `state` is NOT a shared variable!. It's actually a remote object that is wrapped to behave like a dict.
 
@@ -17,7 +21,7 @@ zproc aims to reduce the pain of multi-processing by
 ```
 from time import sleep
 
-import zproc
+from zproc import zproc
 
 
 def child1(state, props):
