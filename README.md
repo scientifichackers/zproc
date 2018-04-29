@@ -44,7 +44,7 @@ def child1(state, props):
 
 # define another child process
 def child2(state, props):
-    state.get_when(foo_equals_bar)  # wait for bar_equals_bar
+    state.get_when(foo_equals_bar)  # wait for foo_equals_bar
     print('child2: foo changed to bar, so I wake')
     print('child2: I exit')
 
