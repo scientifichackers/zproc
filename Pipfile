@@ -6,9 +6,6 @@ name = "pypi"
 [packages]
 pyzmq = "*"
 
-[dev-packages]
-twine = "*"
-ipython = "*"
 
 [requires]
 python_version = "3.6"
