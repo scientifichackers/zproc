@@ -149,7 +149,7 @@ class ZProcServer:
 
     # on val change handler
 
-    def add_val_change_handler(self, msg, ident):
+    def add_val_change_handler(self, ident, msg):
         ipc_path = get_random_ipc()
         self.pysend(ident, ipc_path)
 
