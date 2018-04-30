@@ -76,7 +76,7 @@ class ZeroState:
     - __getitem__()  :code:`state['foo']`
     - __contains__() :code:`'foo' in state`
     - __eq__ ()      :code:`{'foo': 'bar'} == state`
-
+    - __ne__ ()      :code:`{'foo': 'bar'} != state`
     """
 
     def __init__(self, ipc_path):
@@ -193,6 +193,9 @@ class ZeroState:
     def __str__(self):
         return str(self._get({MSGS.ACTION: ACTIONS.get_state}))
 
+    def __repr__(self):
+        return '<ZeroState {0}>'.format(str(self))
+
     def __setitem__(self, key, value):
         return self._get({MSGS.ACTION: ACTIONS.setitem, MSGS.args: (key, value)})
 
@@ -208,6 +211,9 @@ class ZeroState:
     def __eq__(self, other):
         return self._get({MSGS.ACTION: ACTIONS.eq, MSGS.args: (other,)})
 
+    def __ne__(self, other):
+        return self._get({MSGS.ACTION: ACTIONS.ne, MSGS.args: (other,)})
+
 
 class ZeroProcess:
     """
@@ -218,11 +224,11 @@ class ZeroProcess:
 
     def __init__(self, ipc_path, target, props, background=False):
         """
-        :ipc_path: the ipc path of the zproc server (associated with the context)
-        :target: the callable object to be invoked by the start() method (inside a child process)
-        :props: passed on to the target at start(), useful for composing re-usable processes
-        :background: background: Whether to run processes as background tasks.\n
-                    Background tasks keep running even when your main (parent) script exits.
+        :param ipc_path: the ipc path of the zproc server (associated with the context)
+        :param target: the callable object to be invoked by the start() method (inside a child process)
+        :param props: passed on to the target at start(), useful for composing re-usable processes
+        :param background: Whether to run processes as background tasks.\n
+                           Background tasks keep running even when your main (parent) script finishes execution.
         """
         assert callable(target), "Mainloop must be a callable!"
 
@@ -232,7 +238,7 @@ class ZeroProcess:
 
         self._child_proc = Process(target=child, args=(ipc_path, target, props))
         self.target = target
-        self.background = background
+        self.is_background = background
 
     def start(self):
         """
@@ -245,7 +251,7 @@ class ZeroProcess:
         if not self.is_alive:
             self._child_proc.start()
 
-        if not self.background:
+        if not self.is_background:
             atexit.register(partial(kill_if_alive, pid=self._child_proc.pid))
 
         return self._child_proc.pid
@@ -298,18 +304,18 @@ class Context:
         | A Context object is generally, thread-safe.\n
 
         :param background: Whether to all run processes under this context as background tasks.\n
-                           Background tasks keep running even when your main (parent) script exits.
+                           Background tasks keep running even when your main (parent) script finishes execution.
         """
 
         self.child_pids = set()
         self.child_procs = []
-        self.background = background
+        self.is_background = background
 
         self._ipc_path = get_random_ipc()
         self._state_proc = Process(target=state_server, args=(self._ipc_path,))
         self._state_proc.start()
 
-        if not self.background:
+        if not self.is_background:
             atexit.register(partial(kill_if_alive, pid=self._state_proc.pid))
 
         self.state = ZeroState(self._ipc_path)
@@ -322,7 +328,7 @@ class Context:
         :param props: passed on to the target at start(), useful for composing re-usable processes
         :return: A ZeroProcess instance
         """
-        proc = ZeroProcess(self._ipc_path, target, props, self.background)
+        proc = ZeroProcess(self._ipc_path, target, props, self.is_background)
 
         self.child_procs.append(proc)
 
@@ -340,7 +346,7 @@ class Context:
         child_procs = []
         for target in targets:
             for _ in range(count):
-                child_procs.append(ZeroProcess(self._ipc_path, target, props, self.background))
+                child_procs.append(ZeroProcess(self._ipc_path, target, props, self.is_background))
 
         self.child_procs += child_procs
 

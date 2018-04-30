@@ -92,7 +92,7 @@ child0: I exit
 
     - If the condition is met, the zproc server shall open a tunnel to the application and send the state back.
 
-    - zmq sockets block you application until that tunnel is opened.
+    - zmq sockets block your application until that tunnel is opened.
 
 # Caveats
 

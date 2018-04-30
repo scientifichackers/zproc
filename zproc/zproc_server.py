@@ -21,6 +21,7 @@ class ACTIONS:
     getitem = '__getitem__'
     contains = '__contains__'
     eq = '__eq__'
+    ne = '__ne__'
 
     get_state = 'get_state'
     stop = 'STOP'
