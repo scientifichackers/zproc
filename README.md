@@ -110,9 +110,11 @@ child0: I exit
 
 - It runs an extra daemonic server for managing the state. Its fairly lightweight though, and shouldn't add too much weight to your application.
 
-- The state is required to be marshal compatible, which means:
+- The state should be pickle-able
 
-> The following types are supported: booleans, integers, floating point numbers, complex numbers, strings, bytes, bytearrays, tuples, lists, sets, frozensets, dictionaries, and code objects, where it should be understood that tuples, lists, sets, frozensets and dictionaries are only supported as long as the values contained therein are themselves supported. The singletons None, Ellipsis and StopIteration can also be marshalled and unmarshalled
+<!-- - The state is required to be marshal compatible, which means: -->
+
+<!-- > The following types are supported: booleans, integers, floating point numbers, complex numbers, strings, bytes, bytearrays, tuples, lists, sets, frozensets, dictionaries, and code objects, where it should be understood that tuples, lists, sets, frozensets and dictionaries are only supported as long as the values contained therein are themselves supported. The singletons None, Ellipsis and StopIteration can also be marshalled and unmarshalled -->
 
 (from python [docs](https://docs.python.org/3/library/marshal.html))
 

@@ -1,15 +1,15 @@
 import atexit
-import marshal
 import os
+import pickle
 import signal
 from functools import partial
 from multiprocessing import Process, current_process
-# from time import sleep
-from types import FunctionType
 
 import zmq
 
 from .zproc_server import ACTIONS, MSGS, state_server, get_random_ipc
+
+# from time import sleep
 
 inception_msg = """
 Looks like you haven't had the usual lecture about doing multiprocessing. 
@@ -36,7 +36,7 @@ Hope we all learned something today.
 
 
 def pysend(sock, msg):
-    data = marshal.dumps(msg)
+    data = pickle.dumps(msg, protocol=pickle.HIGHEST_PROTOCOL)
     # print('sending',msg, data)
     return sock.send(data)
     # print('sent')
@@ -44,7 +44,7 @@ def pysend(sock, msg):
 
 def pyrecv(sock):
     # print('recv')
-    data = marshal.loads(sock.recv())
+    data = pickle.loads(sock.recv())
     # print('recv', data)
     return data
 
@@ -133,7 +133,7 @@ class ZeroState:
 
         sock = self._ctx.socket(zmq.PULL)
         sock.connect(ipc_path)
-        state = marshal.loads(sock.recv())
+        state = pickle.loads(sock.recv())
         sock.close()
 
         return state
@@ -152,7 +152,7 @@ class ZeroState:
 
         sock = self._ctx.socket(zmq.PULL)
         sock.connect(ipc_path)
-        val = marshal.loads(sock.recv())
+        val = pickle.loads(sock.recv())
         sock.close()
 
         return val
@@ -164,7 +164,7 @@ class ZeroState:
         |
         | Useful for synchronization between processes
 
-        :param test_fn: | A user-defined function that shall be called on each state-change.
+        :param test_fn: | A callable that shall be called on each state-change.
                         | :code:`test_fn(state, *args, **kwargs)`
         :param args: Passed on to test_fn.
         :param kwargs: Passed on to test_fn.
@@ -189,19 +189,20 @@ class ZeroState:
                   | (Actually, it can't, since its run inside a different namespace)
                   |
                   | It does have access to the state though, which is enough for most use-cases.
+                  |
+                  | If you try to access local variables without putting them through the args,
+                  | an :code:`AttributeError: Can't pickle local object` will get raised.
         """
-        assert isinstance(test_fn, FunctionType), 'fn must be a user-defined function, not ' + str(test_fn.__class__)
-
         ipc_path = self._get({
             MSGS.ACTION: ACTIONS.add_cond_hand,
-            MSGS.testfn: test_fn.__code__,
+            MSGS.testfn: test_fn,
             MSGS.args: args,
             MSGS.kwargs: kwargs
         })
 
         sock = self._ctx.socket(zmq.PULL)
         sock.connect(ipc_path)
-        response = marshal.loads(sock.recv())
+        response = pickle.loads(sock.recv())
         sock.close()
 
         return response

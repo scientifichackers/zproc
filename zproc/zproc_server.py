@@ -1,9 +1,8 @@
-import marshal
+import pickle
 import queue
 from collections import defaultdict
 from pathlib import Path
 # from time import sleep
-from types import FunctionType
 from uuid import uuid1
 
 import zmq
@@ -20,7 +19,7 @@ class ACTIONS:
 
     get = 'get'
     getitem = '__getitem__'
-    contains = '__contains__'
+    contains = 'ntains__'
     eq = '__eq__'
     ne = '__ne__'
 
@@ -100,11 +99,11 @@ class ZProcServer:
         self.sock.bind(ipc_path)
 
     def pysend(self, ident, msg):
-        return self.sock.send_multipart([ident, marshal.dumps(msg)])
+        return self.sock.send_multipart([ident, pickle.dumps(msg, protocol=pickle.HIGHEST_PROTOCOL)])
 
     def pyrecv(self):
         ident, msg = self.sock.recv_multipart()
-        return ident, marshal.loads(msg)
+        return ident, pickle.loads(msg)
 
     def get_state_keys_cmp(self, state_keys):
         return [self.state.get(state_key) for state_key in state_keys]
@@ -141,7 +140,7 @@ class ZProcServer:
                 if old != new:
                     sock = self.ctx.socket(zmq.PUSH)
                     sock.bind(ipc_path)
-                    sock.send(marshal.dumps(self.state))
+                    sock.send(pickle.dumps(self.state, protocol=pickle.HIGHEST_PROTOCOL))
                     sock.close()
                 else:
                     to_put_back.append((ipc_path, old))
@@ -173,7 +172,7 @@ class ZProcServer:
                 if old != new:
                     sock = self.ctx.socket(zmq.PUSH)
                     sock.bind(ipc_path)
-                    sock.send(marshal.dumps(self.state.get(state_key)))
+                    sock.send(pickle.dumps(self.state.get(state_key), protocol=pickle.HIGHEST_PROTOCOL))
                     sock.close()
                 else:
                     to_put_back.append((ipc_path, old))
@@ -189,7 +188,8 @@ class ZProcServer:
 
         self.condition_handlers.put((
             ipc_path,
-            FunctionType(msg[MSGS.testfn], globals()),
+            # FunctionType(msg[MSGS.testfn], globals()),
+            msg[MSGS.testfn],
             msg[MSGS.args],
             msg[MSGS.kwargs]
         ))
@@ -202,7 +202,7 @@ class ZProcServer:
             if test_fn(self.state, *args, **kwargs):
                 sock = self.ctx.socket(zmq.PUSH)
                 sock.bind(ipc_path)
-                sock.send(marshal.dumps(self.state))
+                sock.send(pickle.dumps(self.state, protocol=pickle.HIGHEST_PROTOCOL))
                 sock.close()
             else:
                 to_put_back.append((ipc_path, test_fn, args, kwargs))
