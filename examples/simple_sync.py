@@ -1,3 +1,17 @@
+"""
+Demonstration of simple synchronization between processes
+
+# Expected output
+
+child0: I set foo to foobar
+child1: foo got updated, so I wake
+child1: I set foo to bar
+child1: I exit
+child2: foo changed to bar, so I wake
+child2: I exit
+
+child0: I exit
+"""
 from time import sleep
 
 import zproc
@@ -8,7 +22,7 @@ def foo_equals_bar(state):
 
 
 # define a child process
-def child1(state, props):
+def child1(state: zproc.ZeroState, props):
     state.get_when_change('foo')  # wait for foo to change
     print("child1: foo got updated, so I wake")
 
@@ -18,7 +32,7 @@ def child1(state, props):
 
 
 # define another child process
-def child2(state, props):
+def child2(state: zproc.ZeroState, props):
     state.get_when(foo_equals_bar)  # wait for bar_equals_bar
     print('child2: foo changed to bar, so I wake')
     print('child2: I exit')

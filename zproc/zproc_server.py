@@ -55,6 +55,8 @@ class MSGS:
     state_keys = 'state_keys'
     state_key = 'state_key'
 
+    globals = 'globals'
+
 
 ipc_base_dir = Path.home().joinpath('.tmp')
 
@@ -157,14 +159,18 @@ def state_server(ipc_path):
         ipc_path = get_random_ipc()
         pysend(ipc_path)
 
-        condition_handlers.append((ipc_path, FunctionType(msg[MSGS.testfn], globals())))
-
+        condition_handlers.append((
+            ipc_path,
+            FunctionType(msg[MSGS.testfn], globals()),
+            msg[MSGS.args],
+            msg[MSGS.kwargs]
+        ))
         resolve_condition_handlers()
 
     def resolve_condition_handlers():
         complete = []
-        for index, (ipc_path, test_fn) in enumerate(condition_handlers):
-            if test_fn(state):
+        for index, (ipc_path, test_fn, args, kwargs) in enumerate(condition_handlers):
+            if test_fn(state, *args, **kwargs):
                 sock = ctx.socket(zmq.PUSH)
                 sock.bind(ipc_path)
                 sock.send(marshal.dumps(state))
@@ -181,12 +187,16 @@ def state_server(ipc_path):
     sock = ctx.socket(zmq.ROUTER)
     sock.bind(ipc_path)
     # sleep(1)
+
+    # init some variables
+
     state = {}
     condition_handlers = []
     val_change_handlers = defaultdict(list)
     change_handlers = defaultdict(list)
+    old_state = state.copy()
 
-    # enter server mainloop
+    # server mainloop
     while True:
         ident, msg = pyrecv()
         # print('server', msg, 'from', ident)
@@ -205,6 +215,11 @@ def state_server(ipc_path):
                 args, kwargs = msg.get(MSGS.args), msg.get(MSGS.kwargs)
                 fn = getattr(state, action)
 
+                is_mutable_action = action in ACTIONS_THAT_MUTATE
+
+                if is_mutable_action:
+                    old_state = state.copy()
+
                 if args is None:
                     if kwargs is None:
                         pysend(fn())
@@ -216,9 +231,9 @@ def state_server(ipc_path):
                     else:
                         pysend(fn(*args, **kwargs))
 
-            if action in ACTIONS_THAT_MUTATE:
-                # print(state_handlers)
-                resolve_change_handlers()
-                resolve_condition_handlers()
-                resolve_val_change_handlers()
-                # print(state_handlers)
+                if is_mutable_action and old_state != state:
+                    # print(state_handlers)
+                    resolve_change_handlers()
+                    resolve_condition_handlers()
+                    resolve_val_change_handlers()
+                    # print(state_handlers)

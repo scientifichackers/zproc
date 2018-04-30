@@ -16,6 +16,16 @@ zproc aims to reduce the pain of multi-processing by
 
 [Read the docs](http://zproc.readthedocs.io/en/latest/)
 
+
+# Learning ZProc
+
+The simplest way to learn zproc is to skim through the examples in following order:
+
+- `simple_sync.py`
+- `luck_test.py`
+
+These can be found under the `examples` directory.
+
 # Example
 ###### `state` is NOT a shared variable!. It's actually a remote object that is wrapped to behave like a dict.
 

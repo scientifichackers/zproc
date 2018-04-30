@@ -58,11 +58,13 @@ def kill_if_alive(pid):
 
 class ZeroState:
     """
-    Allows accessing state stored on the zproc server,\n
-    through a dict-like interface,\n
-    by communicating the state over zeromq.
+    | Allows accessing state stored on the zproc server,
+    | through a dict-like interface,
+    | by communicating the state over zeromq.
 
-    It supports the following methods, to make it feel like a dict
+    :param ipc_path: The ipc path of the zproc servers
+
+    | It provides the following methods, to make it feel like a dict
 
     - get()
     - pop()
@@ -70,13 +72,37 @@ class ZeroState:
     - clear()
     - update()
     - setdefault()
+    - clear()
+    - items()
+    - keys()
+    - values()
+    - __setitem__()  | :code:`state['foo'] = 'bar'`
+    - __delitem__()  | :code:`del state['foo']`
+    - __getitem__()  | :code:`state['foo']`
+    - __contains__() | :code:`'foo' in state`
+    - __eq__ ()      | :code:`{'foo': 'bar'} == state`
+    - __ne__ ()      | :code:`{'foo': 'bar'} != state`
+    - __copy__()     | :code:`state_copy = state.copy()`
 
-    - __setitem__()  :code:`state['foo'] = 'bar'`
-    - __delitem__()  :code:`del state['foo']`
-    - __getitem__()  :code:`state['foo']`
-    - __contains__() :code:`'foo' in state`
-    - __eq__ ()      :code:`{'foo': 'bar'} == state`
-    - __ne__ ()      :code:`{'foo': 'bar'} != state`
+    | It also provides the following methods, as a substitute for traditional synchronization primitives.
+
+    - get_when_change()
+    - get_val_when_change()
+    - get_when()
+
+    | These methods are the reason why ZProc is better than traditional multi-processing.
+    | They allow you to watch for changes directly in your state, without having to worry about irrelevant details.
+
+    .. note:: | While the zproc server is very efficient at handling stuff,
+              | You should use this feature wisely.
+              | Adding a lot of synchronization handlers will ultimately slow down your application.
+              |
+              | If you're interested in the mathematics of it,
+              | Each new synchronization handler increases complexity, linearly.
+              | The frequency at which you update the state also affects the complexity linearly.
+              |
+              | Keep these in mind when developing performance-critical applications.
+
     """
 
     def __init__(self, ipc_path):
@@ -91,13 +117,15 @@ class ZeroState:
 
     def get_when_change(self, *keys):
         """
-        Block until a state change is observed,\n
-        then return the state.
-
-        Useful for synchronization between processes
+        | Block until a state change is observed,
+        | then return the state.
+        |
+        | Useful for synchronization between processes
 
         :param keys: only watch for changes in these keys (of state dict)
         :return: dict (state)
+
+
         """
 
         ipc_path = self._get({MSGS.ACTION: ACTIONS.add_chng_hand, MSGS.state_keys: keys})
@@ -111,10 +139,10 @@ class ZeroState:
 
     def get_val_when_change(self, key):
         """
-        Block until a state change is observed in provided key,\n
-        then return value of that key.\n
-
-        Useful for synchronization between processes\n
+        | Block until a state change is observed in provided key,
+        | then return value of that key.
+        |
+        | Useful for synchronization between processes
 
         :param key: the key (of state dict) to watch for changes
         :return: value corresponding to the key, in the state
@@ -128,14 +156,17 @@ class ZeroState:
 
         return val
 
-    def get_when(self, test_fn: callable):
+    def get_when(self, test_fn: FunctionType, *args, **kwargs):
         """
-        Block until testfn() returns a True-like value,\n
-        then return the state.\n
+        | Block until testfn() returns a True-like value,
+        | then return the state.
+        |
+        | Useful for synchronization between processes
 
-        Useful for synchronization between processes\n
-
-        :param test_fn: A user-defined function that shall be called on each state-change
+        :param test_fn: | A user-defined function that shall be called on each state-change.
+                        | :code:`test_fn(state, *args, **kwargs)`
+        :param args: Passed on to test_fn.
+        :param kwargs: Passed on to test_fn.
         :return: dict (state)
 
         .. code-block:: python
@@ -146,15 +177,26 @@ class ZeroState:
 
             state.get_when(foo_is_bar) # blocks until foo is bar!
 
+        .. note:: | args and kwargs are assumed to be static.
+                  |
+                  | Their values will remain same throughout the life-time of the handler,
+                  | irrespective of whether you change them in your code.
+                  |
+                  | If you have variables that are not static, you should put them in the state.
 
-        .. note:: The testfn should be pure in general; meaning it shouldn't access variables from your code.\n
-                  (It actually can't since its run inside a different namespace)\n
-
-                  It does have access to the global state dict though, which is enough for most use-cases.
+        .. note:: | The test_fn should be pure in general; meaning it shouldn't access variables from your code.
+                  | (Actually, it can't, since its run inside a different namespace)
+                  |
+                  | It does have access to the state though, which is enough for most use-cases.
         """
         assert isinstance(test_fn, FunctionType), 'fn must be a user-defined function, not ' + str(test_fn.__class__)
 
-        ipc_path = self._get({MSGS.ACTION: ACTIONS.add_cond_hand, MSGS.testfn: test_fn.__code__})
+        ipc_path = self._get({
+            MSGS.ACTION: ACTIONS.add_cond_hand,
+            MSGS.testfn: test_fn.__code__,
+            MSGS.args: args,
+            MSGS.kwargs: kwargs
+        })
 
         sock = self._ctx.socket(zmq.PULL)
         sock.connect(ipc_path)
@@ -163,14 +205,18 @@ class ZeroState:
 
         return response
 
+    def get_state_as_dict(self):
+        """Get the state from the zproc server and return as dict"""
+        return self._get({MSGS.ACTION: ACTIONS.get_state})
+
     def items(self):
-        return self._get({MSGS.ACTION: ACTIONS.get_state}).items()
+        return self.get_state_as_dict().items()
 
     def keys(self):
-        return self._get({MSGS.ACTION: ACTIONS.get_state}).keys()
+        return self.get_state_as_dict().keys()
 
     def values(self):
-        return self._get({MSGS.ACTION: ACTIONS.get_state}).values()
+        return self.get_state_as_dict().values()
 
     def pop(self, key, default=None):
         return self._get({MSGS.ACTION: ACTIONS.pop, MSGS.args: (key, default)})
@@ -191,10 +237,13 @@ class ZeroState:
         return self._get({MSGS.ACTION: ACTIONS.setdefault, MSGS.args: (key, default)})
 
     def __str__(self):
-        return str(self._get({MSGS.ACTION: ACTIONS.get_state}))
+        return str(self.get_state_as_dict())
 
     def __repr__(self):
         return '<ZeroState {0}>'.format(str(self))
+
+    def __copy__(self):
+        return self.get_state_as_dict()
 
     def __setitem__(self, key, value):
         return self._get({MSGS.ACTION: ACTIONS.setitem, MSGS.args: (key, value)})
@@ -300,6 +349,8 @@ class Context:
         | and generating a random ipc path to communicate with it.
         |
         | All child process under a Context are instances of ZeroProcess and hence, retain the same API as that of a ZeroProcess instance.\n\n
+        |
+        | You may access the state (ZeroState instance) from the "state" attribute, like so - :code:`Context.state`
         |
         | A Context object is generally, thread-safe.\n
 
