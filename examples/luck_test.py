@@ -15,11 +15,10 @@ num gen: STOP was set to True, so lets exit
 num gen: exit
 
 """
-from time import sleep
-
-import zproc
 
 import random
+
+import zproc
 
 
 # random num generator process
