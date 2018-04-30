@@ -126,6 +126,8 @@ class ZProcServer:
                 (ipc_path, self.state)
             )
 
+        self.resolve_change_handlers()
+
     def resolve_change_handlers(self):
         for state_keys, change_handler_queue in self.change_handlers.items():
             if state_keys == '_any_':
@@ -159,6 +161,8 @@ class ZProcServer:
             (ipc_path, self.state.get(state_key))
         )
 
+        self.resolve_val_change_handlers()
+
     def resolve_val_change_handlers(self):
         for state_key, handler_list in self.val_change_handlers.items():
             new = self.state.get(state_key)
@@ -189,6 +193,8 @@ class ZProcServer:
             msg[MSGS.args],
             msg[MSGS.kwargs]
         ))
+
+        self.resolve_condition_handlers()
 
     def resolve_condition_handlers(self):
         to_put_back = []

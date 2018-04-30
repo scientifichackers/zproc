@@ -83,6 +83,7 @@ class ZeroState:
     - __eq__ ()      | :code:`{'foo': 'bar'} == state`
     - __ne__ ()      | :code:`{'foo': 'bar'} != state`
     - __copy__()     | :code:`state_copy = state.copy()`
+    - __copy__()     | :code:`state_copy = state.copy()`
 
     | It also provides the following methods, as a substitute for traditional synchronization primitives.
 
@@ -156,7 +157,7 @@ class ZeroState:
 
         return val
 
-    def get_when(self, test_fn: FunctionType, *args, **kwargs):
+    def get_when(self, test_fn, *args, **kwargs):
         """
         | Block until testfn() returns a True-like value,
         | then return the state.
