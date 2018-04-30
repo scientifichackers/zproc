@@ -204,6 +204,11 @@ class ZProcServer:
         for i in to_put_back:
             self.condition_handlers.put(i)
 
+    def resolve_handlers(self):
+        self.resolve_change_handlers()
+        self.resolve_condition_handlers()
+        self.resolve_val_change_handlers()
+
 
 def state_server(ipc_path):
     # sleep(1)
@@ -246,6 +251,4 @@ def state_server(ipc_path):
                         server.pysend(ident, fn(*args, **kwargs))
 
                 if is_mutable_action and old_state != server.state:
-                    server.resolve_change_handlers()
-                    server.resolve_condition_handlers()
-                    server.resolve_val_change_handlers()
+                    server.resolve_handlers()
