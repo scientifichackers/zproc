@@ -178,7 +178,7 @@ class ZProcServer:
                     to_put_back.append((ipc_path, old))
 
             for i in to_put_back:
-                self.change_handlers[state_key].put(i)
+                self.val_change_handlers[state_key].put(i)
 
     # condition handler
 
