@@ -123,7 +123,7 @@ class ZeroState:
         |
         | Useful for synchronization between processes
 
-        :param keys: only watch for changes in these keys (of state dict)
+        :param \*keys: only watch for changes in these keys (of state dict)
         :return: dict (state)
 
 
@@ -138,7 +138,7 @@ class ZeroState:
 
         return state
 
-    def get_val_when_change(self, key):
+    def get_val_when_change(self, key, **kwargs):
         """
         | Block until a state change is observed in provided key,
         | then return value of that key.
@@ -146,9 +146,26 @@ class ZeroState:
         | Useful for synchronization between processes
 
         :param key: the key (of state dict) to watch for changes
+        :param \**kwargs: See below
         :return: value corresponding to the key, in the state
+
+
+        :Keyword Arguments:
+            * *value* --
+                | watch for changes with respect to this value.
+                | Default: value of key in state when function is called.
+
+                :code:`value='some value'`
+
         """
-        ipc_path = self._get({MSGS.ACTION: ACTIONS.add_val_chng_hand, MSGS.state_key: key})
+        req = {MSGS.ACTION: ACTIONS.add_val_chng_hand, MSGS.state_key: key}
+
+        try:
+            req[MSGS.old_value] = kwargs['value']
+        except KeyError:
+            pass
+
+        ipc_path = self._get(req)
 
         sock = self._ctx.socket(zmq.PULL)
         sock.connect(ipc_path)
@@ -191,7 +208,7 @@ class ZeroState:
                   | It does have access to the state though, which is enough for most use-cases.
                   |
                   | If you try to access local variables without putting them through the args,
-                  | an :code:`AttributeError: Can't pickle local object` will get raised.
+                  | an :code:`AttributeError: Can't pickle local object` shall be returned.
         """
         ipc_path = self._get({
             MSGS.ACTION: ACTIONS.add_cond_hand,

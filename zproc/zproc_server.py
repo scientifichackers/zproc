@@ -54,6 +54,7 @@ class MSGS:
 
     state_keys = 'state_keys'
     state_key = 'state_key'
+    old_value = 'old_val'
 
     globals = 'globals'
 
@@ -156,8 +157,13 @@ class ZProcServer:
 
         state_key = msg.get(MSGS.state_key)
 
+        try:
+            old_value = msg[MSGS.old_value]
+        except KeyError:
+            old_value = self.state.get(state_key)
+
         self.val_change_handlers[state_key].put(
-            (ipc_path, self.state.get(state_key))
+            (ipc_path, old_value)
         )
 
         self.resolve_val_change_handlers()
