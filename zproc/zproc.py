@@ -92,7 +92,7 @@ class ZeroState:
     - get_when()
 
     | These methods are the reason why ZProc is better than traditional multi-processing.
-    | They allow you to watch for changes directly in your state, without having to worry about irrelevant details.
+    | They allow you to watch for changes in your state, without having to worry about irrelevant details.
 
     .. note:: | While the zproc server is very efficient at handling stuff,
               | You should use this feature wisely.
@@ -116,34 +116,43 @@ class ZeroState:
         pysend(self._sock, msg)
         return pyrecv(self._sock)
 
-    def get_when_change(self, *keys):
-        """
-        | Block until a state change is observed,
-        | then return the state.
-        |
-        | Useful for synchronization between processes
-
-        :param \*keys: only watch for changes in these keys (of state dict)
-        :return: dict (state)
-
-
-        """
-
-        ipc_path = self._get({MSGS.ACTION: ACTIONS.add_chng_hand, MSGS.state_keys: keys})
+    def _pull(self, msg):
+        ipc_path = self._get(msg)
 
         sock = self._ctx.socket(zmq.PULL)
         sock.connect(ipc_path)
-        state = pickle.loads(sock.recv())
+        data = pickle.loads(sock.recv())
         sock.close()
 
-        return state
+        return data
+
+    # def stop_server(self):
+    #     self.get()
+
+    def get_when_equal(self, key, value):
+        """
+        | Block until :code:`state.get(key) == value`.
+
+        :param key: the key in state dict
+        :param value: the desired value to wait for
+        :return: None
+        """
+        self._pull({MSGS.ACTION: ACTIONS.equals_handler, MSGS.key: key, MSGS.value: value})
+
+    def get_when_change(self, *keys):
+        """
+        | Block until a state change is observed,
+        | then return :code:`state`.
+
+        :param \*keys: only watch for changes in these keys (of state dict)
+        :return: dict (state)
+        """
+        return self._pull({MSGS.ACTION: ACTIONS.change_handler, MSGS.keys: keys})
 
     def get_val_when_change(self, key, **kwargs):
         """
         | Block until a state change is observed in provided key,
-        | then return value of that key.
-        |
-        | Useful for synchronization between processes
+        | then return :code:`state.get(key)`.
 
         :param key: the key (of state dict) to watch for changes
         :param \**kwargs: See below
@@ -175,28 +184,22 @@ class ZeroState:
             'bar'
             >>> # unblocked
         """
-        req = {MSGS.ACTION: ACTIONS.add_val_chng_hand, MSGS.state_key: key}
+        req = {MSGS.ACTION: ACTIONS.val_change_handler, MSGS.key: key}
 
         try:
-            req[MSGS.old_value] = kwargs['value']
+            req[MSGS.value] = kwargs['value']
         except KeyError:
             pass
 
-        ipc_path = self._get(req)
-
-        sock = self._ctx.socket(zmq.PULL)
-        sock.connect(ipc_path)
-        val = pickle.loads(sock.recv())
-        sock.close()
-
-        return val
+        return self._pull(req)
 
     def get_when(self, test_fn, *args, **kwargs):
         """
         | Block until testfn() returns a True-like value,
-        | then return the state.
+        | then return :code:`state`.
         |
-        | Useful for synchronization between processes
+        | Roughly,
+        | :code:`if test_fn(state, *args, **kwargs): return state`
 
         :param test_fn: | A callable that shall be called on each state-change.
                         | :code:`test_fn(state, *args, **kwargs)`
@@ -227,19 +230,12 @@ class ZeroState:
                   | If you try to access local variables without putting them through the args,
                   | an :code:`AttributeError: Can't pickle local object` shall be returned.
         """
-        ipc_path = self._get({
-            MSGS.ACTION: ACTIONS.add_cond_hand,
+        return self._pull({
+            MSGS.ACTION: ACTIONS.condition_handler,
             MSGS.testfn: test_fn,
             MSGS.args: args,
             MSGS.kwargs: kwargs
         })
-
-        sock = self._ctx.socket(zmq.PULL)
-        sock.connect(ipc_path)
-        response = pickle.loads(sock.recv())
-        sock.close()
-
-        return response
 
     def get_state_as_dict(self):
         """Get the state from the zproc server and return as dict"""
@@ -323,7 +319,7 @@ class ZeroProcess:
 
         self._child_proc = Process(target=child, args=(ipc_path, target, props))
         self.target = target
-        self.is_background = background
+        self._is_background = background
 
     def start(self):
         """
@@ -336,7 +332,7 @@ class ZeroProcess:
         if not self.is_alive:
             self._child_proc.start()
 
-        if not self.is_background:
+        if not self._is_background:
             atexit.register(partial(kill_if_alive, pid=self._child_proc.pid))
 
         return self._child_proc.pid
@@ -392,18 +388,22 @@ class Context:
 
         :param background: Whether to all run processes under this context as background tasks.\n
                            Background tasks keep running even when your main (parent) script finishes execution.
+
+        :ivar child_pids: A :code:`set` of pids (:code:`int`) of running processes under this Context
+        :ivar child_procs: A :code:`list` of :code:`ZeroProcess` instances launched under this Context
+        :ivar state: The :code:`ZeroState` object associated with this Context
         """
 
         self.child_pids = set()
         self.child_procs = []
-        self.is_background = background
+        self._is_background = background
 
         self._ipc_path = get_random_ipc()
-        self._state_proc = Process(target=state_server, args=(self._ipc_path,))
-        self._state_proc.start()
+        self._server_proc = Process(target=state_server, args=(self._ipc_path,))
+        self._server_proc.start()
 
-        if not self.is_background:
-            atexit.register(partial(kill_if_alive, pid=self._state_proc.pid))
+        if not self._is_background:
+            atexit.register(partial(kill_if_alive, pid=self._server_proc.pid))
 
         self.state = ZeroState(self._ipc_path)
 
@@ -415,7 +415,7 @@ class Context:
         :param props: passed on to the target at start(), useful for composing re-usable processes
         :return: A ZeroProcess instance
         """
-        proc = ZeroProcess(self._ipc_path, target, props, self.is_background)
+        proc = ZeroProcess(self._ipc_path, target, props, self._is_background)
 
         self.child_procs.append(proc)
 
@@ -433,7 +433,7 @@ class Context:
         child_procs = []
         for target in targets:
             for _ in range(count):
-                child_procs.append(ZeroProcess(self._ipc_path, target, props, self.is_background))
+                child_procs.append(ZeroProcess(self._ipc_path, target, props, self._is_background))
 
         self.child_procs += child_procs
 
@@ -442,7 +442,10 @@ class Context:
     def stop_all(self):
         """Call ZeroProcess.stop() on all the child processes of this Context"""
         for proc in self.child_procs:
+            pid = proc.pid
             proc.stop()
+
+            self.child_pids.remove(pid)
 
     def start_all(self):
         """Call ZeroProcess.start() on all the child processes of this Context"""
@@ -456,9 +459,13 @@ class Context:
         return pids
 
     def close(self):
-        """Close this context and stop all processes associated with it."""
-        if self._state_proc.is_alive:
-            self._state_proc.terminate()
+        """
+        | Close this context and stop all processes associated with it.
+        | Once closed, you shouldn't use this Context again.
+        """
+        self.stop_all()
 
-        for proc in self.child_procs:
-            proc.stop()
+        if self._server_proc.is_alive():
+            self._server_proc.terminate()
+
+        del self.state

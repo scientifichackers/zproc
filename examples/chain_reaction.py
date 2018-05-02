@@ -1,16 +1,16 @@
 """
-Demonstration of simple synchronization between processes
+Demonstration of a chain reaction to a state change
 
 # Expected output
 
-child0: I set foo to foobar
-child1: foo got updated, so I wake
+main: I set foo to foobar
+child1: foo changed, so I wake, now foo = foobar
 child1: I set foo to bar
 child1: I exit
 child2: foo changed to bar, so I wake
 child2: I exit
 
-child0: I exit
+main: I exit
 """
 from time import sleep
 
@@ -24,7 +24,7 @@ def foo_equals_bar(state):
 # define a child process
 def child1(state: zproc.ZeroState, props):
     val = state.get_val_when_change('foo')  # wait for foo to change
-    print("child1: foo got updated to {0}, so I wake".format(val))
+    print("child1: foo changed, so I wake, now foo =", val)
 
     state['foo'] = 'bar'  # update bar
     print('child1: I set foo to bar')
@@ -46,8 +46,8 @@ ctx.start_all()  # start all processes in context
 sleep(1)  # sleep for no reason
 
 ctx.state['foo'] = 'foobar'  # set initial state
-print('child0: I set foo to foobar')
+print('main: I set foo to foobar')
 
 input()  # wait for user input before exit
 
-print('child0: I exit')
+print('main: I exit')

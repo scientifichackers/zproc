@@ -1,100 +1,70 @@
 # ZProc - Process on steroids
-zproc is short for [Zero](http://zguide.zeromq.org/page:all#The-Zen-of-Zero) - [Process](https://docs.python.org/3.6/library/multiprocessing.html#multiprocessing.Process)
+##### Multi-Processing how it should've been.
+
+ZProc is short for [Zero](http://zguide.zeromq.org/page:all#The-Zen-of-Zero) - [Process](https://docs.python.org/3.6/library/multiprocessing.html#multiprocessing.Process)
 
 >generally, "zero" refers to the culture of minimalism that permeates the project. We add power by removing complexity rather than by exposing new functionality.
 
-zproc aims to reduce the pain of multi-processing by
+ZProc aims to reduce the pain of multi-processing by
 
 - 🌠
-    - Sync-ing  application state across all processes (without shared varialbes!).
+    - Literally allowing you to use a global, shared, mutable, state object (`dict`) without having to worry about the atomicity of your operations and race conditions.
+        - made possible using the zproc server. Read [Inner Workings](https://github.com/pycampers/zproc#inner-workings) .
 - 🌠
-    - Giving you the freedom to build any combination of synchronous or asynchronous systems.
+    - Sync-ing global state across all processes (without shared varialbes!)
+- 🌠
+    - Giving you the freedom to build any combination of synchronous and asynchronous systems.
+        - Read [here](http://zproc.readthedocs.io/en/latest/source/zproc.html#zproc.zproc.ZeroState) for more. Basically,
+        > It allows you to watch for changes in your state, without having to worry about irrelevant details
 - 🌠
     - Remembers to kill processes when exiting, for general peace.
+- 🌠
+    - Keeps a record of processes created using ZProc. Read [here](file:///home/dev/Projekt/zproc/docs/_build/source/zproc.html#zproc.zproc.Context) for more
 
 # Documentation
 
 [Read the docs](http://zproc.readthedocs.io/en/latest/)
 
 
-# Learning ZProc
+# Examples
 
-The simplest way to learn zproc is to skim through the examples in following order:
+The simplest way to see zproc in action is to skim through the examples:
 
-- `simple_sync.py`
+- `chain_reaction.py`
+- `all_sync.py`
 - `luck_test.py`
+
+They should be pretty self-explanatory. I am happy to make these examples better, since I use them as test-cases for testing ZProc.
 
 These can be found under the `examples` directory.
 
-# Example
-###### `state` is NOT a shared variable!. It's actually a remote object that is wrapped to behave like a dict.
 
-
-```python
-# example.py
-
-from time import sleep
-
-import zproc
-
-
-def foo_equals_bar(state):
-    return state.get('foo') == 'bar'
-
-
-# define a child process
-def child1(state, props):
-    state.get_when_change('foo')  # wait for foo to change
-    print("child1: foo got updated, so I wake")
-
-    state['foo'] = 'bar'  # update bar
-    print('child1: I set foo to bar')
-    print('child1: I exit')
-
-
-# define another child process
-def child2(state, props):
-    state.get_when(foo_equals_bar)  # wait for foo_equals_bar
-    print('child2: foo changed to bar, so I wake')
-    print('child2: I exit')
-
-
-ctx = zproc.Context()  # create a context for us to work with
-
-ctx.process_factory(child1, child2)  # give the context some processes to work with
-ctx.start_all()  # start all processes in context
-
-sleep(1)  # sleep for no reason
-
-ctx.state['foo'] = 'foobar'  # set initial state
-print('child0: I set foo to foobar')
-
-input()  # wait for user input before exit
-
-print('child0: I exit')
-```
-
-###### output
-```
-child0: I set foo to foobar
-child1: foo got updated, so I wake
-child1: I set foo to bar
-child1: I exit
-child2: foo changed to bar, so I wake
-child2: I exit
-
-child0: I exit
-```
+# Is this
+- production-ready?
+    - No. But it will soon be!
+    - I work on it regulary since its the backbone of a number of my own projects.
+- fast?
+    - plenty, since its written with ZMQ.
+    - See `luck_test.py` example for a taste.
+    - NOT enough for very large applications, but enough for small to medium sized applications.
+- stable?
+    - No.
+    - I tend to make some fast changes that end up breaking my code.
+    - I am actively writing tests to help with this though.
+- Real?
+    - YES. It works. See it [here](https://github.com/pycampers/muro) in action.
+- Windows / Mac compatible?
+    - I honestly don't know. Please tell me.
 
 # Inner Workings
 
 - The process(s) communicate over zmq sockets, over `ipc://`.
 
 - Zproc runs a zproc server, which is responsible for storing and managing the state.
-
-    - store the state whenever it is updated, by another process.
-
+    - update the state whenever another process updates it.
     - transmitt the state whenever a process needs to access it.
+
+- Overall, the zproc server helps create an illusion of a global shared state when actually, it isn't shared at all!
 
 - If a process wishes to synchronize at a certain condition, it can attach a handler to the zproc server.
 
@@ -106,17 +76,11 @@ child0: I exit
 
 # Caveats
 
-- The state only gets updated if you do it directly. This means that if you mutate objects in the state, they wont get updated in global state.
+- The state only gets updated if you do it directly. This means that if you mutate objects inside the state, they wont get updated in global state.
 
 - It runs an extra daemonic server for managing the state. Its fairly lightweight though, and shouldn't add too much weight to your application.
 
 - The state should be pickle-able
-
-<!-- - The state is required to be marshal compatible, which means: -->
-
-<!-- > The following types are supported: booleans, integers, floating point numbers, complex numbers, strings, bytes, bytearrays, tuples, lists, sets, frozensets, dictionaries, and code objects, where it should be understood that tuples, lists, sets, frozensets and dictionaries are only supported as long as the values contained therein are themselves supported. The singletons None, Ellipsis and StopIteration can also be marshalled and unmarshalled -->
-
-(from python [docs](https://docs.python.org/3/library/marshal.html))
 
 # Known issues
 
@@ -130,7 +94,7 @@ child0: I exit
 
 # Build documentation
 
-assuming you have sphinx installed
+assuming you have sphinx installed (Linux)
 ```
 cd docs
 ./build.sh
