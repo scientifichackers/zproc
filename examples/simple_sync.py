@@ -23,7 +23,7 @@ def foo_equals_bar(state):
 
 # define a child process
 def child1(state: zproc.ZeroState, props):
-    val = state.get_val_when_change('foo') # wait for foo to change
+    val = state.get_val_when_change('foo')  # wait for foo to change
     print("child1: foo got updated to {0}, so I wake".format(val))
 
     state['foo'] = 'bar'  # update bar
@@ -40,10 +40,8 @@ def child2(state: zproc.ZeroState, props):
 
 ctx = zproc.Context()  # create a context for us to work with
 
-
 ctx.process_factory(child1, child2)  # give the context some processes to work with
 ctx.start_all()  # start all processes in context
-
 
 sleep(1)  # sleep for no reason
 

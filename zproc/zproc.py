@@ -157,6 +157,23 @@ class ZeroState:
 
                 :code:`value='some value'`
 
+        .. code-block:: python
+            :caption: Example1 (blocks forever)
+
+            >>> state['foo'] = 'bar'
+
+            >>> # blocks until foo is set to anything other than 'bar'
+            >>> state.get_val_when_change('foo') # will block forever...
+
+        .. code-block:: python
+            :caption: Example2 (doesn't block, returns immediately)
+
+            >>> state['foo'] = 'bar'
+
+            >>> # blocks until foo is set to anything other than 'foobar'
+            >>> state.get_val_when_change('foo', value='foobar')
+            'bar'
+            >>> # unblocked
         """
         req = {MSGS.ACTION: ACTIONS.add_val_chng_hand, MSGS.state_key: key}
 
