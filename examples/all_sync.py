@@ -7,10 +7,10 @@ A test of all synchronization techniques ZProc has to offer
 main: I set foo to foobar
 main: child processes started
 main: I set foo to xxx
-child6: foo changed, so I wake, now state = {'foo': 'xxx'}
 child5: something changed, so I wake
-child3: foo changed, so I wake, now foo = xxx
-child4: foo changed from foobar, so I wake, now foo = xxx
+child6: foo changed, so I wake, now state = {'foo': 'xxx'}
+child3: foo doesnt equal foobar, so I wake, now foo = xxx
+child4: foo changed, so I wake, now foo = xxx
 main: I set foo to bar
 child1: foo_equals_bar so I wake, now state =  {'foo': 'bar'}
 child2: foo equals bar, so I wake
@@ -37,13 +37,13 @@ def child2(state: zproc.ZeroState, props):
 
 
 def child3(state: zproc.ZeroState, props):
-    val = state.get_val_when_change('foo')
-    print('child3: foo changed, so I wake, now foo =', val)
+    val = state.get_when_not_equal('foo', 'foobar')
+    print('child3: foo doesnt equal foobar, so I wake, now foo =', val)
 
 
 def child4(state: zproc.ZeroState, props):
-    val = state.get_val_when_change('foo', value='foobar')
-    print('child4: foo changed from foobar, so I wake, now foo =', val)
+    val = state.get_val_when_change('foo')
+    print('child4: foo changed, so I wake, now foo =', val)
 
 
 def child5(state: zproc.ZeroState, props):

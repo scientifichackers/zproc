@@ -87,9 +87,12 @@ class ZeroState:
 
     | It also provides the following methods, as a substitute for traditional synchronization primitives.
 
+    - get_when_equal()
+    - get_when_not_equal()
     - get_when_change()
     - get_val_when_change()
     - get_when()
+
 
     | These methods are the reason why ZProc is better than traditional multi-processing.
     | They allow you to watch for changes in your state, without having to worry about irrelevant details.
@@ -126,8 +129,24 @@ class ZeroState:
 
         return data
 
-    # def stop_server(self):
-    #     self.get()
+    def get_when_not_equal(self, key, value):
+        """
+        | Block until :code:`state.get(key) != value`.
+
+        :param key: the key in state dict
+        :param value: the desired value to wait for
+        :return: None
+
+        .. code-block:: python
+            :caption: Example
+
+            >>> state['foo'] = 'bar'
+
+            >>> # blocks until foo is set to anything other than 'foobar'
+            >>> state.get_when_not_equal('foo', 'foobar')
+            'bar'
+        """
+        return self._pull({MSGS.ACTION: ACTIONS.val_change_handler, MSGS.key: key, MSGS.value: value})
 
     def get_when_equal(self, key, value):
         """
@@ -135,9 +154,10 @@ class ZeroState:
 
         :param key: the key in state dict
         :param value: the desired value to wait for
-        :return: None
+        :return: :code:`value`
         """
-        self._pull({MSGS.ACTION: ACTIONS.equals_handler, MSGS.key: key, MSGS.value: value})
+        if self._pull({MSGS.ACTION: ACTIONS.equals_handler, MSGS.key: key, MSGS.value: value}):
+            return value
 
     def get_when_change(self, *keys):
         """
@@ -149,49 +169,23 @@ class ZeroState:
         """
         return self._pull({MSGS.ACTION: ACTIONS.change_handler, MSGS.keys: keys})
 
-    def get_val_when_change(self, key, **kwargs):
+    def get_val_when_change(self, key):
         """
         | Block until a state change is observed in provided key,
         | then return :code:`state.get(key)`.
 
         :param key: the key (of state dict) to watch for changes
-        :param \**kwargs: See below
         :return: value corresponding to the key, in the state
 
-
-        :Keyword Arguments:
-            * *value* --
-                | watch for changes with respect to this value.
-                | Default: value of key in state when function is called.
-
-                :code:`value='some value'`
-
         .. code-block:: python
-            :caption: Example1 (blocks forever)
+            :caption: Example
 
             >>> state['foo'] = 'bar'
 
             >>> # blocks until foo is set to anything other than 'bar'
             >>> state.get_val_when_change('foo') # will block forever...
-
-        .. code-block:: python
-            :caption: Example2 (doesn't block, returns immediately)
-
-            >>> state['foo'] = 'bar'
-
-            >>> # blocks until foo is set to anything other than 'foobar'
-            >>> state.get_val_when_change('foo', value='foobar')
-            'bar'
-            >>> # unblocked
         """
-        req = {MSGS.ACTION: ACTIONS.val_change_handler, MSGS.key: key}
-
-        try:
-            req[MSGS.value] = kwargs['value']
-        except KeyError:
-            pass
-
-        return self._pull(req)
+        return self._pull({MSGS.ACTION: ACTIONS.val_change_handler, MSGS.key: key})
 
     def get_when(self, test_fn, *args, **kwargs):
         """
