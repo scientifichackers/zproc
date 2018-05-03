@@ -244,14 +244,14 @@ class ZeroState:
     def values(self):
         return self.get_state_as_dict().values()
 
-    def pop(self, key, default=None):
-        return self._get({MSGS.ACTION: ACTIONS.pop, MSGS.args: (key, default)})
+    def pop(self, *args):
+        return self._get({MSGS.ACTION: ACTIONS.pop, MSGS.args: (*args,)})
 
     def popitem(self):
         return self._get({MSGS.ACTION: ACTIONS.popitem})
 
-    def get(self, key, default=None):
-        return self._get({MSGS.ACTION: ACTIONS.get, MSGS.args: (key, default)})
+    def get(self, *args):
+        return self._get({MSGS.ACTION: ACTIONS.get, MSGS.args: (*args,)})
 
     def clear(self):
         return self._get({MSGS.ACTION: ACTIONS.clear})
@@ -259,8 +259,8 @@ class ZeroState:
     def update(self, *args, **kwargs):
         return self._get({MSGS.ACTION: ACTIONS.update, MSGS.args: args, MSGS.kwargs: kwargs})
 
-    def setdefault(self, key, default=None):
-        return self._get({MSGS.ACTION: ACTIONS.setdefault, MSGS.args: (key, default)})
+    def setdefault(self, *args):
+        return self._get({MSGS.ACTION: ACTIONS.setdefault, MSGS.args: (args)})
 
     def __str__(self):
         return str(self.get_state_as_dict())
@@ -271,23 +271,23 @@ class ZeroState:
     def __copy__(self):
         return self.get_state_as_dict()
 
-    def __setitem__(self, key, value):
-        return self._get({MSGS.ACTION: ACTIONS.setitem, MSGS.args: (key, value)})
+    def __setitem__(self, *args):
+        return self._get({MSGS.ACTION: ACTIONS.setitem, MSGS.args: (*args,)})
 
-    def __delitem__(self, key):
-        return self._get({MSGS.ACTION: ACTIONS.delitem, MSGS.args: (key,)})
+    def __delitem__(self, *args):
+        return self._get({MSGS.ACTION: ACTIONS.delitem, MSGS.args: (*args,)})
 
-    def __getitem__(self, item):
-        return self._get({MSGS.ACTION: ACTIONS.getitem, MSGS.args: (item,)})
+    def __getitem__(self, *args):
+        return self._get({MSGS.ACTION: ACTIONS.getitem, MSGS.args: (*args,)})
 
-    def __contains__(self, item):
-        return self._get({MSGS.ACTION: ACTIONS.contains, MSGS.args: (item,)})
+    def __contains__(self, *args):
+        return self._get({MSGS.ACTION: ACTIONS.contains, MSGS.args: (*args,)})
 
-    def __eq__(self, other):
-        return self._get({MSGS.ACTION: ACTIONS.eq, MSGS.args: (other,)})
+    def __eq__(self, *args):
+        return self._get({MSGS.ACTION: ACTIONS.eq, MSGS.args: (*args,)})
 
-    def __ne__(self, other):
-        return self._get({MSGS.ACTION: ACTIONS.ne, MSGS.args: (other,)})
+    def __ne__(self, *args):
+        return self._get({MSGS.ACTION: ACTIONS.ne, MSGS.args: (*args,)})
 
 
 class ZeroProcess:
