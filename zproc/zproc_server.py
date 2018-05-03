@@ -1,11 +1,15 @@
 import pickle
 import queue
+import sys
 from collections import defaultdict
 from pathlib import Path
 # from time import sleep
 from uuid import uuid1
 
 import zmq
+from tblib import pickling_support
+
+pickling_support.install()
 
 
 class ACTIONS:
@@ -101,10 +105,10 @@ class ZProcServer:
         self.sock = self.ctx.socket(zmq.ROUTER)
         self.sock.bind(ipc_path)
 
-    def pysend(self, ident, msg):
+    def send_pyobj(self, ident, msg):
         return self.sock.send_multipart([ident, pickle.dumps(msg, protocol=pickle.HIGHEST_PROTOCOL)])
 
-    def pyrecv(self):
+    def recv_pyobj(self):
         ident, msg = self.sock.recv_multipart()
         return ident, pickle.loads(msg)
 
@@ -113,13 +117,13 @@ class ZProcServer:
 
     def send_state(self, ident, msg=None):
         """Sends the state back to a process"""
-        self.pysend(ident, self.state)
+        self.send_pyobj(ident, self.state)
 
     # on change handler
 
     def add_change_handler(self, ident, msg):
         ipc_path = get_random_ipc()
-        self.pysend(ident, ipc_path)
+        self.send_pyobj(ident, ipc_path)
 
         keys = msg.get(MSGS.keys)
 
@@ -147,7 +151,7 @@ class ZProcServer:
                 if old != new:
                     sock = self.ctx.socket(zmq.PUSH)
                     sock.bind(ipc_path)
-                    sock.send(pickle.dumps(self.state, protocol=pickle.HIGHEST_PROTOCOL))
+                    sock.send_pyobj(self.state, protocol=pickle.HIGHEST_PROTOCOL)
                     sock.close()
                 else:
                     to_put_back.append((ipc_path, old))
@@ -159,7 +163,7 @@ class ZProcServer:
 
     def add_val_change_handler(self, ident, msg):
         ipc_path = get_random_ipc()
-        self.pysend(ident, ipc_path)
+        self.send_pyobj(ident, ipc_path)
 
         key = msg.get(MSGS.key)
 
@@ -184,7 +188,7 @@ class ZProcServer:
                 if old != new:
                     sock = self.ctx.socket(zmq.PUSH)
                     sock.bind(ipc_path)
-                    sock.send(pickle.dumps(self.state.get(key), protocol=pickle.HIGHEST_PROTOCOL))
+                    sock.send_pyobj(self.state.get(key), protocol=pickle.HIGHEST_PROTOCOL)
                     sock.close()
                 else:
                     to_put_back.append((ipc_path, old))
@@ -196,7 +200,7 @@ class ZProcServer:
 
     def add_equals_handler(self, ident, msg):
         ipc_path = get_random_ipc()
-        self.pysend(ident, ipc_path)
+        self.send_pyobj(ident, ipc_path)
 
         self.equals_handlers.put(
             (msg.get(MSGS.key), msg.get(MSGS.value), ipc_path)
@@ -211,7 +215,7 @@ class ZProcServer:
             if self.state.get(key) == value:
                 sock = self.ctx.socket(zmq.PUSH)
                 sock.bind(ipc_path)
-                sock.send(pickle.dumps(True, protocol=pickle.HIGHEST_PROTOCOL))
+                sock.send_pyobj(True, protocol=pickle.HIGHEST_PROTOCOL)
                 sock.close()
             else:
                 to_put_back.append((key, value, ipc_path))
@@ -223,7 +227,7 @@ class ZProcServer:
 
     def add_condition_handler(self, ident, msg):
         ipc_path = get_random_ipc()
-        self.pysend(ident, ipc_path)
+        self.send_pyobj(ident, ipc_path)
 
         self.condition_handlers.put((
             ipc_path,
@@ -241,7 +245,7 @@ class ZProcServer:
             if test_fn(self.state, *args, **kwargs):
                 sock = self.ctx.socket(zmq.PUSH)
                 sock.bind(ipc_path)
-                sock.send(pickle.dumps(self.state, protocol=pickle.HIGHEST_PROTOCOL))
+                sock.send_pyobj(self.state, protocol=pickle.HIGHEST_PROTOCOL)
                 sock.close()
             else:
                 to_put_back.append((ipc_path, test_fn, args, kwargs))
@@ -256,6 +260,17 @@ class ZProcServer:
         self.resolve_equals_handler()
 
 
+class ZProcServerException:
+    def __init__(self):
+        self.exc = sys.exc_info()
+
+    def reraise(self):
+        raise self.exc[0].with_traceback(self.exc[1], self.exc[2])
+
+    def __str__(self):
+        return str(self.exc)
+
+
 def state_server(ipc_path):
     # sleep(1)
     server = ZProcServer(ipc_path)
@@ -263,32 +278,36 @@ def state_server(ipc_path):
 
     # server mainloop
     while True:
-        ident, msg = server.pyrecv()
-        # print('server', msg, 'from', ident)
-        action = msg.get(MSGS.ACTION)
+        ident, msg = server.recv_pyobj()
 
-        if action is not None:
-            try:
-                getattr(server, action)(ident, msg)
-            except AttributeError:
-                args, kwargs = msg.get(MSGS.args), msg.get(MSGS.kwargs)
-                fn = getattr(server.state, action)
+        try:
+            # print('server', msg, 'from', ident)
+            action = msg.get(MSGS.ACTION)
 
-                is_mutable_action = action in ACTIONS_THAT_MUTATE
-
-                if is_mutable_action:
-                    old_state = server.state.copy()
-
-                if args is None:
-                    if kwargs is None:
-                        server.pysend(ident, fn())
-                    else:
-                        server.pysend(ident, fn(**kwargs))
+            if action is not None:
+                if hasattr(server, action):
+                    getattr(server, action)(ident, msg)
                 else:
-                    if kwargs is None:
-                        server.pysend(ident, fn(*args))
-                    else:
-                        server.pysend(ident, fn(*args, **kwargs))
+                    args, kwargs = msg.get(MSGS.args), msg.get(MSGS.kwargs)
+                    fn = getattr(server.state, action)
 
-                if is_mutable_action and old_state != server.state:
-                    server.resolve_handlers()
+                    is_mutable_action = action in ACTIONS_THAT_MUTATE
+
+                    if is_mutable_action:
+                        old_state = server.state.copy()
+
+                    if args is None:
+                        if kwargs is None:
+                            server.send_pyobj(ident, fn())
+                        else:
+                            server.send_pyobj(ident, fn(**kwargs))
+                    else:
+                        if kwargs is None:
+                            server.send_pyobj(ident, fn(*args))
+                        else:
+                            server.send_pyobj(ident, fn(*args, **kwargs))
+
+                    if is_mutable_action and old_state != server.state:
+                        server.resolve_handlers()
+        except Exception:
+            server.send_pyobj(ident, ZProcServerException())

@@ -7,7 +7,7 @@ from multiprocessing import Process, current_process
 
 import zmq
 
-from .zproc_server import ACTIONS, MSGS, state_server, get_random_ipc
+from .zproc_server import ACTIONS, MSGS, state_server, get_random_ipc, ZProcServerException
 
 # from time import sleep
 
@@ -33,20 +33,6 @@ Here are the basic rules for multi-processing, as I understand them.
 
 Hope we all learned something today.
 """
-
-
-def pysend(sock, msg):
-    data = pickle.dumps(msg, protocol=pickle.HIGHEST_PROTOCOL)
-    # print('sending',msg, data)
-    return sock.send(data)
-    # print('sent')
-
-
-def pyrecv(sock):
-    # print('recv')
-    data = pickle.loads(sock.recv())
-    # print('recv', data)
-    return data
 
 
 def kill_if_alive(pid):
@@ -116,15 +102,20 @@ class ZeroState:
         # sleep(1)
 
     def _get(self, msg):
-        pysend(self._sock, msg)
-        return pyrecv(self._sock)
+        self._sock.send_pyobj(msg, protocol=pickle.HIGHEST_PROTOCOL)
+        data = self._sock.recv_pyobj()
+
+        if isinstance(data, ZProcServerException):
+            data.reraise()
+
+        return data
 
     def _pull(self, msg):
         ipc_path = self._get(msg)
 
         sock = self._ctx.socket(zmq.PULL)
         sock.connect(ipc_path)
-        data = pickle.loads(sock.recv())
+        data = sock.recv_pyobj()
         sock.close()
 
         return data
