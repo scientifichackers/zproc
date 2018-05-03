@@ -18,11 +18,12 @@ URL = 'https://github.com/devxpy/zproc'
 EMAIL = 'devxpy@gmail.com'
 AUTHOR = 'Dev Aggarwal'
 REQUIRES_PYTHON = '>=3'
-VERSION = '0.2.7'
+VERSION = '0.2.8'
 
 # What packages are required for this module to be executed?
 REQUIRED = [
-    'pyzmq'
+    'pyzmq',
+    'tblib'
 ]
 
 # The rest you shouldn't have to touch too much :)
