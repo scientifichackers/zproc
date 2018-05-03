@@ -111,7 +111,8 @@ class ZProcServer:
     def get_keys_cmp(self, state_keys):
         return [self.state.get(state_key) for state_key in state_keys]
 
-    def send_state(self, ident):
+    def send_state(self, ident, msg=None):
+        """Sends the state back to a process"""
         self.pysend(ident, self.state)
 
     # on change handler
