@@ -19,7 +19,7 @@ ZProc aims to reduce the pain of multi-processing by
 - 🌠
     - Remembers to kill processes when exiting, for general peace.
 - 🌠
-    - Keeps a record of processes created using ZProc. Read [here](file:///home/dev/Projekt/zproc/docs/_build/source/zproc.html#zproc.zproc.Context) for more
+    - Keeps a record of processes created using ZProc. Read [here](http://zproc.readthedocs.io/en/latest/source/zproc.html#zproc.zproc.Context) for more
 
 # Documentation
 
@@ -99,3 +99,7 @@ assuming you have sphinx installed (Linux)
 cd docs
 ./build.sh
 ```
+
+# Thanks
+
+- Thanks to [tblib](https://github.com/ionelmc/python-tblib) ZProc can raise First-class Exceptions from the zproc server!
