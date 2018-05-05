@@ -26,7 +26,7 @@ ZProc aims to reduce the pain of multi-processing with the aid of following -
 
 - ☄ Batch Operations
     - Allows you to perform a bunch of operations on state as a singe, atomic operation.
-    - Read more here.
+    - Read more [here](http://zproc.readthedocs.io/en/latest/source/zproc.html#zproc.zproc.ZeroState.lock_state) .
 
 
 # Documentation
