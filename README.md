@@ -7,14 +7,14 @@ ZProc is short for [Zero](http://zguide.zeromq.org/page:all#The-Zen-of-Zero) - [
 
 ZProc aims to reduce the pain of multi-processing with the aid of following -
 
-- ☄ Global State management
+- ☄️ Global State management
     - Literally allows you to use a global, shared, mutable, state object (`dict`) without having to worry about the atomicity of your operations and race conditions.
     - Made possible using the zproc server. Read [Inner Workings](https://github.com/pycampers/zproc#inner-workings) .
 
-- ☄ State synchronization
+- ☄️ State synchronization
     - Sync-ing global state across all processes (without shared varialbes!)
 
-- ☄ Async/Synchronous paradims without `async def`
+- ☄️ Async/Synchronous paradims without `async def`
     - Give you the freedom to build any combination of synchronous and asynchronous systems.
     - Read [here](http://zproc.readthedocs.io/en/latest/source/zproc.html#zproc.zproc.ZeroState) for more. Basically,
     > Allows you to watch for changes in your state, without having to worry about irrelevant details
@@ -24,7 +24,7 @@ ZProc aims to reduce the pain of multi-processing with the aid of following -
     - Remembers to kill processes when exiting, for general peace.
     - Keeps a record of processes created using ZProc. Read [here](http://zproc.readthedocs.io/en/latest/source/zproc.html#zproc.zproc.Context) for more
 
-- ☄ Batch Operations
+- ☄️ Batch Operations
     - Allows you to perform a bunch of operations on state as a singe, atomic operation.
     - Read more [here](http://zproc.readthedocs.io/en/latest/source/zproc.html#zproc.zproc.ZeroState.lock_state) .
 
