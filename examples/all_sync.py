@@ -56,26 +56,29 @@ def child6(state: zproc.ZeroState, props):
     print('child6: foo changed, so I wake, now state =', val)
 
 
-ctx = zproc.Context()  # create a context for us to work with
+if __name__ == '__main__':
+    ctx = zproc.Context()  # create a context for us to work with
 
-ctx.state['foo'] = 'foobar'
-print('main: I set foo to foobar')
+    ctx.state['foo'] = 'foobar'
+    print('main: I set foo to foobar')
 
-ctx.process_factory(child1, child2, child3, child4, child5, child6)  # give the context some processes to work with
-ctx.start_all()  # start all processes in context
+    ctx.process_factory(child1, child2, child3, child4, child5, child6)  # give the context some processes to work with
+    ctx.start_all()  # start all processes in context
 
-print('main: child processes started')
+    iter(ctx.state)
 
-sleep(2)  # sleep for no reason
+    print('main: child processes started')
 
-ctx.state['foo'] = 'xxx'  # set initial state
-print('main: I set foo to xxx')
+    sleep(2)  # sleep for no reason
 
-sleep(2)  # sleep for no reason
+    ctx.state['foo'] = 'xxx'  # set initial state
+    print('main: I set foo to xxx')
 
-ctx.state['foo'] = 'bar'  # set initial state
-print('main: I set foo to bar')
+    sleep(2)  # sleep for no reason
 
-input()  # wait for user input before exit
+    ctx.state['foo'] = 'bar'  # set initial state
+    print('main: I set foo to bar')
 
-print('child0: I exit')
+    input()  # wait for user input before exit
+
+    print('child0: I exit')

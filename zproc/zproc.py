@@ -25,7 +25,8 @@ Don't come crying.
 Here are the basic rules for multi-processing, as I understand them.
 
 1. Synchronization primitives (locks) are extremely hard to use correctly, so just don't use them at all.
-2. The existence of global mutable state indicates a flaw in the application’s design, which you should review and change.
+2. The existence of global mutable state indicates a flaw in the application’s design, 
+   which you should review and change.
 3. Don't launch processes inside processes.
 4. Don't launch processes inside processes.
 5. Don't launch processes inside processes.
@@ -33,14 +34,64 @@ Here are the basic rules for multi-processing, as I understand them.
 
 Hope we all learned something today.
 """
+DICT_ATTRS = (
+    '__contains__',
+    '__delitem__',
+    '__eq__',
+    '__format__',
+    '__getitem__',
+    '__iter__',
+    '__len__',
+    '__ne__',
+    '__setitem__',
+    'clear',
+    'copy',
+    'fromkeys',
+    'get',
+    'items',
+    'keys',
+    'pop',
+    'popitem',
+    'setdefault',
+    'update',
+    'values'
+)
 
 
-def kill_if_alive(pid):
-    try:
-        os.kill(pid, signal.SIGTERM)
-    except ProcessLookupError:
-        pass
+class ZeroStateLock:
+    def __init__(self, state):
+        self.zstate = state
+        self.sock, self.ipc_path, self.locked_state, = None, None, None
 
+    def __enter__(self):
+        self.ipc_path, self.locked_state = self.zstate._req_rep({MSGS.action: ACTIONS.lock_state})
+        return self.locked_state
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        ctx = zmq.Context()
+        self.sock = ctx.socket(zmq.PUSH)
+        self.sock.connect(self.ipc_path)
+        # print(self.ipc_path, 51)
+        self.sock.send_pyobj(self.locked_state, protocol=pickle.HIGHEST_PROTOCOL)
+        # print(self.ipc_path, 52)
+        self.sock.close()
+
+
+#
+#
+# class ZeroStateLock:
+#     def __init__(self, state):
+#         self.zstate = state
+#         self.locked_state = None
+#
+#     def __enter__(self):
+#         self.locked_state = self.zstate._req_rep({MSGS.ACTION: ACTIONS.lock_state})
+#
+#         return self.locked_state
+#
+#     def __exit__(self, exc_type, exc_val, exc_tb):
+#         self.zstate._req_rep({MSGS.ACTION: ACTIONS.unlock_state, MSGS.state: self.locked_state})
+#
 
 class ZeroState:
     """
@@ -50,28 +101,7 @@ class ZeroState:
 
     :param ipc_path: The ipc path of the zproc servers
 
-    | It provides the following methods, to make it feel like a dict
-
-    - get()
-    - pop()
-    - popitem()
-    - clear()
-    - update()
-    - setdefault()
-    - clear()
-    - items()
-    - keys()
-    - values()
-    - __setitem__()  | :code:`state['foo'] = 'bar'`
-    - __delitem__()  | :code:`del state['foo']`
-    - __getitem__()  | :code:`state['foo']`
-    - __contains__() | :code:`'foo' in state`
-    - __eq__ ()      | :code:`{'foo': 'bar'} == state`
-    - __ne__ ()      | :code:`{'foo': 'bar'} != state`
-    - __copy__()     | :code:`state_copy = state.copy()`
-    - __copy__()     | :code:`state_copy = state.copy()`
-
-    | It also provides the following methods, as a substitute for traditional synchronization primitives.
+    | It provides the following methods, as a substitute for traditional synchronization primitives.
 
     - get_when_equal()
     - get_when_not_equal()
@@ -93,6 +123,29 @@ class ZeroState:
               |
               | Keep these in mind when developing performance-critical applications.
 
+    | It also provides the following methods, to make the state feel like a dict
+
+    - __contains__()
+    - __delitem__()
+    - __eq__()
+    - __format__()
+    - __getitem__()
+    - __iter__()
+    - __len__()
+    - __ne__()
+    - __setitem__()
+    - clear()
+    - copy()
+    - fromkeys()
+    - get()
+    - items()
+    - keys()
+    - pop()
+    - popitem()
+    - setdefault()
+    - update()
+    - values()
+
     """
 
     def __init__(self, ipc_path):
@@ -101,24 +154,57 @@ class ZeroState:
         self._sock.connect(ipc_path)
         # sleep(1)
 
-    def _get(self, msg):
+        super().__init__()
+
+    def _req_rep(self, msg):
+        """Send a request (containing msg) to server and return the reply"""
         self._sock.send_pyobj(msg, protocol=pickle.HIGHEST_PROTOCOL)
         data = self._sock.recv_pyobj()
 
         if isinstance(data, ZProcServerException):
             data.reraise()
+        else:
+            return data
 
-        return data
-
-    def _pull(self, msg):
-        ipc_path = self._get(msg)
+    def _req_rep_pull(self, msg):
+        """Call req_rep(msg) and then pull from the ipc_path returned in reply"""
+        ipc_path = self._req_rep(msg)
 
         sock = self._ctx.socket(zmq.PULL)
         sock.connect(ipc_path)
         data = sock.recv_pyobj()
+
         sock.close()
 
-        return data
+        if isinstance(data, ZProcServerException):
+            data.reraise()
+        else:
+            return data
+
+    def lock_state(self):
+        """
+        :return: ZeroStateLock
+
+        | Sometimes, you want to lock the state to a certain Process.
+        |
+        | More specifically, you don't want any other process to access the state, for a little while.
+        | More abstractly, this feature allows you to do a bunch of operations on the state as one, big, atomic operation.
+        |
+        | Meant to be used as a context manager only.
+
+
+        .. code-block:: python
+            :caption: Example
+
+            with state.lock_state() as locked_state:
+                # Do something with the locked_state (a dict)
+                # BTW, other processes may NOT access the state here !
+
+            # other processes are free to access the state now
+
+        | The locked_state is automatically synchronized with global state when the context manager exits.
+        """
+        return ZeroStateLock(self)
 
     def get_when_not_equal(self, key, value):
         """
@@ -137,7 +223,7 @@ class ZeroState:
             >>> state.get_when_not_equal('foo', 'foobar')
             'bar'
         """
-        return self._pull({MSGS.ACTION: ACTIONS.val_change_handler, MSGS.key: key, MSGS.value: value})
+        return self._req_rep_pull({MSGS.action: ACTIONS.val_change_handler, MSGS.key: key, MSGS.value: value})
 
     def get_when_equal(self, key, value):
         """
@@ -147,7 +233,7 @@ class ZeroState:
         :param value: the desired value to wait for
         :return: :code:`value`
         """
-        if self._pull({MSGS.ACTION: ACTIONS.equals_handler, MSGS.key: key, MSGS.value: value}):
+        if self._req_rep_pull({MSGS.action: ACTIONS.equals_handler, MSGS.key: key, MSGS.value: value}):
             return value
 
     def get_when_change(self, *keys):
@@ -158,7 +244,7 @@ class ZeroState:
         :param \*keys: only watch for changes in these keys (of state dict)
         :return: dict (state)
         """
-        return self._pull({MSGS.ACTION: ACTIONS.change_handler, MSGS.keys: keys})
+        return self._req_rep_pull({MSGS.action: ACTIONS.change_handler, MSGS.keys: keys})
 
     def get_val_when_change(self, key):
         """
@@ -176,7 +262,7 @@ class ZeroState:
             >>> # blocks until foo is set to anything other than 'bar'
             >>> state.get_val_when_change('foo') # will block forever...
         """
-        return self._pull({MSGS.ACTION: ACTIONS.val_change_handler, MSGS.key: key})
+        return self._req_rep_pull({MSGS.action: ACTIONS.val_change_handler, MSGS.key: key})
 
     def get_when(self, test_fn, *args, **kwargs):
         """
@@ -215,70 +301,87 @@ class ZeroState:
                   | If you try to access local variables without putting them through the args,
                   | an :code:`AttributeError: Can't pickle local object` shall be returned.
         """
-        return self._pull({
-            MSGS.ACTION: ACTIONS.condition_handler,
+        return self._req_rep_pull({
+            MSGS.action: ACTIONS.condition_handler,
             MSGS.testfn: test_fn,
             MSGS.args: args,
             MSGS.kwargs: kwargs
         })
 
-    def get_state_as_dict(self):
-        """Get the state from the zproc server and return as dict"""
-        return self._get({MSGS.ACTION: ACTIONS.get_state})
+    def _get_remote_attr(self, name):
+        dictattr = getattr(dict, name)
 
-    def items(self):
-        return self.get_state_as_dict().items()
+        if callable(dictattr):
+            def remote_attr(*args, **kwargs):
+                return self._req_rep({
+                    MSGS.action: ACTIONS.get_state_callable,
+                    MSGS.attr_name: name,
+                    MSGS.args: args,
+                    MSGS.kwargs: kwargs
+                })
+
+            return remote_attr
+        else:
+            return self._req_rep({
+                MSGS.action: ACTIONS.get_state_attr,
+                MSGS.attr_name: name,
+            })
+
+    def __getattr__(self, item):
+        if item in DICT_ATTRS:
+            return self._get_remote_attr(item)
+        else:
+            raise AttributeError
+
+    def copy(self):
+        return self._req_rep({MSGS.action: ACTIONS.get_state})
 
     def keys(self):
-        return self.get_state_as_dict().keys()
+        return self.copy().keys()
+
+    def items(self):
+        return self.copy().items()
 
     def values(self):
-        return self.get_state_as_dict().values()
-
-    def pop(self, *args):
-        return self._get({MSGS.ACTION: ACTIONS.pop, MSGS.args: (*args,)})
-
-    def popitem(self):
-        return self._get({MSGS.ACTION: ACTIONS.popitem})
-
-    def get(self, *args):
-        return self._get({MSGS.ACTION: ACTIONS.get, MSGS.args: (*args,)})
-
-    def clear(self):
-        return self._get({MSGS.ACTION: ACTIONS.clear})
-
-    def update(self, *args, **kwargs):
-        return self._get({MSGS.ACTION: ACTIONS.update, MSGS.args: args, MSGS.kwargs: kwargs})
-
-    def setdefault(self, *args):
-        return self._get({MSGS.ACTION: ACTIONS.setdefault, MSGS.args: (args)})
+        return self.copy().values()
 
     def __str__(self):
-        return str(self.get_state_as_dict())
+        return '<ZeroState {0}>'.format(self.copy())
 
-    def __repr__(self):
-        return '<ZeroState {0}>'.format(str(self))
+    def __contains__(self, *args, **kwargs):
+        return self._get_remote_attr('__contains__')(*args, **kwargs)
 
-    def __copy__(self):
-        return self.get_state_as_dict()
+    def __delitem__(self, *args, **kwargs):
+        return self._get_remote_attr('__delitem__')(*args, **kwargs)
 
-    def __setitem__(self, *args):
-        return self._get({MSGS.ACTION: ACTIONS.setitem, MSGS.args: (*args,)})
+    def __eq__(self, *args, **kwargs):
+        return self._get_remote_attr('__eq__')(*args, **kwargs)
 
-    def __delitem__(self, *args):
-        return self._get({MSGS.ACTION: ACTIONS.delitem, MSGS.args: (*args,)})
+    def __format__(self, *args, **kwargs):
+        return self._get_remote_attr('__format__')(*args, **kwargs)
 
-    def __getitem__(self, *args):
-        return self._get({MSGS.ACTION: ACTIONS.getitem, MSGS.args: (*args,)})
+    def __getitem__(self, *args, **kwargs):
+        return self._get_remote_attr('__getitem__')(*args, **kwargs)
 
-    def __contains__(self, *args):
-        return self._get({MSGS.ACTION: ACTIONS.contains, MSGS.args: (*args,)})
+    def __iter__(self, *args, **kwargs):
+        return self._get_remote_attr('__iter__')(*args, **kwargs)
 
-    def __eq__(self, *args):
-        return self._get({MSGS.ACTION: ACTIONS.eq, MSGS.args: (*args,)})
+    def __len__(self, *args, **kwargs):
+        return self._get_remote_attr('__len__')(*args, **kwargs)
 
-    def __ne__(self, *args):
-        return self._get({MSGS.ACTION: ACTIONS.ne, MSGS.args: (*args,)})
+    def __ne__(self, *args, **kwargs):
+        return self._get_remote_attr('__ne__')(*args, **kwargs)
+
+    def __setitem__(self, *args, **kwargs):
+        return self._get_remote_attr('__setitem__')(*args, **kwargs)
+
+
+def terminate_safe(pid):
+    """Send SIGTERM to a pid. Ignore if it doesn't exist"""
+    try:
+        os.kill(pid, signal.SIGTERM)
+    except (ProcessLookupError, TypeError):
+        pass
 
 
 class ZeroProcess:
@@ -312,13 +415,14 @@ class ZeroProcess:
 
         :return: the process PID
         """
-        if current_process().name != 'MainProcess': print(inception_msg)
+        if current_process().name != 'MainProcess':
+            print(inception_msg)
 
         if not self.is_alive:
             self._child_proc.start()
 
         if not self._is_background:
-            atexit.register(partial(kill_if_alive, pid=self._child_proc.pid))
+            atexit.register(partial(terminate_safe, pid=self._child_proc.pid))
 
         return self._child_proc.pid
 
@@ -359,20 +463,21 @@ class ZeroProcess:
 
 
 class Context:
-    def __init__(self, background=False):
+    def __init__(self, background=False, enable_tinydb=False):
         """
         | Create a new Context,
         | by starting the zproc server,
         | and generating a random ipc path to communicate with it.
         |
-        | All child process under a Context are instances of ZeroProcess and hence, retain the same API as that of a ZeroProcess instance.\n\n
+        | All child process under a Context are instances of ZeroProcess and hence,
+        | retain the same API as that of a ZeroProcess instance.
         |
         | You may access the state (ZeroState instance) from the "state" attribute, like so - :code:`Context.state`
         |
-        | A Context object is generally, thread-safe.\n
+        | A Context object is generally, thread-safe.
 
-        :param background: Whether to all run processes under this context as background tasks.\n
-                           Background tasks keep running even when your main (parent) script finishes execution.
+        :param background: | Whether to all run processes under this context as background tasks.
+                           | Background tasks keep running even when your main (parent) script finishes execution.
 
         :ivar child_pids: A :code:`set` of pids (:code:`int`) of running processes under this Context
         :ivar child_procs: A :code:`list` of :code:`ZeroProcess` instances launched under this Context
@@ -388,7 +493,7 @@ class Context:
         self._server_proc.start()
 
         if not self._is_background:
-            atexit.register(partial(kill_if_alive, pid=self._server_proc.pid))
+            atexit.register(partial(terminate_safe, pid=self._server_proc.pid))
 
         self.state = ZeroState(self._ipc_path)
 
@@ -396,7 +501,7 @@ class Context:
         """
         Produce a child process bound to this context.
 
-        :param targets: the callable to be invoked by the start() method (inside a child process)
+        :param target: the callable to be invoked by the start() method (inside a child process)
         :param props: passed on to the target at start(), useful for composing re-usable processes
         :return: A ZeroProcess instance
         """
@@ -434,14 +539,9 @@ class Context:
 
     def start_all(self):
         """Call ZeroProcess.start() on all the child processes of this Context"""
-        pids = set()
-
         for proc in self.child_procs:
-            pids.add(proc.start())
-
-        self.child_pids.update(pids)
-
-        return pids
+            if not proc.is_alive:
+                self.child_pids.add(proc.start())
 
     def close(self):
         """

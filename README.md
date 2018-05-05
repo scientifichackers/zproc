@@ -5,21 +5,29 @@ ZProc is short for [Zero](http://zguide.zeromq.org/page:all#The-Zen-of-Zero) - [
 
 >generally, "zero" refers to the culture of minimalism that permeates the project. We add power by removing complexity rather than by exposing new functionality.
 
-ZProc aims to reduce the pain of multi-processing by
+ZProc aims to reduce the pain of multi-processing with the aid of following -
 
-- 🌠
-    - Literally allowing you to use a global, shared, mutable, state object (`dict`) without having to worry about the atomicity of your operations and race conditions.
-        - made possible using the zproc server. Read [Inner Workings](https://github.com/pycampers/zproc#inner-workings) .
-- 🌠
+- ☄ Global State management
+    - Literally allows you to use a global, shared, mutable, state object (`dict`) without having to worry about the atomicity of your operations and race conditions.
+    - Made possible using the zproc server. Read [Inner Workings](https://github.com/pycampers/zproc#inner-workings) .
+
+- ☄ State synchronization
     - Sync-ing global state across all processes (without shared varialbes!)
-- 🌠
-    - Giving you the freedom to build any combination of synchronous and asynchronous systems.
-        - Read [here](http://zproc.readthedocs.io/en/latest/source/zproc.html#zproc.zproc.ZeroState) for more. Basically,
-        > It allows you to watch for changes in your state, without having to worry about irrelevant details
-- 🌠
+
+- ☄ Async/Synchronous paradims without `async def`
+    - Give you the freedom to build any combination of synchronous and asynchronous systems.
+    - Read [here](http://zproc.readthedocs.io/en/latest/source/zproc.html#zproc.zproc.ZeroState) for more. Basically,
+    > Allows you to watch for changes in your state, without having to worry about irrelevant details
+
+- ☄️ Process management
+    - [Process Factory](http://zproc.readthedocs.io/en/latest/source/zproc.html#zproc.zproc.Context.process_factory)
     - Remembers to kill processes when exiting, for general peace.
-- 🌠
     - Keeps a record of processes created using ZProc. Read [here](http://zproc.readthedocs.io/en/latest/source/zproc.html#zproc.zproc.Context) for more
+
+- ☄ Batch Operations
+    - Allows you to perform a bunch of operations on state as a singe, atomic operation.
+    - Read more here.
+
 
 # Documentation
 
@@ -29,10 +37,6 @@ ZProc aims to reduce the pain of multi-processing by
 # Examples
 
 The simplest way to see zproc in action is to skim through the examples:
-
-- `chain_reaction.py`
-- `all_sync.py`
-- `luck_test.py`
 
 They should be pretty self-explanatory. I am happy to make these examples better, since I use them as test-cases for testing ZProc.
 
@@ -48,7 +52,7 @@ These can be found under the `examples` directory.
     - See `luck_test.py` example for a taste.
     - NOT enough for very large applications, but enough for small to medium sized applications.
 - stable?
-    - No.
+    - Mostly.
     - I tend to make some fast changes that end up breaking my code.
     - I am actively writing tests to help with this though.
 - Real?

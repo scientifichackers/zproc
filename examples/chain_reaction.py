@@ -38,16 +38,17 @@ def child2(state: zproc.ZeroState, props):
     print('child2: I exit')
 
 
-ctx = zproc.Context()  # create a context for us to work with
+if __name__ == '__main__':
+    ctx = zproc.Context()  # create a context for us to work with
 
-ctx.process_factory(child1, child2)  # give the context some processes to work with
-ctx.start_all()  # start all processes in context
+    ctx.process_factory(child1, child2)  # give the context some processes to work with
+    ctx.start_all()  # start all processes in context
 
-sleep(1)  # sleep for no reason
+    sleep(2)  # sleep for no reason
 
-ctx.state['foo'] = 'foobar'  # set initial state
-print('main: I set foo to foobar')
+    ctx.state['foo'] = 'foobar'  # set initial state
+    print('main: I set foo to foobar')
 
-input()  # wait for user input before exit
+    input()  # wait for user input before exit
 
-print('main: I exit')
+    print('main: I exit')

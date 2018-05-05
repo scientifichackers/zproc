@@ -8,7 +8,7 @@ num gen: 0.9335641557984383
 ...<bunch o crazy numbers>...
 
 listener: foo is between 0.6 and 0.61, so I awake
-num gen: 0.6653150239830506
+num gen: <some crazy number>
 listener: I set STOP to True
 listener: exit
 num gen: STOP was set to True, so lets exit
@@ -52,12 +52,16 @@ def num_listener(state: zproc.ZeroState, props):
     print('listener: exit')
 
 
-ctx = zproc.Context()  # create a context for us to work with
+if __name__ == '__main__':
+    ctx = zproc.Context()  # create a context for us to work with
 
-# give the context some processes to work with
-# also give some props to the num listener
-ctx.process_factory(random_num_gen, num_listener, props=(0.6, 0.601))
+    # give the context some processes to work with
+    # also give some props to the num listener
+    ctx.process_factory(random_num_gen, num_listener, props=(0.6, 0.601))
 
-ctx.start_all()  # start all processes in context
+    ctx.start_all()  # start all processes in context
 
-input()
+    print(ctx.state)
+    print(repr(ctx.state))
+
+    input()
