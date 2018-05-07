@@ -7,15 +7,15 @@ A test of all synchronization techniques ZProc has to offer
 main: I set foo to foobar
 main: child processes started
 main: I set foo to xxx
-child5: something changed, so I wake
-child6: foo changed, so I wake, now state = {'foo': 'xxx'}
-child3: foo doesnt equal foobar, so I wake, now foo = xxx
-child4: foo changed, so I wake, now foo = xxx
+.get_state_when_change() > {'foo': 'xxx'}
+.get_state_when_change('foo') > {'foo': 'xxx'}
+.get_when_not_equal('foo', 'foobar') > xxx
+.get_when_change('foo') > xxx
 main: I set foo to bar
-child1: foo_equals_bar so I wake, now state =  {'foo': 'bar'}
-child2: foo equals bar, so I wake
+.get_state_when(foo_equals_bar) > {'foo': 'bar'}
+.get_when_equal('foo', 'bar') > bar
 
-child0: I exit
+main: I exit
 """
 from time import sleep
 
@@ -26,34 +26,34 @@ def foo_equals_bar(state):
     return state.get('foo') == 'bar'
 
 
-def child1(state: zproc.ZeroState, props):
-    val = state.get_when(foo_equals_bar)
-    print("child1: foo_equals_bar so I wake, now state = ", val)
+def child1(state: zproc.ZeroState):
+    val = state.get_state_when(foo_equals_bar)
+    print(".get_state_when(foo_equals_bar) >", val)
 
 
-def child2(state: zproc.ZeroState, props):
-    state.get_when_equal('foo', 'bar')
-    print("child2: foo equals bar, so I wake")
+def child2(state: zproc.ZeroState):
+    val = state.get_when_equal('foo', 'bar')
+    print(".get_when_equal('foo', 'bar') >", val)
 
 
-def child3(state: zproc.ZeroState, props):
+def child3(state: zproc.ZeroState):
     val = state.get_when_not_equal('foo', 'foobar')
-    print('child3: foo doesnt equal foobar, so I wake, now foo =', val)
+    print(".get_when_not_equal('foo', 'foobar') >", val)
 
 
-def child4(state: zproc.ZeroState, props):
-    val = state.get_val_when_change('foo')
-    print('child4: foo changed, so I wake, now foo =', val)
-
-
-def child5(state: zproc.ZeroState, props):
-    state.get_when_change()
-    print('child5: something changed, so I wake')
-
-
-def child6(state: zproc.ZeroState, props):
+def child4(state: zproc.ZeroState):
     val = state.get_when_change('foo')
-    print('child6: foo changed, so I wake, now state =', val)
+    print(".get_when_change('foo') >", val)
+
+
+def child5(state: zproc.ZeroState):
+    val = state.get_state_when_change()
+    print(".get_state_when_change() >", val)
+
+
+def child6(state: zproc.ZeroState):
+    val = state.get_state_when_change('foo')
+    print(".get_state_when_change('foo') >", val)
 
 
 if __name__ == '__main__':
@@ -71,14 +71,14 @@ if __name__ == '__main__':
 
     sleep(2)  # sleep for no reason
 
-    ctx.state['foo'] = 'xxx'  # set initial state
+    ctx.state['foo'] = 'xxx'
     print('main: I set foo to xxx')
 
     sleep(2)  # sleep for no reason
 
-    ctx.state['foo'] = 'bar'  # set initial state
+    ctx.state['foo'] = 'bar'
     print('main: I set foo to bar')
 
     input()  # wait for user input before exit
 
-    print('child0: I exit')
+    print('main: I exit')

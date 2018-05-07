@@ -23,7 +23,7 @@ def foo_equals_bar(state):
 
 # define a child process
 def child1(state: zproc.ZeroState, props):
-    val = state.get_val_when_change('foo')  # wait for foo to change
+    val = state.get_when_change('foo')  # wait for foo to change
     print("child1: foo changed, so I wake, now foo =", val)
 
     state['foo'] = 'bar'  # update bar
@@ -33,7 +33,7 @@ def child1(state: zproc.ZeroState, props):
 
 # define another child process
 def child2(state: zproc.ZeroState, props):
-    state.get_when(foo_equals_bar)  # wait for bar_equals_bar
+    state.get_state_when(foo_equals_bar)  # wait for bar_equals_bar
     print('child2: foo changed to bar, so I wake')
     print('child2: I exit')
 

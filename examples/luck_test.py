@@ -42,7 +42,7 @@ def foo_between(state, props):
 
 # num listener process
 def num_listener(state: zproc.ZeroState, props):
-    state.get_when(foo_between, props)  # blocks until foo is between the specified range
+    state.get_state_when(foo_between, props)  # blocks until foo is between the specified range
 
     print('listener: foo is between {0} and {1}, so I awake'.format(props[0], props[1]))
 

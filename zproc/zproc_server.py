@@ -12,7 +12,7 @@ from tblib import pickling_support
 pickling_support.install()
 
 
-class MSGS:
+class Message:
     action = 'action'
 
     args = 'args'
@@ -20,31 +20,11 @@ class MSGS:
 
     testfn = 'callable'
 
-    state = 'state'
     key = 'key'
     keys = 'keys'
     value = 'value'
 
-    globals = 'globals'
-
-    attr_name = 'item'
-
-
-class ACTIONS:
-    """A map of some ACTIONS to methods in ZProc Server class"""
-
-    lock_state = 'lock_state'
-    unlock_state = 'unlock_state'
-
-    get_state = 'send_state'
-
-    get_state_callable = 'get_state_callable'
-    get_state_attr = 'get_state_attr'
-
-    change_handler = 'add_change_handler'
-    val_change_handler = 'add_val_change_handler'
-    condition_handler = 'add_condition_handler'
-    equals_handler = 'add_equals_handler'
+    attr_name = 'name'
 
 
 ipc_base_dir = Path.home().joinpath('.tmp')
@@ -62,6 +42,8 @@ def get_ipc_path(uuid):
 
 
 class Queue:
+    """A Queue that can be drained"""
+
     def __init__(self):
         self._deque = deque()
 
@@ -86,7 +68,7 @@ class Queue:
                 break
 
 
-ACTIONS_THAT_MUTATE = (
+DICT_MUTABLE_ACTIONS = (
     '__setitem__',
     '__delitem__',
     'setdefault',
@@ -148,6 +130,7 @@ class ZProcServer:
         self.reply(ident, self.state)
 
     def lock_state(self, ident, msg=None):
+        """Lock state to this process"""
         ipc_path = get_random_ipc()
         self.reply(ident, (ipc_path, self.state))
 
@@ -163,10 +146,10 @@ class ZProcServer:
             self.resolve_all_handlers()
 
     def get_state_callable(self, ident, msg):
-        args, kwargs = msg.get(MSGS.args, ()), msg.get(MSGS.kwargs, {})
-        attr_name = msg[MSGS.attr_name]
+        args, kwargs = msg.get(Message.args, ()), msg.get(Message.kwargs, {})
+        attr_name = msg[Message.attr_name]
 
-        can_mutate = attr_name in ACTIONS_THAT_MUTATE
+        can_mutate = attr_name in DICT_MUTABLE_ACTIONS
         if can_mutate:
             old = self.state.copy()
         else:
@@ -180,7 +163,7 @@ class ZProcServer:
             self.resolve_all_handlers()
 
     def get_state_attr(self, ident, msg):
-        self.reply(ident, getattr(self.state, msg[MSGS.attr_name]))
+        self.reply(ident, getattr(self.state, msg[Message.attr_name]))
 
     # on change handler
 
@@ -188,7 +171,7 @@ class ZProcServer:
         ipc_path = get_random_ipc()
         self.reply(ident, ipc_path)
 
-        keys = msg[MSGS.keys]
+        keys = msg[Message.keys]
 
         if len(keys):
             self.change_handlers[keys].put(
@@ -208,16 +191,11 @@ class ZProcServer:
             else:
                 new = self.get_keys_cmp(keys)
 
-            to_put_back = []
-
             for ipc_path, old in change_handler_queue.drain():
                 if old != new:
                     self.push(ipc_path, self.state)
                 else:
-                    to_put_back.append((ipc_path, old))
-
-            for i in to_put_back:
-                self.change_handlers[keys].put(i)
+                    change_handler_queue.put((ipc_path, old))
 
     # on val change handler
 
@@ -225,10 +203,10 @@ class ZProcServer:
         ipc_path = get_random_ipc()
         self.reply(ident, ipc_path)
 
-        key = msg[MSGS.key]
+        key = msg[Message.key]
 
         try:
-            old_value = msg[MSGS.value]
+            old_value = msg[Message.value]
         except KeyError:
             old_value = self.state.get(key)
 
@@ -242,16 +220,11 @@ class ZProcServer:
         for key, handler_list in self.val_change_handlers.items():
             new = self.state.get(key)
 
-            to_put_back = []
-
             for ipc_path, old in handler_list.drain():
                 if old != new:
                     self.push(ipc_path, self.state.get(key))
                 else:
-                    to_put_back.append((ipc_path, old))
-
-            for i in to_put_back:
-                self.val_change_handlers[key].put(i)
+                    handler_list.put((ipc_path, old))
 
     # on equal handler
 
@@ -260,22 +233,17 @@ class ZProcServer:
         self.reply(ident, ipc_path)
 
         self.equals_handlers.put(
-            (msg[MSGS.key], msg[MSGS.value], ipc_path)
+            (msg[Message.key], msg[Message.value], ipc_path)
         )
 
         self.resolve_equals_handler()
 
     def resolve_equals_handler(self):
-        to_put_back = []
-
         for key, value, ipc_path in self.equals_handlers.drain():
             if self.state.get(key) == value:
                 self.push(ipc_path, True)
             else:
-                to_put_back.append((key, value, ipc_path))
-
-        for i in to_put_back:
-            self.equals_handlers.put(i)
+                self.equals_handlers.put((key, value, ipc_path))
 
     # condition handler
 
@@ -285,24 +253,19 @@ class ZProcServer:
 
         self.condition_handlers.put((
             ipc_path,
-            # FunctionType(msg[MSGS.testfn], globals()),
-            msg[MSGS.testfn],
-            msg[MSGS.args],
-            msg[MSGS.kwargs]
+            msg[Message.testfn],
+            msg[Message.args],
+            msg[Message.kwargs]
         ))
 
         self.resolve_condition_handlers()
 
     def resolve_condition_handlers(self):
-        to_put_back = []
         for ipc_path, test_fn, args, kwargs in self.condition_handlers.drain():
             if test_fn(self.state, *args, **kwargs):
                 self.push(ipc_path, self.state)
             else:
-                to_put_back.append((ipc_path, test_fn, args, kwargs))
-
-        for i in to_put_back:
-            self.condition_handlers.put(i)
+                self.condition_handlers.put((ipc_path, test_fn, args, kwargs))
 
     def resolve_all_handlers(self):
         self.resolve_change_handlers()
@@ -320,7 +283,7 @@ def state_server(bind_ipc_path: str):
         ident, msg = server.wait_req()
         # print(msg, ident)
         try:
-            action = MSGS.action
+            action = Message.action
             getattr(server, msg[action])(ident, msg)
         except Exception:
             server.reply(ident, ZProcServerException())
