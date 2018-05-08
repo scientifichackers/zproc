@@ -177,7 +177,6 @@ class ZeroState:
         |
         | Meant to be used as a context manager only.
 
-
         .. code-block:: python
             :caption: Example
 
@@ -198,15 +197,6 @@ class ZeroState:
         :param key: the key in state dict
         :param value: the desired value to wait for
         :return: :code:`state.get(key)`
-
-        .. code-block:: python
-            :caption: Example
-
-            >>> state['foo'] = 'bar'
-
-            >>> # blocks until foo is set to anything other than 'foobar'
-            >>> state.get_when_not_equal('foo', 'foobar')
-            'bar'
         """
         return self._req_rep_pull(
             {Message.action: ZProcServer.add_val_change_handler.__name__, Message.key: key, Message.value: value})
@@ -231,13 +221,9 @@ class ZeroState:
         :param key: the key (of state dict) to watch for changes
         :return: :code:`state.get(key)`
 
-        .. code-block:: python
-            :caption: Example
-
-            >>> state['foo'] = 'bar'
-
-            >>> # blocks until foo is set to anything other than 'bar'
-            >>> state.get_when_change('foo') # will block forever...
+        .. note:: | This only watches for changes from the time you call it.
+                  | It doesn't imply that you will receive each and every state update,
+                  | so don't expect it to do that!
         """
         return self._req_rep_pull({Message.action: ZProcServer.add_val_change_handler.__name__, Message.key: key})
 
@@ -245,10 +231,15 @@ class ZeroState:
         """
         | Block until a state change is observed,
         | then return state.
+        |
 
         :param \*keys: only watch for changes in these keys (of state dict)
         :return: :code:`state`
         :rtype: dict
+
+        .. note:: | This only watches for changes from the time you call it.
+                  | It doesn't imply that you will receive each and every state update,
+                  | so don't expect it to do that!
         """
         return self._req_rep_pull({Message.action: ZProcServer.add_change_handler.__name__, Message.keys: keys})
 
@@ -262,18 +253,11 @@ class ZeroState:
 
         :param test_fn: | A callable that shall be called on each state-change.
                         | :code:`test_fn(state, *args, **kwargs)`
+
         :param args: Passed on to test_fn.
         :param kwargs: Passed on to test_fn.
         :return: :code:`state`.
         :rtype: dict
-
-        .. code-block:: python
-            :caption: Example
-
-            def foo_is_bar(state):
-                return state['foo'] == 'bar'
-
-            state.get_when(foo_is_bar) # blocks until foo is bar!
 
         .. note:: | args and kwargs are assumed to be static.
                   |
