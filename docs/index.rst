@@ -59,6 +59,20 @@ Small Introduction
     sleep(.5)
 
 
+``Output`` ::
+
+    main: I made a cookie!
+    eater: I ate a cookie!
+    main: I made a cookie!
+    eater: I ate a cookie!
+    main: I made a cookie!
+    eater: I ate a cookie!
+    main: I made a cookie!
+    eater: I ate a cookie!
+    main: I made a cookie!
+    eater: I ate a cookie!
+
+
 -------------------------------------------------------------------
 
 `More Examples <https://github.com/pycampers/zproc/tree/master/examples>`_  like this one.
