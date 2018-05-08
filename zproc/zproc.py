@@ -526,6 +526,23 @@ class Context:
 
         return proc
 
+    def processify(self, props=None):
+        """
+        | Process-ify a normal looking function!
+        | Meant to be used as a decorator
+        |
+        | Just a little syntactic sugar over :code:`ctx.process()`
+
+        :param props: passed on to the target at start(), useful for composing re-usable processes
+        :return: A process-ify decorator
+        :rtype: function
+        """
+
+        def processify_decorator(func):
+            return self.process(func, props)
+
+        return processify_decorator
+
     def process_factory(self, *targets: callable, props=None, count=1):
         """
         Produce multiple child process(s) bound to this context.

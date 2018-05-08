@@ -17,8 +17,8 @@ DESCRIPTION = "ZProc - Process on steroids"
 URL = 'https://github.com/devxpy/zproc'
 EMAIL = 'devxpy@gmail.com'
 AUTHOR = 'Dev Aggarwal'
-REQUIRES_PYTHON = '>=3'
-VERSION = '0.3.0'
+REQUIRES_PYTHON = '>=3.4'
+VERSION = '0.3.1'
 
 # What packages are required for this module to be executed?
 REQUIRED = [

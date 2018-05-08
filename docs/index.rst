@@ -1,19 +1,70 @@
-..  zproc documentation master file, created by
-    sphinx-quickstart on Sun Apr 29 16:26:31 2018.
-    You can adapt this file completely to your liking, but it should at least
-    contain the root `toctree` directive.
-
-Welcome to zproc's documentation!
+ZProc: Process on steroids
 =================================
+
+
+
+.. image:: https://img.shields.io/badge/pip-0.3.1-blue.svg?longCache=true&style=for-the-badge
+    :alt: PyPI
+    :target: https://pypi.org/project/zproc/
+
+.. image:: https://img.shields.io/pypi/pyversions/Django.svg?style=for-the-badge
+    :alt: PyPI - Python Version
+    :target: https://pypi.org/project/zproc/
+
+.. image:: https://img.shields.io/github/license/mashape/apistatus.svg?style=for-the-badge
+    :alt: license
+
+
+
+---------------
+
 
 .. toctree::
     :maxdepth: 2
 
     source/modules.rst
 
-Indices and tables
-==================
+Small Introduction
+##################
 
+.. code-block:: python
+   :emphasize-lines: 5,9,12,13,17,22
+
+    from time import sleep
+
+    import zproc
+
+    ctx = zproc.Context()
+    ctx.state['cookies'] = 0
+
+
+    @ctx.processify()
+    def cookie_eater(state):
+        while True:
+            cookies = state.get_when_change('cookies')
+            state['cookies'] = cookies - 1
+            print('eater: I ate a cookie!')
+
+
+    cookie_eater.start()
+
+    sleep(.5)
+
+    for i in range(5):
+        ctx.state['cookies'] += 1
+        print('main: I made a cookie!')
+        sleep(.5)
+
+    sleep(.5)
+
+
+-------------------------------------------------------------------
+
+`More Examples <https://github.com/pycampers/zproc/tree/master/examples>`_  like this one.
+
+
+Indicies
+========
 * :ref:`genindex`
 * :ref:`modindex`
 * :ref:`search`

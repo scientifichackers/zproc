@@ -22,7 +22,7 @@ import zproc
 
 
 # random num generator process
-def random_num_gen(state: zproc.ZeroState, props):
+def random_num_gen(state: zproc.ZeroState):
     while True:
         num = random.random()
         state['foo'] = num

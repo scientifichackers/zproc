@@ -16,13 +16,13 @@ from time import sleep
 import zproc
 
 
-def reader(state: zproc.ZeroState, props):
+def reader(state: zproc.ZeroState):
     while True:
         print('reader: try to read state..')
         print('reader: got state', state)
 
 
-def writer(state: zproc.ZeroState, props):
+def writer(state: zproc.ZeroState):
     with state.lock_state() as locked_state:
         locked_state['count'] += 1
         name = 'writer' + str(locked_state['count'])
