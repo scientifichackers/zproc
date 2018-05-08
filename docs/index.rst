@@ -13,6 +13,7 @@ ZProc: Process on steroids
 
 .. image:: https://img.shields.io/github/license/mashape/apistatus.svg?style=for-the-badge
     :alt: license
+    :target: https://github.com/pycampers/zproc/blob/master/LICENSE
 
 
 
