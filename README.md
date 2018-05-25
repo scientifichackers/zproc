@@ -133,7 +133,7 @@ If it wasn't clear, `@state.atomify()` makes any arbitrary function, an atomic o
 ## FAQ
 - fast?
     - plenty, since its written with ZMQ.
-    - See `luck_test.py` example for a taste.
+    - Click -> [🔖](eamples/luck_test.py) for a taste.
 - stable?
     - The project itself is stable, but the API is NOT.
 - real?
