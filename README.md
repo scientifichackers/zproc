@@ -83,7 +83,7 @@ __Exhibit A__
 
 ```python
 def increment(step):
-    state.count += step
+    state['count'] += step
 
 increment(5)
 ```
@@ -109,7 +109,7 @@ Let's make some changes to our example..
 ```python
 @state.atomify()
 def increment(state, step):
-    state.count += step
+    state['count'] += step
 
 increment(5)
 ```
