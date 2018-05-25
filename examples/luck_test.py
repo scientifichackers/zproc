@@ -42,7 +42,7 @@ def foo_between(state, props):
 
 # num listener process
 def num_listener(state: zproc.ZeroState, props):
-    state.get_state_when(foo_between, props)  # blocks until foo is between the specified range
+    state.get_when(foo_between, props)  # blocks until foo is between the specified range
 
     print('listener: foo is between {0} and {1}, so I awake'.format(props[0], props[1]))
 
@@ -53,15 +53,10 @@ def num_listener(state: zproc.ZeroState, props):
 
 
 if __name__ == '__main__':
-    ctx = zproc.Context()  # create a context for us to work with
+    ctx = zproc.Context(background=True)  # create a context for us to work with
 
     # give the context some processes to work with
     # also give some props to the num listener
     ctx.process_factory(random_num_gen, num_listener, props=(0.6, 0.601))
 
-    ctx.start_all()  # start all processes in context
-
     print(ctx.state)
-    print(repr(ctx.state))
-
-    input()

@@ -29,8 +29,6 @@ def cookie_eater(state):
         print('eater: I ate a cookie!')
 
 
-cookie_eater.start()
-
 sleep(.5)
 
 for i in range(5):

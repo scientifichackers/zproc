@@ -7,7 +7,7 @@ ZProc: Process on steroids
     :alt: PyPI
     :target: https://pypi.org/project/zproc/
 
-.. image:: https://img.shields.io/pypi/pyversions/Django.svg?style=for-the-badge
+.. image:: https://img.shields.io/badge/python-3.5%2C%203.6-blue.svg?style=for-the-badge
     :alt: PyPI - Python Version
     :target: https://pypi.org/project/zproc/
 
@@ -25,11 +25,12 @@ ZProc: Process on steroids
 
     source/modules.rst
 
+
 Small Introduction
 ##################
 
 .. code-block:: python
-   :emphasize-lines: 5,9,12,13,17,22
+   :emphasize-lines: 5,9,12,13,20
 
     from time import sleep
 
@@ -46,8 +47,6 @@ Small Introduction
             state['cookies'] = cookies - 1
             print('eater: I ate a cookie!')
 
-
-    cookie_eater.start()
 
     sleep(.5)
 

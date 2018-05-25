@@ -17,14 +17,22 @@ DESCRIPTION = "ZProc - Process on steroids"
 URL = 'https://github.com/devxpy/zproc'
 EMAIL = 'devxpy@gmail.com'
 AUTHOR = 'Dev Aggarwal'
-REQUIRES_PYTHON = '>=3.4'
-VERSION = '0.3.1'
+REQUIRES_PYTHON = '>=3.5'
+VERSION = '0.3.2'
 
 # What packages are required for this module to be executed?
 REQUIRED = [
     'pyzmq',
-    'tblib'
+    'tblib',
+    'psutil',
+    'dill'
 ]
+
+# What packages are optional?
+EXTRA = {
+    'build docs': ['sphinx'],
+    'tinydb storage': ['tinydb']
+}
 
 # The rest you shouldn't have to touch too much :)
 # ------------------------------------------------
@@ -95,13 +103,8 @@ setup(
     python_requires=REQUIRES_PYTHON,
     url=URL,
     packages=find_packages(exclude=('tests', 'docs', 'examples')),
-    # If your package is a single module, use this instead of 'packages':
-    # py_modules=['zproc', 'zproc_server'],
-
-    # entry_points={
-    #     'console_scripts': ['mycli=mymodule:cli'],
-    # },
     install_requires=REQUIRED,
+    extra_require=EXTRA,
     include_package_data=True,
     license='MIT',
     classifiers=[
@@ -109,7 +112,7 @@ setup(
         # Full list: https://pypi.python.org/pypi?%3Aaction=list_classifiers
         'License :: OSI Approved :: MIT License',
         'Programming Language :: Python',
-        'Programming Language :: Python :: 3',
+        'Programming Language :: Python :: 3.5',
         'Programming Language :: Python :: 3.6',
         'Programming Language :: Python :: Implementation :: CPython',
     ],

@@ -6,9 +6,13 @@ name = "pypi"
 [packages]
 pyzmq = "*"
 tblib = "*"
+psutil = "*"
+dill = "*"
 
 [dev-packages]
 sphinx = "*"
+tinydb = "*"
+ipython = "*"
 
 [requires]
-python_version = "3.6"
+python_version = "3.5"

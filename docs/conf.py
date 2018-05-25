@@ -14,21 +14,22 @@
 #
 import os
 import sys
+from datetime import datetime
+
 sys.path.insert(0, os.path.abspath('..'))
 sys.path.append(os.path.abspath('_themes'))
 html_theme_path = ['_themes']
 
 # -- Project information -----------------------------------------------------
 
-project = 'zproc'
-copyright = '2018, dev aggarwal'
+project = 'ZProc'
+copyright = '{}, dev aggarwal'.format(datetime.now().year)
 author = 'dev aggarwal'
 
 # The short X.Y version
 version = ''
 # The full version, including alpha/beta/rc tags
 release = ''
-
 
 # -- General configuration ---------------------------------------------------
 
@@ -71,21 +72,35 @@ exclude_patterns = ['_build', 'Thumbs.db', '.DS_Store']
 # The name of the Pygments (syntax highlighting) style to use.
 pygments_style = 'sphinx'
 
-
 # -- Options for HTML output -------------------------------------------------
 
 # The theme to use for HTML and HTML Help pages.  See the documentation for
 # a list of builtin themes.
 #
-# html_theme = 'alabaster'
-html_theme = 'kr'
+html_theme = 'alabaster'
 
 # Theme options are theme-specific and customize the look and feel of a theme
 # further.  For a list of options available for each theme, see the
 # documentation.
-#
-# html_theme_options = {}
 
+html_sidebars = {
+    '**': [
+        'about.html',
+        'navigation.html',
+        'relations.html',
+        'searchbox.html',
+        'donate.html',
+    ]
+}
+html_theme_options = {
+    'description': "Multi-Processing how it should've been.",
+    'github_user': 'pycampers',
+    'github_repo': 'zproc',
+    'github_type': 'star',
+    'fixed_sidebar': True,
+    'github_banner': True,
+    'analytics_id': 'UA-119542427-1'
+}
 # Add any paths that contain custom static files (such as style sheets) here,
 # relative to this directory. They are copied after the builtin static files,
 # so a file named "default.css" will overwrite the builtin "default.css".
@@ -106,7 +121,6 @@ html_static_path = ['_static']
 
 # Output file base name for HTML help builder.
 htmlhelp_basename = 'zprocdoc'
-
 
 # -- Options for LaTeX output ------------------------------------------------
 
@@ -136,7 +150,6 @@ latex_documents = [
      'dev aggarwal', 'manual'),
 ]
 
-
 # -- Options for manual page output ------------------------------------------
 
 # One entry per manual page. List of tuples
@@ -145,7 +158,6 @@ man_pages = [
     (master_doc, 'zproc', 'zproc Documentation',
      [author], 1)
 ]
-
 
 # -- Options for Texinfo output ----------------------------------------------
 
@@ -157,7 +169,6 @@ texinfo_documents = [
      author, 'zproc', 'Process on steroids',
      'Miscellaneous'),
 ]
-
 
 # -- Extension configuration -------------------------------------------------
 

@@ -1,2 +1,1 @@
-from .zproc import *
-from .zproc_server import *
+from zproc.zproc import *

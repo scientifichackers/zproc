@@ -4,6 +4,22 @@ zproc package
 Submodules
 ----------
 
+zproc.storage module
+--------------------
+
+.. automodule:: zproc.storage
+    :members:
+    :undoc-members:
+    :show-inheritance:
+
+zproc.utils module
+------------------
+
+.. automodule:: zproc.utils
+    :members:
+    :undoc-members:
+    :show-inheritance:
+
 zproc.zproc module
 ------------------
 

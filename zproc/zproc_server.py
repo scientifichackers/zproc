@@ -1,82 +1,14 @@
 import pickle
 import sys
 from collections import defaultdict
-from collections import deque
-from pathlib import Path
-# from time import sleep
-from uuid import uuid1
 
 import zmq
 from tblib import pickling_support
+from time import sleep
+
+from zproc.utils import *
 
 pickling_support.install()
-
-
-class Message:
-    action = 'action'
-
-    args = 'args'
-    kwargs = 'kwargs'
-
-    testfn = 'callable'
-
-    key = 'key'
-    keys = 'keys'
-    value = 'value'
-
-    attr_name = 'name'
-
-
-ipc_base_dir = Path.home().joinpath('.tmp')
-
-if not ipc_base_dir.exists():
-    ipc_base_dir.mkdir()
-
-
-def get_random_ipc():
-    return get_ipc_path(uuid1())
-
-
-def get_ipc_path(uuid):
-    return 'ipc://' + str(ipc_base_dir.joinpath(str(uuid)))
-
-
-class Queue:
-    """A Queue that can be drained"""
-
-    def __init__(self):
-        self._deque = deque()
-
-    def put(self, something):
-        self._deque.appendleft(something)
-
-    def get(self):
-        self._deque.pop()
-
-    def clear(self):
-        self._deque.clear()
-
-    def drain(self):
-        # create a copy of the deque, to prevent shit-storms while iterating :)
-        iter_deque = self._deque.copy()
-        self.clear()
-
-        while True:
-            try:
-                yield iter_deque.pop()
-            except IndexError:
-                break
-
-
-DICT_MUTABLE_ACTIONS = (
-    '__setitem__',
-    '__delitem__',
-    'setdefault',
-    'pop',
-    'popitem',
-    'clear',
-    'update',
-)
 
 
 class ZProcServerException:
@@ -122,160 +54,137 @@ class ZProcServer:
         sock.send_pyobj(msg, protocol=pickle.HIGHEST_PROTOCOL)
         sock.close()
 
-    def get_keys_cmp(self, state_keys):
-        return [self.state.get(state_key) for state_key in state_keys]
+    def get_values_for_keys(self, state_keys):
+        """Get a list of values, given some keys in the state"""
+
+        return tuple(self.state.get(state_key) for state_key in state_keys)
 
     def send_state(self, ident, msg=None):
         """Sends the state back to a process"""
         self.reply(ident, self.state)
 
-    def lock_state(self, ident, msg=None):
-        """Lock state to this process"""
-        ipc_path = get_random_ipc()
-        self.reply(ident, (ipc_path, self.state))
+    def state_rpc(self, ident, msg):
+        func_name = msg[Message.func_name]
 
-        ctx = zmq.Context()
-        sock = ctx.socket(zmq.PULL)
-        sock.bind(ipc_path)
-        locked_state = sock.recv_pyobj()
-        sock.close()
-
-        # update state
-        if locked_state != self.state:
-            self.state = locked_state
-            self.resolve_all_handlers()
-
-    def get_state_callable(self, ident, msg):
-        args, kwargs = msg.get(Message.args, ()), msg.get(Message.kwargs, {})
-        attr_name = msg[Message.attr_name]
-
-        can_mutate = attr_name in DICT_MUTABLE_ACTIONS
+        can_mutate = func_name in DICT_MUTABLE_ACTIONS
         if can_mutate:
             old = self.state.copy()
         else:
             old = None
 
-        result = getattr(self.state, attr_name)(*args, **kwargs)
-
+        state_func = getattr(self.state, func_name)
+        result = state_func(*msg[Message.args], **msg[Message.kwargs])
         self.reply(ident, result)
 
         if can_mutate and old != self.state:
             self.resolve_all_handlers()
 
-    def get_state_attr(self, ident, msg):
-        self.reply(ident, getattr(self.state, msg[Message.attr_name]))
+    def rpc(self, ident, msg):
+        self.reply(ident, de_serialize_func(msg[Message.func])(self.state, *msg[Message.args], **msg[Message.kwargs]))
 
-    # on change handler
+    def process_msg(self, ident, msg):
+        """Process a message, and then reply to client with the result"""
 
-    def add_change_handler(self, ident, msg):
+        return getattr(self, msg[Message.method_name])(ident, msg)
+
+    # on change handlers
+
+    def register_get_when_change(self, ident, msg):
         ipc_path = get_random_ipc()
         self.reply(ident, ipc_path)
 
         keys = msg[Message.keys]
 
         if len(keys):
-            self.change_handlers[keys].put(
-                (ipc_path, self.get_keys_cmp(keys))
+            self.change_handlers[keys].enqueue(
+                (ipc_path, self.get_values_for_keys(keys))
             )
         else:
-            self.change_handlers['_any_'].put(
+            self.change_handlers['_any_'].enqueue(
                 (ipc_path, self.state.copy())
             )
 
-        self.resolve_change_handlers()
+        self.resolve_get_when_change()
 
-    def resolve_change_handlers(self):
+    def resolve_get_when_change(self):
         for keys, change_handler_queue in self.change_handlers.items():
+            only_one = False
             if keys == '_any_':
                 new = self.state
             else:
-                new = self.get_keys_cmp(keys)
+                new = self.get_values_for_keys(keys)
+                only_one = len(new) == 1
 
             for ipc_path, old in change_handler_queue.drain():
                 if old != new:
-                    self.push(ipc_path, self.state)
+                    self.push(ipc_path, new[0] if only_one else new)
                 else:
-                    change_handler_queue.put((ipc_path, old))
+                    change_handler_queue.enqueue((ipc_path, old))
 
-    # on val change handler
+    # on equal handlers
 
-    def add_val_change_handler(self, ident, msg):
+    def register_get_when_equal(self, ident, msg):
         ipc_path = get_random_ipc()
         self.reply(ident, ipc_path)
 
-        key = msg[Message.key]
-
-        try:
-            old_value = msg[Message.value]
-        except KeyError:
-            old_value = self.state.get(key)
-
-        self.val_change_handlers[key].put(
-            (ipc_path, old_value)
+        self.equals_handlers.enqueue(
+            (msg[Message.key], msg[Message.value], ipc_path, True)
         )
 
-        self.resolve_val_change_handlers()
+        self.resolve_get_when_equal_or_not()
 
-    def resolve_val_change_handlers(self):
-        for key, handler_list in self.val_change_handlers.items():
-            new = self.state.get(key)
-
-            for ipc_path, old in handler_list.drain():
-                if old != new:
-                    self.push(ipc_path, self.state.get(key))
-                else:
-                    handler_list.put((ipc_path, old))
-
-    # on equal handler
-
-    def add_equals_handler(self, ident, msg):
+    def register_get_when_not_equal(self, ident, msg):
         ipc_path = get_random_ipc()
         self.reply(ident, ipc_path)
 
-        self.equals_handlers.put(
-            (msg[Message.key], msg[Message.value], ipc_path)
+        self.equals_handlers.enqueue(
+            (msg[Message.key], msg[Message.value], ipc_path, False)
         )
 
-        self.resolve_equals_handler()
+        self.resolve_get_when_equal_or_not()
 
-    def resolve_equals_handler(self):
-        for key, value, ipc_path in self.equals_handlers.drain():
-            if self.state.get(key) == value:
-                self.push(ipc_path, True)
+    def resolve_get_when_equal_or_not(self):
+        for key, value, ipc_path, should_be_equal in self.equals_handlers.drain():
+            if should_be_equal:
+                if self.state.get(key) == value:
+                    self.push(ipc_path, True)
+                else:
+                    self.equals_handlers.enqueue((key, value, ipc_path, True))
             else:
-                self.equals_handlers.put((key, value, ipc_path))
+                if self.state.get(key) != value:
+                    self.push(ipc_path, value)
+                else:
+                    self.equals_handlers.enqueue((key, value, ipc_path, False))
 
-    # condition handler
+    # condition handlers
 
-    def add_condition_handler(self, ident, msg):
+    def register_get_when(self, ident, msg):
         ipc_path = get_random_ipc()
         self.reply(ident, ipc_path)
 
-        self.condition_handlers.put((
+        self.condition_handlers.enqueue((
             ipc_path,
-            msg[Message.testfn],
+            de_serialize_func(msg[Message.func]),
             msg[Message.args],
             msg[Message.kwargs]
         ))
 
-        self.resolve_condition_handlers()
+        self.resolve_get_when()
 
-    def resolve_condition_handlers(self):
+    def resolve_get_when(self):
         for ipc_path, test_fn, args, kwargs in self.condition_handlers.drain():
             if test_fn(self.state, *args, **kwargs):
                 self.push(ipc_path, self.state)
             else:
-                self.condition_handlers.put((ipc_path, test_fn, args, kwargs))
+                self.condition_handlers.enqueue((ipc_path, test_fn, args, kwargs))
 
     def resolve_all_handlers(self):
-        self.resolve_change_handlers()
-        self.resolve_condition_handlers()
-        self.resolve_val_change_handlers()
-        self.resolve_equals_handler()
+        self.resolve_get_when_change()
+        self.resolve_get_when()
+        self.resolve_get_when_equal_or_not()
 
 
 def state_server(bind_ipc_path: str):
-    # sleep(1)
     server = ZProcServer(bind_ipc_path)
 
     # server mainloop
@@ -283,7 +192,12 @@ def state_server(bind_ipc_path: str):
         ident, msg = server.wait_req()
         # print(msg, ident)
         try:
-            action = Message.action
-            getattr(server, msg[action])(ident, msg)
+            server.process_msg(ident, msg)
         except Exception:
             server.reply(ident, ZProcServerException())
+
+
+def keep_alive_daemon(ctx, sleep_time: float):
+    while True:
+        ctx.start_all()
+        sleep(sleep_time)

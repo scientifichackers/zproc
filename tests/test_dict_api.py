@@ -28,9 +28,6 @@ class TestStateDictMethods(unittest.TestCase):
     def test__eq__(self):
         self.assertEqual(self.test1 == {'bar': 'bar'}, self.test2 == {'bar': 'bar'})
 
-    def test__format__(self):
-        self.assertEqual(format(self.test1), format(self.test2))
-
     def test__getitem__(self):
         self.assertEqual(self.test1['bar'], self.test2['bar'])
 
@@ -54,8 +51,11 @@ class TestStateDictMethods(unittest.TestCase):
         self.test2.clear()
         self.assertEqual(self.test1, self.test2)
 
+    def test_dict_inbuilt(self):
+        self.assertDictEqual(dict(self.test1), dict(self.test2))
+
     def test_copy(self):
-        self.assertEqual(self.test1.copy(), self.test2.copy())
+        self.assertDictEqual(self.test1.copy(), self.test2.copy())
 
     def test_fromkeys(self):
         self.assertEqual(self.test1.fromkeys([1, 2, 3], 'foo'), self.test2.fromkeys([1, 2, 3], 'foo'))
@@ -65,13 +65,17 @@ class TestStateDictMethods(unittest.TestCase):
         self.assertEqual(self.test1.get('foo'), self.test2.get('foo'))
 
     def test_items(self):
-        self.assertEqual(tuple(self.test1.items()), tuple(self.test2.items()))
+        for i, j in zip(self.test1.items(), self.test2.items()):
+            self.assertEqual(i[0], j[0])
+            self.assertEqual(i[1], j[1])
 
     def test_values(self):
-        self.assertEqual(tuple(self.test1.values()), tuple(self.test2.values()))
+        for i, j in zip(self.test1.values(), self.test2.values()):
+            self.assertEqual(i, j)
 
     def test_keys(self):
-        self.assertEqual(tuple(self.test1.keys()), tuple(self.test2.keys()))
+        for i, j in zip(self.test1.keys(), self.test2.keys()):
+            self.assertEqual(i, j)
 
     def test_setdefault(self):
         self.test1.setdefault('zzz', None)

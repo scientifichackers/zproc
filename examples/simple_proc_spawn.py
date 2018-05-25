@@ -15,7 +15,7 @@ child4: 30636
 child4: True
 child4: True
 child4: True
-
+Press Enter to stop: ↵
 [<zproc.zproc.ZeroProcess object at 0x7f7929460c18>, <zproc.zproc.ZeroProcess object at 0x7f7926fc4c50>, <zproc.zproc.ZeroProcess object at 0x7f7926fd4a20>, <zproc.zproc.ZeroProcess object at 0x7f7926fd4a90>]
 set()
 """
@@ -56,14 +56,14 @@ if __name__ == '__main__':
 
     ctx.state.update({'foo': 'bar'})
 
-    ctx.process_factory(child1, child2, child3, child4, props='test_props')
+    ctx.process_factory(child1, child2, child3, child4, props='test_props', start=False)  # notice start=False
 
     ctx.start_all()
 
     print(ctx.child_procs)
     print(ctx.child_pids)
 
-    input()
+    input('Press Enter to stop: ')
 
     ctx.stop_all()
 
