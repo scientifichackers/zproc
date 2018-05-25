@@ -40,6 +40,9 @@ Requires: Python >=3.5
 ## Documentation
 [Read the docs](http://zproc.readthedocs.io/en/latest/)
 
+[![Documentation Status](https://readthedocs.org/projects/zproc/badge/?version=latest)](https://zproc.readthedocs.io/en/latest/?badge=latest)
+
+
 ## [Examples](examples)
 
 A great way to see zproc in action is through the examples  
@@ -114,7 +117,6 @@ increment(5)
 
 If it wasn't clear, `@state.atomify()` makes any arbitrary function, an atomic operation on the state.  
 
-[🔖](#atomicity)
 
 ## Caveats
 
