@@ -95,8 +95,8 @@ class ZeroState:
         """
         | Run the ``fn`` in an *atomic* way.
         |
-        | No other function shall access the state in any way whilst ``fn`` is running.
-        | This helps avoid race-conditions, to some degree.
+        | No Process shall access the state in any way whilst ``fn`` is running.
+        | This helps avoid race-conditions, almost entirely.
 
         :param fn: A user-defined function.
         :param args: Passed on to fn
