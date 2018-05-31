@@ -21,12 +21,8 @@ from time import sleep
 import zproc
 
 
-def foo_equals_bar(state):
-    return state.get('foo') == 'bar'
-
-
 def child1(state: zproc.ZeroState):
-    val = state.get_when(foo_equals_bar)
+    val = state.get_when(lambda s: s.get('foo') == 'bar')
     print(".get_when(foo_equals_bar) >", val)
 
 
@@ -51,7 +47,7 @@ def child5(state: zproc.ZeroState):
 
 
 if __name__ == '__main__':
-    ctx = zproc.Context(background=True)  # create a context for us to work with
+    ctx = zproc.Context()  # create a context for us to work with
 
     ctx.state['foo'] = 'foobar'
 

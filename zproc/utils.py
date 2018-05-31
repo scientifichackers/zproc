@@ -1,8 +1,9 @@
+import os
+import sys
 from collections import deque
-from multiprocessing import current_process
 from pathlib import Path
 from types import FunctionType
-from typing import Iterable
+from typing import Tuple
 from uuid import uuid1, UUID
 
 import dill
@@ -14,6 +15,17 @@ if not ipc_base_dir.exists():
     ipc_base_dir.mkdir()
 
 
+class RemoteException:
+    def __init__(self):
+        self.exc = sys.exc_info()
+
+    def reraise(self):
+        raise self.exc[0].with_traceback(self.exc[1], self.exc[2])
+
+    def __str__(self):
+        return str(self.exc)
+
+
 def de_serialize_func(fn_bytes: bytes) -> FunctionType:
     return dill.loads(fn_bytes)
 
@@ -22,15 +34,24 @@ def serialize_func(fn: FunctionType) -> bytes:
     return dill.dumps(fn)
 
 
-def get_random_ipc() -> str:
-    return get_ipc_path(uuid1())
+def get_random_ipc() -> Tuple[str, str]:
+    return get_ipc_paths(uuid1())
 
 
-def get_ipc_path(uuid: UUID) -> str:
-    return 'ipc://' + str(ipc_base_dir.joinpath(str(uuid)))
+def handle_server_response(response):
+    # if the reply is a remote Exception, re-raise it!
+    if isinstance(response, RemoteException):
+        response.reraise()
+    else:
+        return response
 
 
-def method_injector(t: type, names: Iterable[str], get_method):
+def get_ipc_paths(uuid: UUID) -> Tuple[str, str]:
+    return 'ipc://' + str(ipc_base_dir.joinpath('zproc_server_' + str(uuid))), \
+           'ipc://' + str(ipc_base_dir.joinpath('zproc_bcast_' + str(uuid)))
+
+
+def method_injector(t: type, names: Tuple[str], get_method):
     for name in names:
         setattr(t, name, get_method(name))
 
@@ -42,7 +63,7 @@ def reap_ptree(*args):
     """
 
     self = psutil.Process()  # much apt naming :)
-    procs = self.children()
+    procs = self.children(recursive=True)
 
     # keep the party going, till everyone dies.
     while procs:
@@ -57,10 +78,10 @@ def reap_ptree(*args):
             for p in alive:
                 p.kill()
 
-        procs = self.children()
+        procs = self.children(recursive=True)
 
-    if current_process().name != 'MainProcess':
-        self.kill()
+    if len(args):
+        os._exit(args[0])
 
 
 class Queue(deque):
@@ -125,7 +146,7 @@ STATE_DICT_DYNAMIC_METHODS = set(STATE_DICT_LIKE_METHODS) - {'__copy__', 'items'
 
 
 class Message:
-    method_name = 'method'
+    server_action = 'action'
 
     args = 'args'
     kwargs = 'kwargs'
@@ -136,7 +157,18 @@ class Message:
     keys = 'keys'
     value = 'value'
 
-    func_name = 'fn_name'
+    method_name = 'method'
+
+
+WINDOWS_SIGNALS = (
+    'SIGABRT',
+    'SIGFPE',
+    'SIGILL',
+    'SIGINT',
+    'SIGSEGV',
+    'SIGTERM',
+    'SIGBREAK'
+)
 
 # SPECIAL_METHOD_NAMES = {
 #     '__repr__',

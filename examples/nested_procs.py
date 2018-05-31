@@ -22,6 +22,9 @@ def child1(state):
     def child2(state):
         print('nested child:', os.getpid(), os.getppid(), state)
 
-        @inner_ctx.processify()
+        inner_inner_ctx = zproc.Context(background=True)
+        inner_inner_ctx.state['foo'] = 'foobar'
+
+        @inner_inner_ctx.processify()
         def child3(state):
             print('nested-nested child:', os.getpid(), os.getppid(), state)

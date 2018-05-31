@@ -15,68 +15,32 @@ ZProc: Process on steroids
     :alt: license
     :target: https://github.com/pycampers/zproc/blob/master/LICENSE
 
----------------
 
+The User Guide
+--------------
+
+This part of the documentation, which is mostly prose, begins with some
+background information about ZProc, then focuses on step-by-step
+instructions for getting the most out of ZProc.
 
 .. toctree::
-    :maxdepth: 2
 
-    source/modules.rst
+    user/quickstart
+    user/state_watching
+    user/atomicity
 
+The API Documentation / Guide
+-----------------------------
 
-Small Introduction
-##################
+If you are looking for information on a specific function, class, or method,
+this part of the documentation is for you.
 
-.. code-block:: python
-   :emphasize-lines: 5,9,12,13,20
+.. toctree::
 
-    from time import sleep
-
-    import zproc
-
-    ctx = zproc.Context()
-    ctx.state['cookies'] = 0
-
-
-    @ctx.processify()
-    def cookie_eater(state):
-        while True:
-            cookies = state.get_when_change('cookies')
-            state['cookies'] = cookies - 1
-            print('eater: I ate a cookie!')
-
-
-    sleep(.5)
-
-    for i in range(5):
-        ctx.state['cookies'] += 1
-        print('main: I made a cookie!')
-        sleep(.5)
-
-    sleep(.5)
-
-
-``Output`` ::
-
-    main: I made a cookie!
-    eater: I ate a cookie!
-    main: I made a cookie!
-    eater: I ate a cookie!
-    main: I made a cookie!
-    eater: I ate a cookie!
-    main: I made a cookie!
-    eater: I ate a cookie!
-    main: I made a cookie!
-    eater: I ate a cookie!
-
-
--------------------------------------------------------------------
-
-`More Examples <https://github.com/pycampers/zproc/tree/master/examples>`_  like this one.
-
+    api
 
 Indicies
-========
+--------
 * :ref:`genindex`
 * :ref:`modindex`
 * :ref:`search`

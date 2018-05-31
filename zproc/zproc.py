@@ -1,95 +1,93 @@
 import atexit
 import inspect
+import os
+import pickle
 import signal
 from functools import wraps
 from multiprocessing import Process
+from typing import Callable
+from uuid import UUID, uuid1
 
-from zproc.zproc_server import *
+import zmq
+from time import sleep
+
+from zproc.utils import reap_ptree, get_ipc_paths, Message, STATE_DICT_DYNAMIC_METHODS, \
+    serialize_func, handle_server_response, method_injector
+from zproc.zproc_server import ZProcServer, zproc_server_proc
 
 signal.signal(signal.SIGTERM, reap_ptree)  # Add handler for the SIGTERM signal
 
 
 class ZeroState:
-    """
-    | Allows accessing state stored on the zproc server, through a dict-like API,
-    | by communicating over zeromq.
+    def __init__(self, uuid: UUID):
+        """
+        :param uuid: A ``UUID`` object for identifying the zproc server.
 
-    :param ipc_path: The ipc path of the zproc servers
+                     | You can use the UUID to reconstruct a ZeroState object, from any Process, at any time.
 
-    | Provides several strategies for synchronization.
-    | These allow you to *watch* for changes in your state, without `Busy Waiting`_!
-    |
-    | **Methods**:
-    | Use these when you want *instantaneous* state updates
+        :ivar uuid: Passed on from ``__init__()``
 
-    .. _Busy Waiting: https://en.wikipedia.org/wiki/Busy_waiting
+        | Allows accessing state stored on the zproc server, through a dict-like API.
+        | Communicates to the zproc server using the ROUTER-DEALER pattern.
 
-    - :func:`~zproc.zproc.ZeroState.get_when_equal`
-    - :func:`~zproc.zproc.ZeroState.get_when_not_equal`
-    - :func:`~zproc.zproc.ZeroState.get_when_change`
-    - :func:`~zproc.zproc.ZeroState.get_when`
+        | Don't share a ZeroState object between Process/Threads.
+        | A ZeroState object is not thread-safe.
 
-    | **Decorators**:
-    | Use these when you want each and *every* state update
-    | Note: They're not currently available, wait for next release..
+        Boasts the following ``dict``-like members:
 
-    - :func:`~zproc.zproc.ZeroState.when_equal`
-    - :func:`~zproc.zproc.ZeroState.when_not_equal`
-    - :func:`~zproc.zproc.ZeroState.when_change`
-    - :func:`~zproc.zproc.ZeroState.when`
+        - Magic  methods:
+            __contains__(),  __delitem__(), __eq__(), __getitem__(), __iter__(), __len__(), __ne__(), __setitem__()
+        - Methods:
+            clear(), copy(), fromkeys(), get(), items(),  keys(), pop(), popitem(), setdefault(), update(), values()
+        """
 
-    | ``dict`` - like methods:
+        self.uuid = uuid
+        self.identity = os.urandom(5)
 
-    - Magic  methods:
-        __contains__(),  __delitem__(), __eq__(), __getitem__(), __iter__(), __len__(), __ne__(), __setitem__()
-    - Methods:
-        clear(), copy(), fromkeys(), get(), items(),  keys(), pop(), popitem(), setdefault(), update(), values()
-    """
+        self.zmq_ctx = zmq.Context()
 
-    def __init__(self, ipc_path):
-        self._ctx = zmq.Context()
-        self._sock = self._ctx.socket(zmq.DEALER)
-        self._sock.connect(ipc_path)
+        self.server_ipc_path, self.bcast_ipc_path = get_ipc_paths(self.uuid)
 
-    def _request(self, msg):
-        """Send a request (containing msg) to server, and return the reply"""
+        self.server_sock = self.zmq_ctx.socket(zmq.DEALER)
+        self.server_sock.setsockopt(zmq.IDENTITY, self.identity)
+        self.server_sock.connect(self.server_ipc_path)
 
-        self._sock.send_pyobj(msg, protocol=pickle.HIGHEST_PROTOCOL)  # send msg
-        data = self._sock.recv_pyobj()  # wait for reply
+        self.sub_sock = self._new_sub_sock()
 
-        # if the reply is a remote Exception, re-raise it!
-        if isinstance(data, ZProcServerException):
-            data.reraise()
-        else:
-            return data
+    def _new_sub_sock(self):
+        sock = self.zmq_ctx.socket(zmq.SUB)
+        sock.connect(self.bcast_ipc_path)
 
-    def _request_and_wait(self, msg):
-        """Call req_rep(msg), and then PULL from the ipc_path returned in reply"""
+        sock.setsockopt(zmq.SUBSCRIBE, b'')
 
-        ipc_path = self._request(msg)
+        return sock
 
-        sock = self._ctx.socket(zmq.PULL)
-        sock.connect(ipc_path)
-        data = sock.recv_pyobj()
+    def _sub_recv(self, sock):
+        while True:
+            ident, response = sock.recv_multipart()
 
-        sock.close()
+            if ident != self.identity:
+                return handle_server_response(pickle.loads(response))
 
-        # if the reply is a remote Exception, re-raise it!
-        if isinstance(data, ZProcServerException):
-            data.reraise()
-        else:
-            return data
+    def _req_rep(self, request):
+        self.server_sock.send_pyobj(request, protocol=pickle.HIGHEST_PROTOCOL)  # send msg
+        response = self.server_sock.recv_pyobj()  # wait for reply
+        return handle_server_response(response)
 
-    def _get_state_rpc_func(self, name):
-        def state_rpc_func(*args, **kwargs):
-            return self._request({
-                Message.method_name: ZProcServer.state_rpc.__name__,
-                Message.func_name: name,
+    def _get_state_method(self, name):
+        def state_method(*args, **kwargs):
+            return self._req_rep({
+                Message.server_action: ZProcServer.state_method.__name__,
+                Message.method_name: name,
                 Message.args: args,
                 Message.kwargs: kwargs
             })
 
-        return state_rpc_func
+        return state_method
+
+    def go_live(self):
+        self.sub_sock.close()
+        self.sub_sock = self._new_sub_sock()
 
     def atomic(self, fn, *args, **kwargs):
         """
@@ -118,8 +116,8 @@ class ZeroState:
             print(state.atomic(increment)) # 1
         """
 
-        return self._request({
-            Message.method_name: ZProcServer.rpc.__name__,
+        return self._req_rep({
+            Message.server_action: ZProcServer.state_func.__name__,
             Message.func: serialize_func(fn),
             Message.args: args,
             Message.kwargs: kwargs
@@ -130,7 +128,7 @@ class ZeroState:
         | Hack on a normal looking function to make an atomic operation out of it.
         | Allows making an arbitrary number of operations on sate, atomic.
         |
-        | Just a little syntactic sugar over :func:`~zproc.zproc.ZeroState.atomic`
+        | Just a little syntactic sugar over :func:`~ZeroState.atomic()`
 
         :return: An atomic decorator, which itself returns - ``wrapped_fn(state, *args, **kwargs)``
         :rtype: function
@@ -160,107 +158,156 @@ class ZeroState:
 
         return atomic_decorator
 
-    def get_when_equal(self, key, value):
+    def get_when_change(self, *keys, live=True):
         """
-        | Block until ``state.get(key) == value``.
+        | Block until a change is observed.
 
-        :param key: ``dict`` key
-        :param value: the desired value to wait for
-        :return: ``state.get(key)``
-        """
-
-        self._request_and_wait({
-            Message.method_name: ZProcServer.register_get_when_equal.__name__,
-            Message.key: key,
-            Message.value: value
-        })
-        return value
-
-    def get_when_not_equal(self, key, value):
-        """
-        | Block until ``state.get(key) != value``.
-
-        :param key: ``dict`` key
-        :param value: the desired value to wait for
-        :return: ``state.get(key)``
-        """
-
-        return self._request_and_wait({
-            Message.method_name: ZProcServer.register_get_when_not_equal.__name__,
-            Message.key: key,
-            Message.value: value
-        })
-
-    def get_when_change(self, *keys):
-        """
-        | Block until a change is observed in ``state.get(key)``.
-
-        :param \*keys: ``dict`` key(s)
+        :param keys: | Observe for changes in these ``dict`` key(s).
+                     | If no key is provided, any change in the ``state`` is respected.
+        :param live: Whether to get "live" updates. See :ref:`state_watching`.
         :return: Roughly,
+            .. code:: python
 
-        .. code:: python
+                if len(keys) == 1
+                    return state.get(key)
 
-            if len(keys) == 1:
-                return state.get(key)
-            elif len(keys):
-                return (state.get(key) for key in keys)
+                if len(keys) > 1
+                    return [state.get(key) for key in keys]
+
+                if len(keys) == 0 (Observe change in all keys)
+                    return state.copy()
+        """
+
+        if live:
+            sock = self._new_sub_sock()
+        else:
+            sock = self.sub_sock
+
+        num_keys = len(keys)
+
+        try:
+            if num_keys == 1:
+                key = keys[0]
+
+                while True:
+                    old, new = self._sub_recv(sock)
+
+                    if new.get(key) != old.get(key):
+                        return new
+            elif num_keys:
+                while True:
+                    old, new = self._sub_recv(sock)
+
+                    for key in keys:
+                        if new.get(key) != old.get(key):
+                            return [new.get(key) for key in keys]
             else:
-                return state.copy()
+                while True:
+                    old, new = self._sub_recv(sock)
 
-        .. note:: | This only watches for changes from the time you call it.
-                  | It doesn't imply that you will receive each and every state update,
-                  | so don't expect it to do that!
-                  | Use  :func:`~zproc.zproc.ZeroState.when_change` for that.
+                    if new != old:
+                        return new
+        finally:
+            if live:
+                sock.close()
+
+    def get_when(self, test_fn, *, live=True):
         """
-
-        return self._request_and_wait({
-            Message.method_name: ZProcServer.register_get_when_change.__name__,
-            Message.keys: keys
-        })
-
-    def get_when(self, test_fn, *args, **kwargs):
-        """
-        | Block until ``test_fn(state, *args, **kwargs)`` returns a True-like value
+        | Block until ``test_fn(state: ZeroState)`` returns a True-like value
         |
         | Roughly,
 
         .. code:: python
 
-            if test_fn(state, *args, **kwargs):
+            if test_fn(state)
                 return state.copy()
 
-
-        :param test_fn: A function defined at the top level of a module (using ``def``, not ``lambda``). Called on each state-change
-        :param args: Passed on to test_fn.
-        :param kwargs: Passed on to test_fn.
-        :return: state.
+        :param test_fn: A ``function``, which is called on each state-change.
+        :param live: Whether to get "live" updates. See :ref:`state_watching`.
+        :return: state
         :rtype: ``dict``
-
-        .. caution:: | The ``test_fn`` is serialized using ``pickle``.
-                  | If you write a ``test_fn`` that accesses **non-pickle-able** variables,
-                  | expect a ``PicklingError`` to be raised.
-                  |
-                  | Its considered good practice to pass static variables through ``*args``/``*kwargs``,
-                  | instead of accessing them directly.
-
         """
 
-        return self._request_and_wait({
-            Message.method_name: ZProcServer.register_get_when.__name__,
-            Message.func: serialize_func(test_fn),
-            Message.args: args,
-            Message.kwargs: kwargs
-        })
+        if live:
+            sock = self._new_sub_sock()
+        else:
+            sock = self.sub_sock
+
+        new = self.copy()
+
+        try:
+            while True:
+                if test_fn(new):
+                    return new
+                else:
+                    new = self._sub_recv(sock)[-1]
+        finally:
+            if live:
+                sock.close()
+
+    def get_when_equal(self, key, value, *, live=True):
+        """
+        | Block until ``state.get(key) == value``.
+
+        :param key: ``dict`` key
+        :param value: ``dict`` value.
+        :param live: Whether to get "live" updates. See :ref:`state_watching`.
+        :return: ``state.get(key)``
+        """
+
+        if live:
+            sock = self._new_sub_sock()
+        else:
+            sock = self.sub_sock
+
+        new = self.get(key)
+
+        try:
+            while True:
+                if new == value:
+                    return new
+                else:
+                    new = self._sub_recv(sock)[-1].get(key)
+        finally:
+            if live:
+                sock.close()
+
+    def get_when_not_equal(self, key, value, *, live=True):
+        """
+        | Block until ``state.get(key) != value``.
+
+        :param key: ``dict`` key.
+        :param value: ``dict`` value.
+        :param live: Whether to get "live" updates. See :ref:`state_watching`.
+        :return: ``state.get(key)``
+        """
+
+        if live:
+            sock = self._new_sub_sock()
+        else:
+            sock = self.sub_sock
+        try:
+            new = self.get(key)
+
+            while True:
+                if new != value:
+                    return new
+                else:
+                    new = self._sub_recv(sock)[-1].get(key)
+        finally:
+            if live:
+                sock.close()
 
     def close(self):
         """
-        Close this ZeroState by disconnecting with the ZProcServer
+        Close this ZeroState and disconnect with the ZProcServer
         """
 
-        self._sock.close()
+        self.server_sock.close()
+        self.sub_sock.close()
 
     def copy(self):
-        return self._request({Message.method_name: ZProcServer.send_state.__name__})
+        return self._req_rep({Message.server_action: ZProcServer.reply_state.__name__})
 
     def keys(self):
         return self.copy().keys()
@@ -277,7 +324,7 @@ class ZeroState:
 
 def _get_remote_method(name):
     def remote_method(self, *args, **kwargs):
-        return self._get_state_rpc_func(name)(*args, **kwargs)
+        return self._get_state_method(name)(*args, **kwargs)
 
     return remote_method
 
@@ -285,50 +332,97 @@ def _get_remote_method(name):
 method_injector(ZeroState, STATE_DICT_DYNAMIC_METHODS, _get_remote_method)
 
 
-def _child_proc(ipc_path, target, props, proc):
-    num_args = len(inspect.getfullargspec(target).args)
+def _child_proc(self: 'ZeroProcess'):
+    state = ZeroState(self.uuid)
 
-    if num_args == 0:
-        return target()
-    elif num_args == 1:
-        target(ZeroState(ipc_path))
-    elif num_args == 2:
-        target(ZeroState(ipc_path), props)
-    elif num_args == 3:
-        target(ZeroState(ipc_path), props, proc)
+    target_params = inspect.signature(self.target).parameters.copy()
+
+    if 'kwargs' in target_params:
+        target_kwargs = {'state': state, 'props': self.kwargs['props'], 'proc': self}
     else:
-        raise ValueError('target can have a maximum of 3 arguments:  (state, props, proc)')
+        target_kwargs = {}
+        if 'state' in target_params:
+            target_kwargs['state'] = state
+        if 'props' in target_params:
+            target_kwargs['props'] = self.kwargs['props']
+        if 'proc' in target_params:
+            target_kwargs['proc'] = self
+
+    tries = 0
+    while True:
+        try:
+            tries += 1
+            self.target(**target_kwargs)
+        except self.kwargs['retry_for'] as e:
+            if self.kwargs['max_tries'] is not None and tries > self.kwargs['max_tries']:
+                raise e
+
+            target_kwargs['props'] = self.kwargs['retry_props']
+            sleep(self.kwargs['retry_delay'])
+        else:
+            break
 
 
 class ZeroProcess:
-    """
-    Provides a high level wrapper over multiprocessing.Process.
-    """
-
-    def __init__(self, ipc_path, target, props):
+    def __init__(self, uuid: UUID, target: Callable, **kwargs):
         """
-        :param ipc_path: the ipc path of the zproc server (associated with the context)
-        :param target: | The callable object to be invoked by the start() method.
-                       |
-                       | It is run inside a ``Process`` with following args:
-                       | ``target(state: ZeroState, props, proc: ZeroProcess)``
-                       |
-                       | The target may or may not have these arguments.
-                       | ZProc will adjust according to your function!
-                       | The order of these arguments must be preserved.
+        Provides a high level wrapper over ``multiprocessing.Process``.
 
-        :param props: passed on to the target at start(), useful for composing re-usable processes
-        :ivar target: Passed from constructor.
-        :ivar props: Passed from constructor.
-        :ivar background: Passed from constructor.
+        :param uuid: A :class:`UUID` object for identifying the zproc server.
+
+                     | You may use this to reconstruct a :class:`ZeroState` object, from any Process, at any time.
+
+        :param target: The Callable to be invoked by the start() method.
+
+                        | It is run inside a ``multiprocessing.Process`` with following kwargs:
+                        | ``target(state=<ZeroState>, props=<props>, proc=<ZeroProcess>)``
+
+                        | You may omit these, shall you not want them.
+
+        :param props: (optional) Passed on to the target. By default, it is set to ``None``
+
+        :param start: (optional) Automatically call :func:`.start()` on the process. By default, it is set to ``True``.
+
+        :param retry_for: (optional) Automatically retry  whenever a particular exception is raised. By default, it is an empty ``tuple``
+
+                          | For example,
+                          | ``retry_for=(ConnectionError, ValueError)``
+
+                          | To retry for *any* exception, just do
+                          | ``retry_for=(Exception,)``
+
+
+        :param retry_delay: (optional) The delay in seconds, before auto-retrying. By default, it is set to 5 secs
+
+        :param retry_props: (optional) Provide different ``props`` to a Process when it's retrying. By default, it is the same as ``props``
+
+                            Used to control how your application behaves, under retry conditions.
+
+
+        :param max_retries: (optional) Give up after this many attempts. By default, it is set to ``None``.
+
+                            | The exception that caused the Process to give up shall be re-raised.
+                            | A value of ``None`` will result in an *infinite* number of retries.
+
         """
 
-        assert callable(target), "target must be a callable!"
+        assert callable(target), '"target" must be a Callable, not {}!'.format(type(target))
 
-        self._child_proc = Process(target=_child_proc, args=(ipc_path, target, props, self))
-
+        self.uuid = uuid
         self.target = target
-        self.props = props
+        self.kwargs = kwargs
+
+        self.kwargs.setdefault('props', None)
+        self.kwargs.setdefault('start', True)
+        self.kwargs.setdefault('retry_for', ())
+        self.kwargs.setdefault('retry_delay', ())
+        self.kwargs.setdefault('retry_props', self.kwargs['props'])
+        self.kwargs.setdefault('max_retries', None)
+
+        self.child_proc = Process(target=_child_proc, args=(self,))
+
+        if self.kwargs['start']:
+            self.start()
 
     def start(self):
         """
@@ -339,17 +433,17 @@ class ZeroProcess:
 
         try:
             if not self.is_alive:
-                self._child_proc.start()
+                self.child_proc.start()
         except AssertionError:  # occurs when a Process was started, but not alive
             pass
 
-        return self._child_proc.pid
+        return self.child_proc.pid
 
     def stop(self):
         """Stop this process if it's alive"""
 
         if self.is_alive:
-            self._child_proc.terminate()
+            self.child_proc.terminate()
 
     @property
     def is_alive(self):
@@ -361,7 +455,7 @@ class ZeroProcess:
         | until the child process is stopped manually (using stop()) or naturally exits
         """
 
-        return self._child_proc and self._child_proc.is_alive()
+        return self.child_proc and self.child_proc.is_alive()
 
     @property
     def pid(self):
@@ -370,8 +464,8 @@ class ZeroProcess:
         | Before the process is started, this will be None.
         """
 
-        if self._child_proc is not None:
-            return self._child_proc.pid
+        if self.child_proc is not None:
+            return self.child_proc.pid
 
     @property
     def exitcode(self):
@@ -381,100 +475,80 @@ class ZeroProcess:
         | A negative value -N indicates that the child was terminated by signal N.
         """
 
-        if self._child_proc is not None:
-            return self._child_proc.exitcode
+        if self.child_proc is not None:
+            return self.child_proc.exitcode
 
 
 class Context:
-    def __init__(self, background=False, keep_alive=False):
+    def __init__(self, background=False):
         """
-        | Create a new Context,
-        | by starting the zproc server,
-        | and generating a random ipc path to communicate with it.
-        |
-        | All child process under a Context are instances of ZeroProcess and hence,
-        | retain the same API as that of a ZeroProcess instance.
-        |
-        | You may access the state (ZeroState instance) from the "state" attribute, like so - ``Context.state``
-        |
-        | A Context object is generally, not thread-safe.
+        A Context holds information about the current process.
+
+        It is responsible for the creation and management of Processes.
+
+        | Don't share a Context object between Process/Threads.
+        | A Context object is not thread-safe.
 
         :param background: | Whether to run processes under this context as background tasks.
                            | Background tasks keep running even when your main (parent) script finishes execution.
-        :param keep_alive: Keep the processes under this Context always alive.
 
-        :ivar child_pids: A ``set[int]``, containing pid(s) of running processes under this Context.
-        :ivar child_procs: A ``list[ZeroProcess]`` containing processes created under this Context.
-        :ivar state: The ``ZeroState`` object associated with this Context.
+        :ivar state: :class:`ZeroState` object. The global state.
+        :ivar child_pids: ``set[int]``. The pid(s) of Process(s) alive in this Context.
+        :ivar child_procs: ``list[:class:`ZeroProcess`]``. The child Process(s) created in this Context.
         :ivar background: Passed from constructor.
+        :ivar uuid:  A ``UUID`` for identifying the zproc server.
+        :ivar server_proc: A ``multiprocessing.Process`` object for the server.
         """
 
         self.child_pids = set()
         self.child_procs = []
         self.background = background
 
-        self._ipc_path = get_random_ipc()
-        self._server_proc = Process(target=state_server, args=(self._ipc_path,))
-        self._server_proc.start()
+        self.uuid = uuid1()
 
-        self._keep_alive = keep_alive
+        self.server_proc = Process(target=zproc_server_proc, args=(self.uuid,))
+        self.server_proc.start()
 
         if not background:
             atexit.register(reap_ptree)  # kill all the child procs when main script exits
 
-        self.state = ZeroState(self._ipc_path)
+        self.state = ZeroState(self.uuid)
 
-    def process(self, target, props=None, start=True):
+    def process(self, target, **kwargs):
         """
         Produce a child process bound to this context.
 
-        :param target: the callable to be invoked by the start() method (inside a child process)
-        :param props: passed on to the target at start(), useful for composing re-usable processes
-        :param start: Automatically call start() on the process.
-        :return: the process created
-        :rtype: ZeroProcess
+        :param target: Passed on to :class:`ZeroProcess`'s constructor.
+        :param \*\*kwargs: Optional keyword arguments that :class:`ZeroProcess` takes.
         """
 
-        proc = ZeroProcess(self._ipc_path, target, props)
+        proc = ZeroProcess(self.uuid, target, **kwargs)
 
         self.child_procs.append(proc)
 
-        if start:
-            proc.start()
-
         return proc
 
-    def processify(self, props=None, start=True):
+    def processify(self, **kwargs):
         """
-        | Hack on a normal looking function, to create a Process out of it.
-        | Meant to be used as a decorator
-        |
-        | Just a little syntactic sugar over ``proc = Context().process(); proc.start()``
+        The decorator version of :func:`~Context.process`
 
-        :param props: passed on to the target at start(), useful for composing re-usable processes
-        :param start: Automatically call start() on the process.
-        :return: A processify decorator, which itself returns the process (ZeroProcess).
+        :param \*\*kwargs: Optional keyword arguments that :class:`ZeroProcess` takes.
+        :return: A processify decorator, which itself returns a :class:`ZeroProcess` instance.
         :rtype: function
         """
 
         def processify_decorator(func):
-            proc = self.process(func, props)
-
-            if start:
-                proc.start()
-
-            return proc
+            return self.process(func, **kwargs)
 
         return processify_decorator
 
-    def process_factory(self, *targets: callable, props=None, count=1, start=True):
+    def process_factory(self, *targets: Callable, count=1, **kwargs):
         """
         Produce multiple child process(s) bound to this context.
 
-        :param targets: callable(s) to be invoked by the start() method (inside a child process)
-        :param props: passed on to all the targets at start(), useful for composing re-usable processes
-        :param count: The number of child processes to spawn for each target
-        :param start: Automatically call start() on the process(s).
+        :param targets: Passed on to :class:`ZeroProcess`'s constructor.
+        :param count: The number of processes to spawn for each target
+        :param \*\*kwargs: Optional keyword arguments that :class:`ZeroProcess` takes.
         :return: spawned processes
         :rtype: list[ZeroProcess]
         """
@@ -482,23 +556,63 @@ class Context:
         child_procs = []
         for target in targets:
             for _ in range(count):
-                child_procs.append(ZeroProcess(self._ipc_path, target, props))
+                child_procs.append(ZeroProcess(self.uuid, target, **kwargs))
         self.child_procs += child_procs
-
-        if start:
-            for proc in child_procs:
-                proc.start()
 
         return child_procs
 
+    def _get_watcher_decorator(self, fn_name, *args, **kwargs):
+        def watcher_decorator(fn):
+            def watcher_proc(state, props, proc):
+                target_params = inspect.signature(fn).parameters.copy()
+
+                if 'kwargs' in target_params:
+                    target_kwargs = {'state': state, 'props': props, 'proc': proc}
+                else:
+                    target_kwargs = {}
+                    if 'state' in target_params:
+                        target_kwargs['state'] = state
+                    if 'props' in target_params:
+                        target_kwargs['props'] = props
+                    if 'proc' in target_params:
+                        target_kwargs['proc'] = proc
+
+                while True:
+                    getattr(state, fn_name)(*args, **kwargs)
+                    fn(**target_kwargs)
+
+            return self.process(watcher_proc)
+
+        return watcher_decorator
+
+    def call_when_change(self, *keys, live=False):
+        """Decorator version of :func:`~ZeroState.get_when_change()`"""
+
+        return self._get_watcher_decorator('get_when_change', *keys, live=live)
+
+    def call_when(self, test_fn, *, live=False):
+        """Decorator version of :func:`~ZeroState.get_when()`"""
+
+        return self._get_watcher_decorator('get_when', test_fn, live=live)
+
+    def call_when_equal(self, key, value, *, live=False):
+        """Decorator version of :func:`~ZeroState.get_when_equal()`"""
+
+        return self._get_watcher_decorator('get_when_equal', key, value, live=live)
+
+    def call_when_not_equal(self, key, value, *, live=False):
+        """Decorator version of :func:`~ZeroState.get_when_not_equal()`"""
+
+        return self._get_watcher_decorator('get_when_not_equal', key, value, live=live)
+
     def start_all(self):
-        """Call start() on all the child processes of this Context"""
+        """Call :func:`~ZeroProcess.start()` on all the child processes of this Context"""
         for proc in self.child_procs:
             if not proc.is_alive:
                 self.child_pids.add(proc.start())
 
     def stop_all(self):
-        """Call stop() on all the child processes of this Context"""
+        """Call :func:`~ZeroProcess.stop()` on all the child processes of this Context"""
         for proc in self.child_procs:
             pid = proc.pid
             proc.stop()
@@ -510,13 +624,14 @@ class Context:
 
     def close(self):
         """
-        | Close this context and stop all processes associated with it.
-        | Once closed, you shouldn't use this Context again.
+        Close this context and stop all processes associated with it.
+
+        Once closed, you shouldn't use this Context again.
         """
 
         self.stop_all()
 
-        if self._server_proc.is_alive():
-            self._server_proc.terminate()
+        if self.server_proc.is_alive():
+            self.server_proc.terminate()
 
         self.state.close()

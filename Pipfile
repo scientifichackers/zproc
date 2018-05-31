@@ -10,9 +10,9 @@ psutil = "*"
 dill = "*"
 
 [dev-packages]
-sphinx = "*"
 tinydb = "*"
 ipython = "*"
+sphinx = "*"
 
 [requires]
 python_version = "3.5"

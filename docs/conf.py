@@ -93,13 +93,14 @@ html_sidebars = {
     ]
 }
 html_theme_options = {
-    'description': "Multi-Processing how it should've been.",
+    'description': "Multi-Tasking how it should've been.",
     'github_user': 'pycampers',
     'github_repo': 'zproc',
     'github_type': 'star',
     'fixed_sidebar': True,
     'github_banner': True,
-    'analytics_id': 'UA-119542427-1'
+    'analytics_id': 'UA-119542427-1',
+    'font_family': 'Alegreya'
 }
 # Add any paths that contain custom static files (such as style sheets) here,
 # relative to this directory. They are copied after the builtin static files,
@@ -173,3 +174,4 @@ texinfo_documents = [
 # -- Extension configuration -------------------------------------------------
 
 autoclass_content = 'both'
+autodoc_member_order = 'bysource'
