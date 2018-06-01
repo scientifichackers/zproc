@@ -159,13 +159,24 @@ class ZeroState:
 
         return atomic_decorator
 
-    def get_when_change(self, *keys, live=True):
+    def get_when_change(self, *keys, live=True, timeout=-1):
         """
         | Block until a change is observed.
 
-        :param keys: | Observe for changes in these ``dict`` key(s).
-                     | If no key is provided, any change in the ``state`` is respected.
+        :param keys: Observe for changes in these ``dict`` key(s).
+
+                     If no key is provided, any change in the ``state`` is respected.
         :param live: Whether to get "live" updates. See :ref:`state_watching`.
+        :param timeout: Sets the timeout in seconds.
+
+                        If the value is 0, it will return immediately, with a :py:exc:`TimeoutError`,
+                        if no update is available.
+
+                        If the value is -1, it will block until an update is available.
+
+                        For all other values, it will wait for and update,
+                        for that amount of time before returning with a :py:exc:`TimeoutError`.
+
         :return: Roughly,
 
         .. code:: python
@@ -176,7 +187,7 @@ class ZeroState:
             if len(keys) > 1
                 return [state.get(key) for key in keys]
 
-            if len(keys) == 0 (Observe change in all keys)
+            if len(keys) == 0
                 return state.copy()
         """
 
@@ -185,8 +196,10 @@ class ZeroState:
         else:
             sock = self.sub_sock
 
-        num_keys = len(keys)
+        if timeout != -1:
+            sock.setsockopt(zmq.RCVTIMEO, int(timeout * 1000))
 
+        num_keys = len(keys)
         try:
             if num_keys == 1:
                 key = keys[0]
@@ -209,11 +222,15 @@ class ZeroState:
 
                     if new != old:
                         return new
+        except zmq.error.Again:
+            raise TimeoutError('Timed-out waiting for an update')
         finally:
             if live:
                 sock.close()
+            elif timeout != -1:
+                sock.setsockopt(zmq.RCVTIMEO, -1)
 
-    def get_when(self, test_fn, *, live=True):
+    def get_when(self, test_fn, *, live=True, timeout=-1):
         """
         | Block until ``test_fn(state: ZeroState)`` returns a True-like value
         |
@@ -226,6 +243,16 @@ class ZeroState:
 
         :param test_fn: A ``function``, which is called on each state-change.
         :param live: Whether to get "live" updates. See :ref:`state_watching`.
+        :param timeout: Sets the timeout in seconds.
+
+                        If the value is 0, it will return immediately, with a :py:exc:`TimeoutError`,
+                        if no update is available.
+
+                        If the value is -1, it will block until an update is available.
+
+                        For all other values, it will wait for and update,
+                        for that amount of time before returning with a :py:exc:`TimeoutError`.
+
         :return: state
         :rtype: ``dict``
         """
@@ -235,25 +262,41 @@ class ZeroState:
         else:
             sock = self.sub_sock
 
-        new = self.copy()
+        if timeout != -1:
+            sock.setsockopt(zmq.RCVTIMEO, int(timeout * 1000))
 
+        new = self.copy()
         try:
             while True:
                 if test_fn(new):
                     return new
                 else:
                     new = self._sub_recv(sock)[-1]
+        except zmq.error.Again:
+            raise TimeoutError('Timed-out waiting for an update')
         finally:
             if live:
                 sock.close()
+            elif timeout != -1:
+                sock.setsockopt(zmq.RCVTIMEO, -1)
 
-    def get_when_equal(self, key, value, *, live=True):
+    def get_when_equal(self, key, value, *, live=True, timeout=-1):
         """
         | Block until ``state.get(key) == value``.
 
         :param key: ``dict`` key
         :param value: ``dict`` value.
         :param live: Whether to get "live" updates. See :ref:`state_watching`.
+        :param timeout: Sets the timeout in seconds.
+
+                        If the value is 0, it will return immediately, with a :py:exc:`TimeoutError`,
+                        if no update is available.
+
+                        If the value is -1, it will block until an update is available.
+
+                        For all other values, it will wait for and update,
+                        for that amount of time before returning with a :py:exc:`TimeoutError`.
+
         :return: ``state.get(key)``
         """
 
@@ -262,25 +305,41 @@ class ZeroState:
         else:
             sock = self.sub_sock
 
-        new = self.get(key)
+        if timeout != -1:
+            sock.setsockopt(zmq.RCVTIMEO, int(timeout * 1000))
 
+        new = self.get(key)
         try:
             while True:
                 if new == value:
                     return new
                 else:
                     new = self._sub_recv(sock)[-1].get(key)
+        except zmq.error.Again:
+            raise TimeoutError('Timed-out waiting for an update')
         finally:
             if live:
                 sock.close()
+            elif timeout != -1:
+                sock.setsockopt(zmq.RCVTIMEO, -1)
 
-    def get_when_not_equal(self, key, value, *, live=True):
+    def get_when_not_equal(self, key, value, *, live=True, timeout=-1):
         """
         | Block until ``state.get(key) != value``.
 
         :param key: ``dict`` key.
         :param value: ``dict`` value.
         :param live: Whether to get "live" updates. See :ref:`state_watching`.
+        :param timeout: Sets the timeout in seconds.
+
+                        If the value is 0, it will return immediately, with a :py:exc:`TimeoutError`,
+                        if no update is available.
+
+                        If the value is -1, it will block until an update is available.
+
+                        For all other values, it will wait for and update,
+                        for that amount of time before returning with a :py:exc:`TimeoutError`.
+
         :return: ``state.get(key)``
         """
 
@@ -288,17 +347,24 @@ class ZeroState:
             sock = self._new_sub_sock()
         else:
             sock = self.sub_sock
-        try:
-            new = self.get(key)
 
+        if timeout != -1:
+            sock.setsockopt(zmq.RCVTIMEO, int(timeout * 1000))
+
+        new = self.get(key)
+        try:
             while True:
                 if new != value:
                     return new
                 else:
                     new = self._sub_recv(sock)[-1].get(key)
+        except zmq.error.Again:
+            raise TimeoutError('Timed-out waiting for an update')
         finally:
             if live:
                 sock.close()
+            elif timeout != -1:
+                sock.setsockopt(zmq.RCVTIMEO, -1)
 
     def close(self):
         """
@@ -383,9 +449,11 @@ class ZeroProcess:
 
         :param props: (optional) Passed on to the target. By default, it is set to :py:class:`None`
 
-        :param start: (optional) Automatically call :py:meth:`.start()` on the process. By default, it is set to ``True``.
+        :param start: (optional) Automatically call :py:meth:`.start()` on the process.
+                      By default, it is set to ``True``.
 
-        :param retry_for: (optional) Automatically retry  whenever a particular exception is raised. By default, it is an empty ``tuple``
+        :param retry_for: (optional) Automatically retry  whenever a particular exception is raised.
+                          By default, it is an empty ``tuple``
 
                           | For example,
                           | ``retry_for=(ConnectionError, ValueError)``
@@ -396,7 +464,8 @@ class ZeroProcess:
 
         :param retry_delay: (optional) The delay in seconds, before auto-retrying. By default, it is set to 5 secs
 
-        :param retry_props: (optional) Provide different ``props`` to a Process when it's retrying. By default, it is the same as ``props``
+        :param retry_props: (optional) Provide different ``props`` to a Process when it's retrying.
+                            By default, it is the same as ``props``
 
                             Used to control how your application behaves, under retry conditions.
 
@@ -434,7 +503,7 @@ class ZeroProcess:
         """
         Start this Process
 
-        If the child has already been started once, an :py:exc:`AssertionError: cannot start a process twice` will be raised.
+        If the child has already been started once, an :py:exc:`AssertionError` will be raised.
 
         :return: the process PID
         """
