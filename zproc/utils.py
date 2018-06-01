@@ -1,4 +1,5 @@
 import os
+import signal
 import sys
 from collections import deque
 from pathlib import Path
@@ -24,6 +25,20 @@ class RemoteException:
 
     def __str__(self):
         return str(self.exc)
+
+
+def signal_exception_converter(sig):
+    def handler(sig, frame):
+        raise SignalException(sig, frame)
+
+    signal.signal(sig, handler)
+
+
+class SignalException(Exception):
+    def __init__(self, sig, frame):
+        super().__init__('')
+        self.sig = sig
+        self.frame = frame
 
 
 def de_serialize_func(fn_bytes: bytes) -> FunctionType:
@@ -170,86 +185,110 @@ WINDOWS_SIGNALS = (
     'SIGBREAK'
 )
 
-ZPROC_CRASH_REPORT = """
+_ZPROC_CRASH_REPORT = """
 ZProc crash report:
     {}
-    Exception - {}
+    {}
     Next retry in - {} sec
     Tried - {} time(s)
     Pid - {}
 """
 
-# SPECIAL_METHOD_NAMES = {
-#     '__repr__',
-#     '__bytes__',
-#     '__lt__',
-#     '__le__',
-#     '__eq__',
-#     '__ne__',
-#     '__gt__',
-#     '__ge__',
-#     '__hash__',
-#     '__bool__',
-#     '__len__',
-#     '__length_hint__',
-#     '__getitem__',
-#     '__missing__',
-#     '__setitem__',
-#     '__delitem__',
-#     '__iter__',
-#     '__reversed__',
-#     '__contains__',
-#     '__add__',
-#     '__sub__',
-#     '__mul__',
-#     '__matmul__',
-#     '__truediv__',
-#     '__floordiv__',
-#     '__mod__',
-#     '__divmod__',
-#     '__pow__',
-#     '__lshift__',
-#     '__rshift__',
-#     '__and__',
-#     '__xor__',
-#     '__or__',
-#     '__radd__',
-#     '__rsub__',
-#     '__rmul__',
-#     '__rmatmul__',
-#     '__rtruediv__',
-#     '__rfloordiv__',
-#     '__rmod__',
-#     '__rdivmod__',
-#     '__rpow__',
-#     '__rlshift__',
-#     '__rrshift__',
-#     '__rand__',
-#     '__rxor__',
-#     '__ror__',
-#     '__iadd__',
-#     '__isub__',
-#     '__imul__',
-#     '__imatmul__',
-#     '__itruediv__',
-#     '__ifloordiv__',
-#     '__imod__',
-#     '__ipow__',
-#     '__irshift__',
-#     '__ilshift__',
-#     '__iand__',
-#     '__ixor__',
-#     '__ior__',
-#     '__neg__',
-#     '__pos__',
-#     '__abs__',
-#     '__invert__',
-#     '__complex__',
-#     '__int__',
-#     '__float__',
-#     '__index__',
-#     '__round__',
-#     '__trunc__',
-#     '__floor__',
-#     '__ceil__'
-# }
+_ZPROC_FINAL_CRASH_REPORT = """
+ZProc crash report:
+    {}
+    {}
+    Tried - {} time(s)
+    Pid - {}
+    **Max tries reached!**
+"""
+
+
+def print_crash_report(proc, e, retry_delay, tries, max_tries):
+    if isinstance(e, SignalException):
+        msg = 'Signal - {}'.format(repr(e.sig))
+    else:
+        msg = 'Exception - {}'.format(repr(e))
+
+    if max_tries != -1 and tries >= max_tries:
+        print(_ZPROC_FINAL_CRASH_REPORT.format(proc, msg, retry_delay, tries))
+
+        if isinstance(e, SignalException):
+            signal.signal(e.sig, signal.SIG_DFL)
+    else:
+        print(_ZPROC_CRASH_REPORT.format(proc, msg, retry_delay, tries, proc.pid))
+
+    # SPECIAL_METHOD_NAMES = {
+    #     '__repr__',
+    #     '__bytes__',
+    #     '__lt__',
+    #     '__le__',
+    #     '__eq__',
+    #     '__ne__',
+    #     '__gt__',
+    #     '__ge__',
+    #     '__hash__',
+    #     '__bool__',
+    #     '__len__',
+    #     '__length_hint__',
+    #     '__getitem__',
+    #     '__missing__',
+    #     '__setitem__',
+    #     '__delitem__',
+    #     '__iter__',
+    #     '__reversed__',
+    #     '__contains__',
+    #     '__add__',
+    #     '__sub__',
+    #     '__mul__',
+    #     '__matmul__',
+    #     '__truediv__',
+    #     '__floordiv__',
+    #     '__mod__',
+    #     '__divmod__',
+    #     '__pow__',
+    #     '__lshift__',
+    #     '__rshift__',
+    #     '__and__',
+    #     '__xor__',
+    #     '__or__',
+    #     '__radd__',
+    #     '__rsub__',
+    #     '__rmul__',
+    #     '__rmatmul__',
+    #     '__rtruediv__',
+    #     '__rfloordiv__',
+    #     '__rmod__',
+    #     '__rdivmod__',
+    #     '__rpow__',
+    #     '__rlshift__',
+    #     '__rrshift__',
+    #     '__rand__',
+    #     '__rxor__',
+    #     '__ror__',
+    #     '__iadd__',
+    #     '__isub__',
+    #     '__imul__',
+    #     '__imatmul__',
+    #     '__itruediv__',
+    #     '__ifloordiv__',
+    #     '__imod__',
+    #     '__ipow__',
+    #     '__irshift__',
+    #     '__ilshift__',
+    #     '__iand__',
+    #     '__ixor__',
+    #     '__ior__',
+    #     '__neg__',
+    #     '__pos__',
+    #     '__abs__',
+    #     '__invert__',
+    #     '__complex__',
+    #     '__int__',
+    #     '__float__',
+    #     '__index__',
+    #     '__round__',
+    #     '__trunc__',
+    #     '__floor__',
+    #     '__ceil__'
+    # }

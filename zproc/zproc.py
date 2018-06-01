@@ -12,7 +12,8 @@ import zmq
 from time import sleep
 
 from zproc.utils import reap_ptree, get_ipc_paths, Message, STATE_DICT_DYNAMIC_METHODS, \
-    serialize_func, handle_server_response, method_injector, ZPROC_CRASH_REPORT
+    serialize_func, handle_server_response, method_injector, print_crash_report, signal_exception_converter, \
+    SignalException
 from zproc.zproc_server import ZProcServer, zproc_server_proc
 
 signal.signal(signal.SIGTERM, reap_ptree)  # Add handler for the SIGTERM signal
@@ -400,37 +401,49 @@ def _get_remote_method(name):
 method_injector(ZeroState, STATE_DICT_DYNAMIC_METHODS, _get_remote_method)
 
 
-def _child_proc(self: 'ZeroProcess'):
-    state = ZeroState(self.uuid)
+def _child_proc(proc: 'ZeroProcess'):
+    state = ZeroState(proc.uuid)
 
-    target_params = inspect.signature(self.target).parameters.copy()
+    target_params = inspect.signature(proc.target).parameters.copy()
 
     if 'kwargs' in target_params:
-        target_kwargs = {'state': state, 'props': self.kwargs['props'], 'proc': self}
+        target_kwargs = {'state': state, 'props': proc.kwargs['props'], 'proc': proc}
     else:
         target_kwargs = {}
         if 'state' in target_params:
             target_kwargs['state'] = state
         if 'props' in target_params:
-            target_kwargs['props'] = self.kwargs['props']
+            target_kwargs['props'] = proc.kwargs['props']
         if 'proc' in target_params:
-            target_kwargs['proc'] = self
+            target_kwargs['proc'] = proc
+
+    exceptions = [SignalException]
+    for i in proc.kwargs['retry_for']:
+        if type(i) == signal.Signals:
+            signal_exception_converter(i)  # converts signal to exception!
+        elif issubclass(i, BaseException):
+            exceptions.append(i)
+        else:
+            raise ValueError(
+                '"retry_for" must contain a `signals.Signal` or `Exception`, not `{}`'.format(repr(type(i))))
+
+    exceptions = tuple(exceptions)
 
     tries = 0
     while True:
         try:
             tries += 1
-            self.target(**target_kwargs)
-        except self.kwargs['retry_for'] as e:
-            if self.kwargs['max_retries'] != -1 and tries >= self.kwargs['max_retries']:
+            proc.target(**target_kwargs)
+        except exceptions as e:
+            print_crash_report(proc, e, proc.kwargs['retry_delay'], tries, proc.kwargs['max_retries'])
+
+            if proc.kwargs['max_retries'] != -1 and tries > proc.kwargs['max_retries']:
                 raise e
             else:
-                print(ZPROC_CRASH_REPORT.format(self, repr(e), self.kwargs['retry_delay'], tries, self.pid))
-
                 if 'props' in target_kwargs:
-                    target_kwargs['props'] = self.kwargs['retry_props']
+                    target_kwargs['props'] = proc.kwargs['retry_props']
 
-                sleep(self.kwargs['retry_delay'])
+                sleep(proc.kwargs['retry_delay'])
         else:
             break
 
@@ -456,15 +469,23 @@ class ZeroProcess:
         :param start: (optional) Automatically call :py:meth:`.start()` on the process.
                       By default, it is set to ``True``.
 
-        :param retry_for: (optional) Automatically retry  whenever a particular exception is raised.
+        :param retry_for: (optional) Automatically retry  whenever a particular Exception / signal is raised.
                           By default, it is an empty ``tuple``
 
-                          | For example,
-                          | ``retry_for=(ConnectionError, ValueError)``
+                          .. code:: python
 
-                          | To retry for *any* exception, just do
+                                import signal
+
+                                # retry if a ConnectionError, ValueError or signal.SIGTERM is received.
+                                ctx.process(
+                                    lambda: None,
+                                    retry_for=(ConnectionError, ValueError, signal.SIGTERM)
+                                )
+
+                          | To retry for *any* **Exception**, just do
                           | ``retry_for=(Exception,)``
 
+                          There is no such feature as retry for *any* **signal**, for now.
 
         :param retry_delay: (optional) The delay in seconds, before auto-retrying. By default, it is set to 5 secs
 

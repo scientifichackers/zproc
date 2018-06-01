@@ -134,7 +134,7 @@ It also borrows the `autoretry` feature of Celery, but unlike Celery it  doesn't
     - [🔖](https://github.com/pycampers/muro)
   
 - Windows compatible?
-    - Not really. Uses UNIX signals.
+    - Probably?
 
 ## Inner Workings
 
