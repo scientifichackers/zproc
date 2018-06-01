@@ -28,7 +28,7 @@ def make_cookie(state):
 
 @ctx.call_when_change('cookies')
 def cookie_eater(state):
-    state.atomic(eat_cookie)
+    state.task(eat_cookie)
     print('child: nom nom nom')
 
 
@@ -36,7 +36,7 @@ sleep(0.5)  # wait for the process to stabilize
 print(cookie_eater.pid)  # The "Process" pid.
 
 for i in range(5):
-    ctx.state.atomic(make_cookie)
+    ctx.state.task(make_cookie)
     print('main: I made a cookie!')
 ```
 

@@ -24,7 +24,7 @@ ctx.state['count'] = 0
 
 
 def child(state: zproc.ZeroState):
-    @state.atomify()
+    @state.taskify()
     def increment(state):
         state['count'] += 1
         return state['count']

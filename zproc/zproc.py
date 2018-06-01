@@ -25,7 +25,7 @@ class ZeroState:
 
                      | You can use the UUID to reconstruct a ZeroState object, from any Process, at any time.
 
-        :ivar uuid: Passed on from ``__init__()``
+        :ivar uuid: Passed on from constructor
 
         | Allows accessing state stored on the zproc server, through a dict-like API.
         | Communicates to the zproc server using the ROUTER-DEALER pattern.
@@ -89,9 +89,10 @@ class ZeroState:
         self.sub_sock.close()
         self.sub_sock = self._new_sub_sock()
 
-    def atomic(self, fn, *args, **kwargs):
+    def task(self, fn, *args, **kwargs):
         """
-        | Run the ``fn`` in an *atomic* way.
+        | Run a "task" on the state, atomically.
+        | In other words, execute the ``fn`` in an *atomic* way.
         |
         | No Process shall access the state in any way whilst ``fn`` is running.
         | This helps avoid race-conditions, almost entirely.
@@ -123,12 +124,12 @@ class ZeroState:
             Message.kwargs: kwargs
         })
 
-    def atomify(self):
+    def taskify(self):
         """
-        | Hack on a normal looking function to make an atomic operation out of it.
+        | Hack on a normal looking function to make an atomic "task" out of it.
         | Allows making an arbitrary number of operations on sate, atomic.
         |
-        | Just a little syntactic sugar over :func:`~ZeroState.atomic()`
+        | Decorator version of :py:meth:`~ZeroState.task()`
 
         :return: An atomic decorator, which itself returns - ``wrapped_fn(state, *args, **kwargs)``
         :rtype: function
@@ -152,7 +153,7 @@ class ZeroState:
         def atomic_decorator(fn):
             @wraps(fn)
             def atomic_wrapper(*args, **kwargs):
-                return self.atomic(fn, *args, **kwargs)
+                return self.task(fn, *args, **kwargs)
 
             return atomic_wrapper
 
@@ -166,16 +167,17 @@ class ZeroState:
                      | If no key is provided, any change in the ``state`` is respected.
         :param live: Whether to get "live" updates. See :ref:`state_watching`.
         :return: Roughly,
-            .. code:: python
 
-                if len(keys) == 1
-                    return state.get(key)
+        .. code:: python
 
-                if len(keys) > 1
-                    return [state.get(key) for key in keys]
+            if len(keys) == 1
+                return state.get(key)
 
-                if len(keys) == 0 (Observe change in all keys)
-                    return state.copy()
+            if len(keys) > 1
+                return [state.get(key) for key in keys]
+
+            if len(keys) == 0 (Observe change in all keys)
+                return state.copy()
         """
 
         if live:
@@ -354,7 +356,7 @@ def _child_proc(self: 'ZeroProcess'):
             tries += 1
             self.target(**target_kwargs)
         except self.kwargs['retry_for'] as e:
-            if self.kwargs['max_tries'] is not None and tries > self.kwargs['max_tries']:
+            if self.kwargs['max_tries'] is not None and tries >= self.kwargs['max_tries']:
                 raise e
 
             target_kwargs['props'] = self.kwargs['retry_props']
@@ -366,22 +368,22 @@ def _child_proc(self: 'ZeroProcess'):
 class ZeroProcess:
     def __init__(self, uuid: UUID, target: Callable, **kwargs):
         """
-        Provides a high level wrapper over ``multiprocessing.Process``.
+        Provides a high level wrapper over :py:class:`Process`.
 
-        :param uuid: A :class:`UUID` object for identifying the zproc server.
+        :param uuid: A :py:class:`UUID` object for identifying the zproc server.
 
-                     | You may use this to reconstruct a :class:`ZeroState` object, from any Process, at any time.
+                     | You may use this to reconstruct a :py:class:`ZeroState` object, from any Process, at any time.
 
         :param target: The Callable to be invoked by the start() method.
 
-                        | It is run inside a ``multiprocessing.Process`` with following kwargs:
+                        | It is run inside a :py:class:`Process` with following kwargs:
                         | ``target(state=<ZeroState>, props=<props>, proc=<ZeroProcess>)``
 
                         | You may omit these, shall you not want them.
 
-        :param props: (optional) Passed on to the target. By default, it is set to ``None``
+        :param props: (optional) Passed on to the target. By default, it is set to :py:class:`None`
 
-        :param start: (optional) Automatically call :func:`.start()` on the process. By default, it is set to ``True``.
+        :param start: (optional) Automatically call :py:meth:`.start()` on the process. By default, it is set to ``True``.
 
         :param retry_for: (optional) Automatically retry  whenever a particular exception is raised. By default, it is an empty ``tuple``
 
@@ -399,14 +401,18 @@ class ZeroProcess:
                             Used to control how your application behaves, under retry conditions.
 
 
-        :param max_retries: (optional) Give up after this many attempts. By default, it is set to ``None``.
+        :param max_retries: (optional) Give up after this many attempts. By default, it is set to :py:class:`None`.
 
                             | The exception that caused the Process to give up shall be re-raised.
-                            | A value of ``None`` will result in an *infinite* number of retries.
+                            | A value of :py:class:`None` will result in an *infinite* number of retries.
 
+        :ivar uuid: Passed on from constructor.
+        :ivar target: Passed on from constructor.
+        :ivar kwargs: Passed on from constructor.
+        :ivar proc: The :py:class:`Process` object associated with this ZeroProcess.
         """
 
-        assert callable(target), '"target" must be a Callable, not {}!'.format(type(target))
+        assert callable(target), '"target" must be a `Callable`, not `{}`'.format(type(target))
 
         self.uuid = uuid
         self.target = target
@@ -419,43 +425,44 @@ class ZeroProcess:
         self.kwargs.setdefault('retry_props', self.kwargs['props'])
         self.kwargs.setdefault('max_retries', None)
 
-        self.child_proc = Process(target=_child_proc, args=(self,))
+        self.proc = Process(target=_child_proc, args=(self,))
 
         if self.kwargs['start']:
             self.start()
 
     def start(self):
         """
-        Start this process
+        Start this Process
+
+        If the child has already been started once, an :py:exc:`AssertionError: cannot start a process twice` will be raised.
 
         :return: the process PID
         """
 
-        try:
-            if not self.is_alive:
-                self.child_proc.start()
-        except AssertionError:  # occurs when a Process was started, but not alive
-            pass
-
-        return self.child_proc.pid
+        self.proc.start()
+        return self.proc.pid
 
     def stop(self):
-        """Stop this process if it's alive"""
+        """
+        Stop this process
 
-        if self.is_alive:
-            self.child_proc.terminate()
+        :return: :py:attr:`~exitcode`.
+        """
+
+        self.proc.terminate()
+        return self.proc.exitcode
 
     @property
     def is_alive(self):
         """
-        | whether the child process is alive.
-        |
+        Whether the child process is alive.
+
         | Roughly, a process object is alive;
         | from the moment the start() method returns,
         | until the child process is stopped manually (using stop()) or naturally exits
         """
 
-        return self.child_proc and self.child_proc.is_alive()
+        return self.proc and self.proc.is_alive()
 
     @property
     def pid(self):
@@ -464,8 +471,8 @@ class ZeroProcess:
         | Before the process is started, this will be None.
         """
 
-        if self.child_proc is not None:
-            return self.child_proc.pid
+        if self.proc is not None:
+            return self.proc.pid
 
     @property
     def exitcode(self):
@@ -475,12 +482,12 @@ class ZeroProcess:
         | A negative value -N indicates that the child was terminated by signal N.
         """
 
-        if self.child_proc is not None:
-            return self.child_proc.exitcode
+        if self.proc is not None:
+            return self.proc.exitcode
 
 
 class Context:
-    def __init__(self, background=False):
+    def __init__(self, background: bool = False, uuid: UUID = None):
         """
         A Context holds information about the current process.
 
@@ -489,22 +496,35 @@ class Context:
         | Don't share a Context object between Process/Threads.
         | A Context object is not thread-safe.
 
-        :param background: | Whether to run processes under this context as background tasks.
-                           | Background tasks keep running even when your main (parent) script finishes execution.
+        :param background: Whether to run Processes under this Context as background tasks.
 
-        :ivar state: :class:`ZeroState` object. The global state.
-        :ivar child_pids: ``set[int]``. The pid(s) of Process(s) alive in this Context.
-        :ivar child_procs: ``list[:class:`ZeroProcess`]``. The child Process(s) created in this Context.
+                           Background tasks keep running even when your main (parent) script finishes execution.
+
+                           Avoids manually calling ``signal.pause()``
+
+        :param uuid: A :py:class:`UUID` object for identifying the zproc server. By default, it is set to :py:class:`None`
+
+                     If uuid is :py:class:`None`, then one will be generated and a corresponding zproc server will be spawned.
+
+                     If a :py:class:`UUID` object is provided, then it will connect to an existing zproc server, corresponding to that uuid.
+
+        :ivar state: :py:class:`ZeroState` object. The global state.
+        :ivar procs: :py:class:`list` ``[`` :py:class:`ZeroProcess` ``]``. The child Process(s) created under this Context.
         :ivar background: Passed from constructor.
         :ivar uuid:  A ``UUID`` for identifying the zproc server.
-        :ivar server_proc: A ``multiprocessing.Process`` object for the server.
+        :ivar server_proc: A :py:class:`Process` object for the server.
         """
 
-        self.child_pids = set()
-        self.child_procs = []
-        self.background = background
+        if uuid is None:
+            self.uuid = uuid1()
+        else:
+            assert isinstance(uuid, UUID), \
+                '"uuid" must be `None` or an instance of `uuid.UUID`, not `{}`'.format((type(uuid)))
 
-        self.uuid = uuid1()
+            self.uuid = uuid
+
+        self.procs = []
+        self.background = background
 
         self.server_proc = Process(target=zproc_server_proc, args=(self.uuid,))
         self.server_proc.start()
@@ -518,22 +538,22 @@ class Context:
         """
         Produce a child process bound to this context.
 
-        :param target: Passed on to :class:`ZeroProcess`'s constructor.
-        :param \*\*kwargs: Optional keyword arguments that :class:`ZeroProcess` takes.
+        :param target: Passed on to :py:class:`ZeroProcess`'s constructor.
+        :param \*\*kwargs: Optional keyword arguments that :py:class:`ZeroProcess` takes.
         """
 
         proc = ZeroProcess(self.uuid, target, **kwargs)
 
-        self.child_procs.append(proc)
+        self.procs.append(proc)
 
         return proc
 
     def processify(self, **kwargs):
         """
-        The decorator version of :func:`~Context.process`
+        The decorator version of :py:meth:`~Context.process`
 
-        :param \*\*kwargs: Optional keyword arguments that :class:`ZeroProcess` takes.
-        :return: A processify decorator, which itself returns a :class:`ZeroProcess` instance.
+        :param \*\*kwargs: Optional keyword arguments that :py:class:`ZeroProcess` takes.
+        :return: A processify decorator, which itself returns a :py:class:`ZeroProcess` instance.
         :rtype: function
         """
 
@@ -546,20 +566,20 @@ class Context:
         """
         Produce multiple child process(s) bound to this context.
 
-        :param targets: Passed on to :class:`ZeroProcess`'s constructor.
+        :param targets: Passed on to :py:class:`ZeroProcess`'s constructor.
         :param count: The number of processes to spawn for each target
-        :param \*\*kwargs: Optional keyword arguments that :class:`ZeroProcess` takes.
+        :param \*\*kwargs: Optional keyword arguments that :py:class:`ZeroProcess` takes.
         :return: spawned processes
-        :rtype: list[ZeroProcess]
+        :rtype: :py:class:`list` ``[`` :py:class:`ZeroProcess` ``]``
         """
 
-        child_procs = []
+        procs = []
         for target in targets:
             for _ in range(count):
-                child_procs.append(ZeroProcess(self.uuid, target, **kwargs))
-        self.child_procs += child_procs
+                procs.append(ZeroProcess(self.uuid, target, **kwargs))
+        self.procs += procs
 
-        return child_procs
+        return procs
 
     def _get_watcher_decorator(self, fn_name, *args, **kwargs):
         def watcher_decorator(fn):
@@ -586,41 +606,43 @@ class Context:
         return watcher_decorator
 
     def call_when_change(self, *keys, live=False):
-        """Decorator version of :func:`~ZeroState.get_when_change()`"""
+        """Decorator version of :py:meth:`~ZeroState.get_when_change()`"""
 
         return self._get_watcher_decorator('get_when_change', *keys, live=live)
 
     def call_when(self, test_fn, *, live=False):
-        """Decorator version of :func:`~ZeroState.get_when()`"""
+        """Decorator version of :py:meth:`~ZeroState.get_when()`"""
 
         return self._get_watcher_decorator('get_when', test_fn, live=live)
 
     def call_when_equal(self, key, value, *, live=False):
-        """Decorator version of :func:`~ZeroState.get_when_equal()`"""
+        """Decorator version of :py:meth:`~ZeroState.get_when_equal()`"""
 
         return self._get_watcher_decorator('get_when_equal', key, value, live=live)
 
     def call_when_not_equal(self, key, value, *, live=False):
-        """Decorator version of :func:`~ZeroState.get_when_not_equal()`"""
+        """Decorator version of :py:meth:`~ZeroState.get_when_not_equal()`"""
 
         return self._get_watcher_decorator('get_when_not_equal', key, value, live=live)
 
     def start_all(self):
-        """Call :func:`~ZeroProcess.start()` on all the child processes of this Context"""
-        for proc in self.child_procs:
-            if not proc.is_alive:
-                self.child_pids.add(proc.start())
+        """
+        Call :py:meth:`~ZeroProcess.start()` on all the child processes of this Context
+
+        Ignore if process is already started
+        """
+
+        for proc in self.procs:
+            try:
+                proc.start()
+            except AssertionError:
+                pass
 
     def stop_all(self):
-        """Call :func:`~ZeroProcess.stop()` on all the child processes of this Context"""
-        for proc in self.child_procs:
-            pid = proc.pid
-            proc.stop()
+        """Call :py:meth:`~ZeroProcess.stop()` on all the child processes of this Context"""
 
-            try:
-                self.child_pids.remove(pid)
-            except KeyError:
-                pass
+        for proc in self.procs:
+            proc.stop()
 
     def close(self):
         """

@@ -62,12 +62,10 @@ if __name__ == '__main__':
 
     ctx.start_all()
 
-    print(ctx.child_procs)
-    print(ctx.child_pids)
+    print(ctx.procs)
 
     input('Press Enter to stop: ')
 
     ctx.stop_all()
 
-    print(ctx.child_procs)
-    print(ctx.child_pids)
+    print(ctx.procs)
