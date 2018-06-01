@@ -12,7 +12,7 @@ import zmq
 from time import sleep
 
 from zproc.utils import reap_ptree, get_ipc_paths, Message, STATE_DICT_DYNAMIC_METHODS, \
-    serialize_func, handle_server_response, method_injector
+    serialize_func, handle_server_response, method_injector, ZPROC_CRASH_REPORT
 from zproc.zproc_server import ZProcServer, zproc_server_proc
 
 signal.signal(signal.SIGTERM, reap_ptree)  # Add handler for the SIGTERM signal
@@ -422,11 +422,13 @@ def _child_proc(self: 'ZeroProcess'):
             tries += 1
             self.target(**target_kwargs)
         except self.kwargs['retry_for'] as e:
-            if self.kwargs['max_tries'] is not None and tries >= self.kwargs['max_tries']:
+            if self.kwargs['max_retries'] != -1 and tries >= self.kwargs['max_retries']:
                 raise e
+            else:
+                print(ZPROC_CRASH_REPORT.format(repr(e), self.kwargs['retry_delay'], tries, self.pid))
 
-            target_kwargs['props'] = self.kwargs['retry_props']
-            sleep(self.kwargs['retry_delay'])
+                target_kwargs['props'] = self.kwargs['retry_props']
+                sleep(self.kwargs['retry_delay'])
         else:
             break
 
@@ -470,10 +472,11 @@ class ZeroProcess:
                             Used to control how your application behaves, under retry conditions.
 
 
-        :param max_retries: (optional) Give up after this many attempts. By default, it is set to :py:class:`None`.
+        :param max_retries: (optional) Give up after this many attempts. By default, it is set to ``-1``.
 
-                            | The exception that caused the Process to give up shall be re-raised.
-                            | A value of :py:class:`None` will result in an *infinite* number of retries.
+                            The exception that caused the Process to give up shall be re-raised.
+
+                            A value of ``-1`` will result in an *infinite* number of retries.
 
         :ivar uuid: Passed on from constructor.
         :ivar target: Passed on from constructor.
@@ -490,9 +493,9 @@ class ZeroProcess:
         self.kwargs.setdefault('props', None)
         self.kwargs.setdefault('start', True)
         self.kwargs.setdefault('retry_for', ())
-        self.kwargs.setdefault('retry_delay', ())
+        self.kwargs.setdefault('retry_delay', 5)
         self.kwargs.setdefault('retry_props', self.kwargs['props'])
-        self.kwargs.setdefault('max_retries', None)
+        self.kwargs.setdefault('max_retries', -1)
 
         self.proc = Process(target=_child_proc, args=(self,))
 
@@ -556,7 +559,7 @@ class ZeroProcess:
 
 
 class Context:
-    def __init__(self, background: bool = False, uuid: UUID = None):
+    def __init__(self, background: bool = False, uuid: UUID = None, **kwargs):
         """
         A Context holds information about the current process.
 
@@ -577,10 +580,15 @@ class Context:
 
                      If a :py:class:`UUID` object is provided, then it will connect to an existing zproc server, corresponding to that uuid.
 
+        :param \*\*kwargs: Optional keyword arguments that :py:class:`ZeroProcess` takes.
+
+                           If provided, these will be used while creation of any and all Processes under this Context.
+
+        :ivar background: Passed from constructor.
+        :ivar kwargs: Passed from constructor.
+        :ivar uuid:  A ``UUID`` for identifying the zproc server.
         :ivar state: :py:class:`ZeroState` object. The global state.
         :ivar procs: :py:class:`list` ``[`` :py:class:`ZeroProcess` ``]``. The child Process(s) created under this Context.
-        :ivar background: Passed from constructor.
-        :ivar uuid:  A ``UUID`` for identifying the zproc server.
         :ivar server_proc: A :py:class:`Process` object for the server.
         """
 
@@ -594,6 +602,7 @@ class Context:
 
         self.procs = []
         self.background = background
+        self.kwargs = kwargs
 
         self.server_proc = Process(target=zproc_server_proc, args=(self.uuid,))
         self.server_proc.start()
@@ -611,7 +620,10 @@ class Context:
         :param \*\*kwargs: Optional keyword arguments that :py:class:`ZeroProcess` takes.
         """
 
-        proc = ZeroProcess(self.uuid, target, **kwargs)
+        _kwargs = self.kwargs.copy()
+        _kwargs.update(kwargs)
+
+        proc = ZeroProcess(self.uuid, target, **_kwargs)
 
         self.procs.append(proc)
 
@@ -645,7 +657,7 @@ class Context:
         procs = []
         for target in targets:
             for _ in range(count):
-                procs.append(ZeroProcess(self.uuid, target, **kwargs))
+                procs.append(self.process(target, **kwargs))
         self.procs += procs
 
         return procs

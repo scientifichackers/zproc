@@ -170,6 +170,14 @@ WINDOWS_SIGNALS = (
     'SIGBREAK'
 )
 
+ZPROC_CRASH_REPORT = """
+ZProc crash report:
+    Exception - {}
+    Next retry in - {} sec
+    Tried - {} time(s)
+    Pid - {}
+"""
+
 # SPECIAL_METHOD_NAMES = {
 #     '__repr__',
 #     '__bytes__',
