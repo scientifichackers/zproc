@@ -172,6 +172,7 @@ WINDOWS_SIGNALS = (
 
 ZPROC_CRASH_REPORT = """
 ZProc crash report:
+    {}
     Exception - {}
     Next retry in - {} sec
     Tried - {} time(s)

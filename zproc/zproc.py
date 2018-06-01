@@ -387,7 +387,7 @@ class ZeroState:
         return self.copy().values()
 
     def __repr__(self):
-        return '<ZeroState {}>'.format(self.copy())
+        return '<ZeroState state: {} uuid: {}>'.format(self.copy(), self.uuid)
 
 
 def _get_remote_method(name):
@@ -425,7 +425,7 @@ def _child_proc(self: 'ZeroProcess'):
             if self.kwargs['max_retries'] != -1 and tries >= self.kwargs['max_retries']:
                 raise e
             else:
-                print(ZPROC_CRASH_REPORT.format(repr(e), self.kwargs['retry_delay'], tries, self.pid))
+                print(ZPROC_CRASH_REPORT.format(self, repr(e), self.kwargs['retry_delay'], tries, self.pid))
 
                 if 'props' in target_kwargs:
                     target_kwargs['props'] = self.kwargs['retry_props']
@@ -503,6 +503,9 @@ class ZeroProcess:
 
         if self.kwargs['start']:
             self.start()
+
+    def __repr__(self):
+        return '<ZeroProcess target: {} uuid: {}>'.format(self.target, self.uuid)
 
     def start(self):
         """
