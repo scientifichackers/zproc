@@ -427,7 +427,9 @@ def _child_proc(self: 'ZeroProcess'):
             else:
                 print(ZPROC_CRASH_REPORT.format(repr(e), self.kwargs['retry_delay'], tries, self.pid))
 
-                target_kwargs['props'] = self.kwargs['retry_props']
+                if 'props' in target_kwargs:
+                    target_kwargs['props'] = self.kwargs['retry_props']
+
                 sleep(self.kwargs['retry_delay'])
         else:
             break
