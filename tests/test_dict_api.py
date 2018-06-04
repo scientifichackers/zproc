@@ -1,3 +1,7 @@
+"""
+Test the dict API, offered by ZeroState
+"""
+
 import unittest
 
 import zproc

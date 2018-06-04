@@ -31,3 +31,10 @@ along with some other useful operations.
 .. autoclass:: zproc.ZeroState
     :inherited-members:
     :exclude-members: clear, copy, fromkeys, get, items, keys, pop, popitem, setdefault, update, values
+
+Functions
+---------
+
+These helper functions are useful for miscellaneous tasks that don't require setting up a Context.
+
+.. autofunction:: zproc.ping

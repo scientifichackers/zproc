@@ -1,11 +1,13 @@
+import os
 import pickle
+import signal
 from typing import Tuple
 from uuid import UUID
 
 import zmq
 from tblib import pickling_support
 
-from zproc.utils import get_ipc_paths, Message, DICT_MUTABLE_ACTIONS, de_serialize_func, RemoteException
+from zproc.util import get_ipc_paths, Message, DICT_MUTABLE_ACTIONS, de_serialize_func, RemoteException, shutdown
 
 pickling_support.install()
 
@@ -18,6 +20,7 @@ class ZProcServer:
         self.server_ipc_path, self.bcast_ipc_path = get_ipc_paths(self.uuid)
 
         self.zmq_ctx = zmq.Context()
+        self.zmq_ctx.setsockopt(zmq.LINGER, 0)
 
         self.server_sock = self.zmq_ctx.socket(zmq.ROUTER)
         self.server_sock.bind(self.server_ipc_path)
@@ -49,6 +52,10 @@ class ZProcServer:
             pickle.dumps([old, self.state], protocol=pickle.HIGHEST_PROTOCOL)
         ])
 
+    def ping(self, ident, request):
+
+        return self.reply(ident, {'pid': os.getpid(), 'ping_data': request[Message.ping_data]})
+
     def state_method(self, ident, request):
         """Call a method on the state dict and return the result."""
 
@@ -79,9 +86,26 @@ class ZProcServer:
         if old != self.state:
             self.publish_state(ident, old)
 
+    def close(self):
+        self.server_sock.close()
+        self.pub_sock.close()
+        self.zmq_ctx.destroy()
+        self.zmq_ctx.term()
+
+
+def signal_handler(*args):
+    raise KeyboardInterrupt
+
 
 def zproc_server_proc(uuid: UUID):
     server = ZProcServer(uuid)
+
+    def hander(*args):
+        server.close()
+
+        shutdown(*args)
+
+    signal.signal(signal.SIGTERM, hander)
 
     # server mainloop
     while True:

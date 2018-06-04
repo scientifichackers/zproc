@@ -1,30 +1,29 @@
 """
-Demonstration of how zproc can handle nested processes
+Demonstration of how to handle nested processes
 """
-
-import os
 
 import zproc
 
 ctx = zproc.Context(background=True)
-ctx.state['foo'] = 'bar'
-print('parent:', os.getpid(), os.getppid())
+print('level0', ctx.state)
+
+ctx.state['msg'] = 'hello from level0'
 
 
 @ctx.processify()
 def child1(state):
-    print('child:', os.getpid(), os.getppid(), state)
+    print('level1:', state)
+    state['msg'] = 'hello from level1'
 
-    inner_ctx = zproc.Context(background=True)
-    inner_ctx.state['foo'] = 'foobar'
+    ctx = zproc.Context(background=True, uuid=state.uuid)
 
-    @inner_ctx.processify()
+    @ctx.processify()
     def child2(state):
-        print('nested child:', os.getpid(), os.getppid(), state)
+        print('level2:', state)
+        state['msg'] = 'hello from level2'
 
-        inner_inner_ctx = zproc.Context(background=True)
-        inner_inner_ctx.state['foo'] = 'foobar'
+        ctx = zproc.Context(uuid=state.uuid)
 
-        @inner_inner_ctx.processify()
+        @ctx.processify()
         def child3(state):
-            print('nested-nested child:', os.getpid(), os.getppid(), state)
+            print('level3:', state)

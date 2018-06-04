@@ -11,25 +11,77 @@ from uuid import UUID, uuid1
 import zmq
 from time import sleep
 
-from zproc.utils import reap_ptree, get_ipc_paths, Message, STATE_DICT_DYNAMIC_METHODS, \
-    serialize_func, handle_server_response, method_injector, print_crash_report, signal_exception_converter, \
+from zproc.util import shutdown, get_ipc_paths, Message, STATE_DICT_DYNAMIC_METHODS, \
+    serialize_func, handle_server_response, method_injector, print_crash_report, signal_to_exception, \
     SignalException
 from zproc.zproc_server import ZProcServer, zproc_server_proc
 
-signal.signal(signal.SIGTERM, reap_ptree)  # Add handler for the SIGTERM signal
+signal.signal(signal.SIGTERM, shutdown)  # Add handler for the SIGTERM signal
+
+
+def ping(uuid: UUID, **kwargs):
+    """
+    Ping the ZProc Server
+
+    :param uuid: The ``UUID`` object for identifying the Context.
+
+                 You can use the UUID to reconstruct a ZeroState object, from any Process, at any time.
+    :param timeout: (optional) Sets the timeout in seconds. By default it is set to -1.
+
+                    If the value is 0, it will return immediately, with a :py:exc:`TimeoutError`.
+
+                    If the value is -1, it will block until the ZProc Server replies.
+
+                    For all other values, it will wait for a reply,
+                    for that amount of time before returning with a :py:exc:`TimeoutError`.
+    :param ping_data: (optional) Data to ping the server with.
+
+                      By default, it is set to ``os.urandom(56)`` (56 random bytes of data).
+    :return: The ZProc Server's ``pid`` if the ping was successful, else :py:class:`False`
+    """
+
+    kwargs.setdefault('timeout', -1)
+    kwargs.setdefault('ping_data', os.urandom(56))
+
+    ctx = zmq.Context()
+    ctx.setsockopt(zmq.LINGER, 0)
+    sock = ctx.socket(zmq.DEALER)
+    sock.connect(get_ipc_paths(uuid)[0])
+
+    if kwargs['timeout'] != -1:
+        sock.setsockopt(zmq.RCVTIMEO, int(kwargs['timeout'] * 1000))
+
+    ping_msg = {
+        Message.server_action: ZProcServer.ping.__name__,
+        Message.ping_data: kwargs['ping_data']
+    }
+
+    sock.send_pyobj(ping_msg, protocol=pickle.HIGHEST_PROTOCOL)  # send msg
+
+    try:
+        response = sock.recv_pyobj()  # wait for reply
+    except zmq.error.Again:
+        raise TimeoutError('Connection to ZProc Server timed out!')
+    else:
+        if response.get('ping_data') == kwargs['ping_data']:
+            return response['pid']
+        else:
+            return False
+    finally:
+        sock.close()
 
 
 class ZeroState:
     def __init__(self, uuid: UUID):
         """
-        :param uuid: A ``UUID`` object for identifying the zproc server.
+        :param uuid: The ``UUID`` object for identifying the Context.
 
-                     | You can use the UUID to reconstruct a ZeroState object, from any Process, at any time.
+                     You can use the UUID to reconstruct a ZeroState object, from any Process, at any time.
 
         :ivar uuid: Passed on from constructor
 
-        | Allows accessing state stored on the zproc server, through a dict-like API.
-        | Communicates to the zproc server using the ROUTER-DEALER pattern.
+        | Allows accessing state stored on the ZProc Server, through a dict-like API.
+        | Communicates to the ZProc Server using the ROUTER-DEALER pattern.
 
         | Don't share a ZeroState object between Process/Threads.
         | A ZeroState object is not thread-safe.
@@ -46,6 +98,7 @@ class ZeroState:
         self.identity = os.urandom(5)
 
         self.zmq_ctx = zmq.Context()
+        self.zmq_ctx.setsockopt(zmq.LINGER, 0)
 
         self.server_ipc_path, self.bcast_ipc_path = get_ipc_paths(self.uuid)
 
@@ -168,7 +221,7 @@ class ZeroState:
 
                      If no key is provided, any change in the ``state`` is respected.
         :param live: Whether to get "live" updates. See :ref:`state_watching`.
-        :param timeout: Sets the timeout in seconds.
+        :param timeout: Sets the timeout in seconds. By default it is set to -1.
 
                         If the value is 0, it will return immediately, with a :py:exc:`TimeoutError`,
                         if no update is available.
@@ -244,7 +297,7 @@ class ZeroState:
 
         :param test_fn: A ``function``, which is called on each state-change.
         :param live: Whether to get "live" updates. See :ref:`state_watching`.
-        :param timeout: Sets the timeout in seconds.
+        :param timeout: Sets the timeout in seconds. By default it is set to -1.
 
                         If the value is 0, it will return immediately, with a :py:exc:`TimeoutError`,
                         if no update is available.
@@ -288,7 +341,7 @@ class ZeroState:
         :param key: ``dict`` key
         :param value: ``dict`` value.
         :param live: Whether to get "live" updates. See :ref:`state_watching`.
-        :param timeout: Sets the timeout in seconds.
+        :param timeout: Sets the timeout in seconds. By default it is set to -1.
 
                         If the value is 0, it will return immediately, with a :py:exc:`TimeoutError`,
                         if no update is available.
@@ -331,7 +384,7 @@ class ZeroState:
         :param key: ``dict`` key.
         :param value: ``dict`` value.
         :param live: Whether to get "live" updates. See :ref:`state_watching`.
-        :param timeout: Sets the timeout in seconds.
+        :param timeout: Sets the timeout in seconds. By default it is set to -1.
 
                         If the value is 0, it will return immediately, with a :py:exc:`TimeoutError`,
                         if no update is available.
@@ -367,6 +420,16 @@ class ZeroState:
             elif timeout != -1:
                 sock.setsockopt(zmq.RCVTIMEO, -1)
 
+    def ping(self, **kwargs):
+        """
+        Ping the ZProc Server corresponding to this State's Context
+
+        :param kwargs: Optional keyword arguments that :py:func:`ping` takes.
+        :return: Same as :py:func:`ping`
+        """
+
+        return ping(self.uuid, **kwargs)
+
     def close(self):
         """
         Close this ZeroState and disconnect with the ZProcServer
@@ -374,6 +437,8 @@ class ZeroState:
 
         self.server_sock.close()
         self.sub_sock.close()
+        self.zmq_ctx.destroy()
+        self.zmq_ctx.term()
 
     def copy(self):
         return self._req_rep({Message.server_action: ZProcServer.reply_state.__name__})
@@ -420,7 +485,7 @@ def _child_proc(proc: 'ZeroProcess'):
     exceptions = [SignalException]
     for i in proc.kwargs['retry_for']:
         if type(i) == signal.Signals:
-            signal_exception_converter(i)  # converts signal to exception!
+            signal_to_exception(i)  # converts signal to exception!
         elif issubclass(i, BaseException):
             exceptions.append(i)
         else:
@@ -453,9 +518,9 @@ class ZeroProcess:
         """
         Provides a high level wrapper over :py:class:`Process`.
 
-        :param uuid: A :py:class:`UUID` object for identifying the zproc server.
+        :param uuid: The :py:class:`UUID` object for identifying the Context.
 
-                     | You may use this to reconstruct a :py:class:`ZeroState` object, from any Process, at any time.
+                     You may use this to reconstruct a :py:class:`ZeroState` object, from any Process, at any time.
 
         :param target: The Callable to be invoked by the start() method.
 
@@ -497,9 +562,9 @@ class ZeroProcess:
 
         :param max_retries: (optional) Give up after this many attempts. By default, it is set to ``-1``.
 
-                            The exception that caused the Process to give up shall be re-raised.
-
                             A value of ``-1`` will result in an *infinite* number of retries.
+
+                            After "max_tries", any Exception will be raised normally.
 
         :ivar uuid: Passed on from constructor.
         :ivar target: Passed on from constructor.
@@ -532,7 +597,7 @@ class ZeroProcess:
         """
         Start this Process
 
-        If the child has already been started once, an :py:exc:`AssertionError` will be raised.
+        If the child has already been started once, it will return with an :py:exc:`AssertionError`.
 
         :return: the process PID
         """
@@ -585,7 +650,7 @@ class ZeroProcess:
 
 
 class Context:
-    def __init__(self, background: bool = False, uuid: UUID = None, **kwargs):
+    def __init__(self, background: bool = False, uuid: UUID = None, timeout=-1, **kwargs):
         """
         A Context holds information about the current process.
 
@@ -600,41 +665,45 @@ class Context:
 
                            Avoids manually calling ``signal.pause()``
 
-        :param uuid: A :py:class:`UUID` object for identifying the zproc server. By default, it is set to :py:class:`None`
+        :param uuid: The :py:class:`UUID` object for identifying Context. By default, it is set to :py:class:`None`
 
-                     If uuid is :py:class:`None`, then one will be generated and a corresponding zproc server will be spawned.
+                     If uuid is :py:class:`None`,
+                     then one will be generated and a new ZProc Server :py:class:`Process` will be spawned.
 
-                     If a :py:class:`UUID` object is provided, then it will connect to an existing zproc server, corresponding to that uuid.
-
+                     If a :py:class:`UUID` object is provided,
+                     then it will connect to an existing ZProc Server :py:class:`Process`, corresponding to that uuid.
+        :param timeout: Passed on to :py:meth:`~Context.ping`.
         :param \*\*kwargs: Optional keyword arguments that :py:class:`ZeroProcess` takes.
 
                            If provided, these will be used while creation of any and all Processes under this Context.
 
         :ivar background: Passed from constructor.
         :ivar kwargs: Passed from constructor.
-        :ivar uuid:  A ``UUID`` for identifying the zproc server.
+        :ivar uuid:  A ``UUID`` for identifying the ZProc Server.
         :ivar state: :py:class:`ZeroState` object. The global state.
-        :ivar procs: :py:class:`list` ``[`` :py:class:`ZeroProcess` ``]``. The child Process(s) created under this Context.
+        :ivar procs: :py:class:`list` ``[`` :py:class:`ZeroProcess` ``]``.
+                     The child Process(s) created under this Context.
         :ivar server_proc: A :py:class:`Process` object for the server.
         """
-
-        if uuid is None:
-            self.uuid = uuid1()
-        else:
-            assert isinstance(uuid, UUID), \
-                '"uuid" must be `None` or an instance of `uuid.UUID`, not `{}`'.format((type(uuid)))
-
-            self.uuid = uuid
 
         self.procs = []
         self.background = background
         self.kwargs = kwargs
 
-        self.server_proc = Process(target=zproc_server_proc, args=(self.uuid,))
-        self.server_proc.start()
+        if uuid is None:
+            self.uuid = uuid1()
+
+            self.server_proc = Process(target=zproc_server_proc, args=(self.uuid,))
+            self.server_proc.start()
+        else:
+            assert isinstance(uuid, UUID), \
+                '"uuid" must be `None`, or an instance of `uuid.UUID`, not `{}`'.format((type(uuid)))
+
+            self.uuid = uuid
+            self.server_proc = None
 
         if not background:
-            atexit.register(reap_ptree)  # kill all the child procs when main script exits
+            atexit.register(shutdown)  # kill all the child procs when main script exits
 
         self.state = ZeroState(self.uuid)
 
@@ -751,6 +820,16 @@ class Context:
         for proc in self.procs:
             proc.stop()
 
+    def ping(self, **kwargs):
+        """
+        Ping the ZProc Server corresponding to this Context
+
+        :param kwargs: Optional keyword arguments that :py:func:`ping` takes.
+        :return: Same as :py:func:`ping`
+        """
+
+        return ping(self.uuid, **kwargs)
+
     def close(self):
         """
         Close this context and stop all processes associated with it.
@@ -760,7 +839,7 @@ class Context:
 
         self.stop_all()
 
-        if self.server_proc.is_alive():
+        if self.server_proc is not None:
             self.server_proc.terminate()
 
         self.state.close()
