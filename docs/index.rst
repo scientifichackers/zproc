@@ -3,7 +3,7 @@ ZProc: Process on steroids
 
 
 
-.. image:: https://img.shields.io/badge/pip-0.3.2-blue.svg?longCache=true&style=for-the-badge
+.. image:: https://img.shields.io/badge/pip-0.3.7-blue.svg?longCache=true&style=for-the-badge
     :alt: PyPI
     :target: https://pypi.org/project/zproc/
 
