@@ -2,7 +2,7 @@
 Shows how much ZProc is resillient to race conditions.
 
 Spawns 500 processes that do non-atomic operation (incrementation) on state.
-Since the operations are wrapped inside @state.atomify(), they magically avoid race conditions!
+Since the operations are wrapped inside @state.taskify(), they magically avoid race conditions!
 
 Expected Output:
 
