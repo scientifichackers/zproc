@@ -1,7 +1,8 @@
 """
 Shows how much ZProc is resillient to race conditions.
+Complete with a fuzz! (Thanks to Raymond's talk on the Concurrency)
 
-Spawns 500 processes that do non-atomic operation (incrementation) on state.
+Spawns 100 processes that do non-atomic operation (incrementation) on state.
 Since the operations are wrapped inside @state.atomify(), they magically avoid race conditions!
 
 Expected Output:
@@ -12,24 +13,28 @@ Expected Output:
 .
 .
 
-500
-
+100
 """
 
 import zproc
+from time import sleep
+from random import random
 
 ctx = zproc.Context(background=True)
 
-ctx.state['count'] = 0
+ctx.state["count"] = 0
 
 
-def child(state: zproc.ZeroState):
-    @state.taskify()
-    def increment(state):
-        state['count'] += 1
-        return state['count']
+def increment(state):
+    count = state["count"]
+    sleep(random())  # this ensures that this operation is non-atomic
+    state["count"] = count + 1
 
-    print(increment())
+    return state["count"]
 
 
-ctx.process_factory(child, count=500)
+def child(state):
+    print(state.atomic(increment))
+
+
+ctx.process_factory(child, count=100)

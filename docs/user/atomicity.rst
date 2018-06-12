@@ -40,14 +40,15 @@ Let's make some changes to our example..
 
 .. code-block:: python
 
-    @state.taskify()
+    @state.atomify()
     def increment(state, step):
         state['count'] += step
 
     increment(5)
 
 
-If it wasn't clear, ``@state.taskify()`` makes any arbitrary function, an atomic operation on the state.
+If it wasn't clear, ``@state.atomify()`` makes any arbitrary function,
+an atomic operation on the state.
 
 `🔖 <http://zproc.readthedocs.io/en/latest/source/zproc.html#zproc.zproc.ZeroState.taskify>`_ <- docs
 

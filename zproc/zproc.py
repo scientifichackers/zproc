@@ -11,9 +11,18 @@ from uuid import UUID, uuid1
 import zmq
 from time import sleep
 
-from zproc.util import shutdown, get_ipc_paths, Message, STATE_DICT_DYNAMIC_METHODS, \
-    serialize_func, handle_server_response, method_injector, print_crash_report, signal_to_exception, \
-    SignalException
+from zproc.util import (
+    shutdown,
+    get_ipc_paths,
+    Message,
+    STATE_DICT_DYNAMIC_METHODS,
+    serialize_func,
+    handle_server_response,
+    method_injector,
+    print_crash_report,
+    signal_to_exception,
+    SignalException,
+)
 from zproc.zproc_server import ZProcServer, zproc_server_proc
 
 signal.signal(signal.SIGTERM, shutdown)  # Add handler for the SIGTERM signal
@@ -40,20 +49,20 @@ def ping(uuid: UUID, **kwargs):
     :return: The ZProc Server's ``pid`` if the ping was successful, else :py:class:`False`
     """
 
-    kwargs.setdefault('timeout', -1)
-    kwargs.setdefault('ping_data', os.urandom(56))
+    kwargs.setdefault("timeout", -1)
+    kwargs.setdefault("ping_data", os.urandom(56))
 
     ctx = zmq.Context()
     ctx.setsockopt(zmq.LINGER, 0)
     sock = ctx.socket(zmq.DEALER)
     sock.connect(get_ipc_paths(uuid)[0])
 
-    if kwargs['timeout'] != -1:
-        sock.setsockopt(zmq.RCVTIMEO, int(kwargs['timeout'] * 1000))
+    if kwargs["timeout"] != -1:
+        sock.setsockopt(zmq.RCVTIMEO, int(kwargs["timeout"] * 1000))
 
     ping_msg = {
         Message.server_action: ZProcServer.ping.__name__,
-        Message.ping_data: kwargs['ping_data']
+        Message.ping_data: kwargs["ping_data"],
     }
 
     sock.send_pyobj(ping_msg, protocol=pickle.HIGHEST_PROTOCOL)  # send msg
@@ -61,10 +70,10 @@ def ping(uuid: UUID, **kwargs):
     try:
         response = sock.recv_pyobj()  # wait for reply
     except zmq.error.Again:
-        raise TimeoutError('Connection to ZProc Server timed out!')
+        raise TimeoutError("Connection to ZProc Server timed out!")
     else:
-        if response.get('ping_data') == kwargs['ping_data']:
-            return response['pid']
+        if response.get("ping_data") == kwargs["ping_data"]:
+            return response["pid"]
         else:
             return False
     finally:
@@ -112,7 +121,7 @@ class ZeroState:
         sock = self.zmq_ctx.socket(zmq.SUB)
         sock.connect(self.bcast_ipc_path)
 
-        sock.setsockopt(zmq.SUBSCRIBE, b'')
+        sock.setsockopt(zmq.SUBSCRIBE, b"")
 
         return sock
 
@@ -124,18 +133,22 @@ class ZeroState:
                 return handle_server_response(pickle.loads(response))
 
     def _req_rep(self, request):
-        self.server_sock.send_pyobj(request, protocol=pickle.HIGHEST_PROTOCOL)  # send msg
+        self.server_sock.send_pyobj(
+            request, protocol=pickle.HIGHEST_PROTOCOL
+        )  # send msg
         response = self.server_sock.recv_pyobj()  # wait for reply
         return handle_server_response(response)
 
     def _get_state_method(self, name):
         def state_method(*args, **kwargs):
-            return self._req_rep({
-                Message.server_action: ZProcServer.state_method.__name__,
-                Message.method_name: name,
-                Message.args: args,
-                Message.kwargs: kwargs
-            })
+            return self._req_rep(
+                {
+                    Message.server_action: ZProcServer.state_method.__name__,
+                    Message.method_name: name,
+                    Message.args: args,
+                    Message.kwargs: kwargs,
+                }
+            )
 
         return state_method
 
@@ -143,10 +156,9 @@ class ZeroState:
         self.sub_sock.close()
         self.sub_sock = self._new_sub_sock()
 
-    def task(self, fn, *args, **kwargs):
+    def atomic(self, fn, *args, **kwargs):
         """
-        | Run a "task" on the state, atomically.
-        | In other words, execute the ``fn`` in an *atomic* way.
+        | Run a task (fn) on the state, in an atomic fashion.
         |
         | No Process shall access the state in any way whilst ``fn`` is running.
         | This helps avoid race-conditions, almost entirely.
@@ -171,19 +183,21 @@ class ZeroState:
             print(state.atomic(increment)) # 1
         """
 
-        return self._req_rep({
-            Message.server_action: ZProcServer.state_func.__name__,
-            Message.func: serialize_func(fn),
-            Message.args: args,
-            Message.kwargs: kwargs
-        })
+        return self._req_rep(
+            {
+                Message.server_action: ZProcServer.state_func.__name__,
+                Message.func: serialize_func(fn),
+                Message.args: args,
+                Message.kwargs: kwargs,
+            }
+        )
 
-    def taskify(self):
+    def atomify(self):
         """
-        | Hack on a normal looking function to make an atomic "task" out of it.
+        | Hack on a normal looking function to make an "atomic" task out of it.
         | Allows making an arbitrary number of operations on sate, atomic.
         |
-        | Decorator version of :py:meth:`~ZeroState.task()`
+        | Decorator version of :py:meth:`~ZeroState.atomic()`
 
         :return: An atomic decorator, which itself returns - ``wrapped_fn(state, *args, **kwargs)``
         :rtype: function
@@ -207,7 +221,7 @@ class ZeroState:
         def atomic_decorator(fn):
             @wraps(fn)
             def atomic_wrapper(*args, **kwargs):
-                return self.task(fn, *args, **kwargs)
+                return self.atomic(fn, *args, **kwargs)
 
             return atomic_wrapper
 
@@ -277,7 +291,7 @@ class ZeroState:
                     if new != old:
                         return new
         except zmq.error.Again:
-            raise TimeoutError('Timed-out waiting for an update')
+            raise TimeoutError("Timed-out waiting for an update")
         finally:
             if live:
                 sock.close()
@@ -327,7 +341,7 @@ class ZeroState:
                 else:
                     new = self._sub_recv(sock)[-1]
         except zmq.error.Again:
-            raise TimeoutError('Timed-out waiting for an update')
+            raise TimeoutError("Timed-out waiting for an update")
         finally:
             if live:
                 sock.close()
@@ -370,7 +384,7 @@ class ZeroState:
                 else:
                     new = self._sub_recv(sock)[-1].get(key)
         except zmq.error.Again:
-            raise TimeoutError('Timed-out waiting for an update')
+            raise TimeoutError("Timed-out waiting for an update")
         finally:
             if live:
                 sock.close()
@@ -413,7 +427,7 @@ class ZeroState:
                 else:
                     new = self._sub_recv(sock)[-1].get(key)
         except zmq.error.Again:
-            raise TimeoutError('Timed-out waiting for an update')
+            raise TimeoutError("Timed-out waiting for an update")
         finally:
             if live:
                 sock.close()
@@ -453,7 +467,7 @@ class ZeroState:
         return self.copy().values()
 
     def __repr__(self):
-        return '<ZeroState state: {} uuid: {}>'.format(self.copy(), self.uuid)
+        return "<ZeroState state: {} uuid: {}>".format(self.copy(), self.uuid)
 
 
 def _get_remote_method(name):
@@ -466,31 +480,34 @@ def _get_remote_method(name):
 method_injector(ZeroState, STATE_DICT_DYNAMIC_METHODS, _get_remote_method)
 
 
-def _child_proc(proc: 'ZeroProcess'):
+def _child_proc(proc: "ZeroProcess"):
     state = ZeroState(proc.uuid)
 
     target_params = inspect.signature(proc.target).parameters.copy()
 
-    if 'kwargs' in target_params:
-        target_kwargs = {'state': state, 'props': proc.kwargs['props'], 'proc': proc}
+    if "kwargs" in target_params:
+        target_kwargs = {"state": state, "props": proc.kwargs["props"], "proc": proc}
     else:
         target_kwargs = {}
-        if 'state' in target_params:
-            target_kwargs['state'] = state
-        if 'props' in target_params:
-            target_kwargs['props'] = proc.kwargs['props']
-        if 'proc' in target_params:
-            target_kwargs['proc'] = proc
+        if "state" in target_params:
+            target_kwargs["state"] = state
+        if "props" in target_params:
+            target_kwargs["props"] = proc.kwargs["props"]
+        if "proc" in target_params:
+            target_kwargs["proc"] = proc
 
     exceptions = [SignalException]
-    for i in proc.kwargs['retry_for']:
+    for i in proc.kwargs["retry_for"]:
         if type(i) == signal.Signals:
             signal_to_exception(i)  # converts signal to exception!
         elif issubclass(i, BaseException):
             exceptions.append(i)
         else:
             raise ValueError(
-                '"retry_for" must contain a `signals.Signal` or `Exception`, not `{}`'.format(repr(type(i))))
+                '"retry_for" must contain a `signals.Signal` or `Exception`, not `{}`'.format(
+                    repr(type(i))
+                )
+            )
 
     exceptions = tuple(exceptions)
 
@@ -500,15 +517,17 @@ def _child_proc(proc: 'ZeroProcess'):
             tries += 1
             proc.target(**target_kwargs)
         except exceptions as e:
-            print_crash_report(proc, e, proc.kwargs['retry_delay'], tries, proc.kwargs['max_retries'])
+            print_crash_report(
+                proc, e, proc.kwargs["retry_delay"], tries, proc.kwargs["max_retries"]
+            )
 
-            if proc.kwargs['max_retries'] != -1 and tries > proc.kwargs['max_retries']:
+            if proc.kwargs["max_retries"] != -1 and tries > proc.kwargs["max_retries"]:
                 raise e
             else:
-                if 'props' in target_kwargs:
-                    target_kwargs['props'] = proc.kwargs['retry_props']
+                if "props" in target_kwargs:
+                    target_kwargs["props"] = proc.kwargs["retry_props"]
 
-                sleep(proc.kwargs['retry_delay'])
+                sleep(proc.kwargs["retry_delay"])
         else:
             break
 
@@ -572,26 +591,28 @@ class ZeroProcess:
         :ivar proc: The :py:class:`Process` object associated with this ZeroProcess.
         """
 
-        assert callable(target), '"target" must be a `Callable`, not `{}`'.format(type(target))
+        assert callable(target), '"target" must be a `Callable`, not `{}`'.format(
+            type(target)
+        )
 
         self.uuid = uuid
         self.target = target
         self.kwargs = kwargs
 
-        self.kwargs.setdefault('props', None)
-        self.kwargs.setdefault('start', True)
-        self.kwargs.setdefault('retry_for', ())
-        self.kwargs.setdefault('retry_delay', 5)
-        self.kwargs.setdefault('retry_props', self.kwargs['props'])
-        self.kwargs.setdefault('max_retries', -1)
+        self.kwargs.setdefault("props", None)
+        self.kwargs.setdefault("start", True)
+        self.kwargs.setdefault("retry_for", ())
+        self.kwargs.setdefault("retry_delay", 5)
+        self.kwargs.setdefault("retry_props", self.kwargs["props"])
+        self.kwargs.setdefault("max_retries", -1)
 
         self.proc = Process(target=_child_proc, args=(self,))
 
-        if self.kwargs['start']:
+        if self.kwargs["start"]:
             self.start()
 
     def __repr__(self):
-        return '<ZeroProcess target: {} uuid: {}>'.format(self.target, self.uuid)
+        return "<ZeroProcess target: {} uuid: {}>".format(self.target, self.uuid)
 
     def start(self):
         """
@@ -650,7 +671,9 @@ class ZeroProcess:
 
 
 class Context:
-    def __init__(self, background: bool = False, uuid: UUID = None, timeout=-1, **kwargs):
+    def __init__(
+        self, background: bool = False, uuid: UUID = None, timeout=-1, **kwargs
+    ):
         """
         A Context holds information about the current process.
 
@@ -696,8 +719,11 @@ class Context:
             self.server_proc = Process(target=zproc_server_proc, args=(self.uuid,))
             self.server_proc.start()
         else:
-            assert isinstance(uuid, UUID), \
-                '"uuid" must be `None`, or an instance of `uuid.UUID`, not `{}`'.format((type(uuid)))
+            assert isinstance(
+                uuid, UUID
+            ), '"uuid" must be `None`, or an instance of `uuid.UUID`, not `{}`'.format(
+                (type(uuid))
+            )
 
             self.uuid = uuid
             self.server_proc = None
@@ -762,16 +788,16 @@ class Context:
             def watcher_proc(state, props, proc):
                 target_params = inspect.signature(fn).parameters.copy()
 
-                if 'kwargs' in target_params:
-                    target_kwargs = {'state': state, 'props': props, 'proc': proc}
+                if "kwargs" in target_params:
+                    target_kwargs = {"state": state, "props": props, "proc": proc}
                 else:
                     target_kwargs = {}
-                    if 'state' in target_params:
-                        target_kwargs['state'] = state
-                    if 'props' in target_params:
-                        target_kwargs['props'] = props
-                    if 'proc' in target_params:
-                        target_kwargs['proc'] = proc
+                    if "state" in target_params:
+                        target_kwargs["state"] = state
+                    if "props" in target_params:
+                        target_kwargs["props"] = props
+                    if "proc" in target_params:
+                        target_kwargs["proc"] = proc
 
                 while True:
                     getattr(state, fn_name)(*args, **kwargs)
@@ -784,22 +810,22 @@ class Context:
     def call_when_change(self, *keys, live=False):
         """Decorator version of :py:meth:`~ZeroState.get_when_change()`"""
 
-        return self._get_watcher_decorator('get_when_change', *keys, live=live)
+        return self._get_watcher_decorator("get_when_change", *keys, live=live)
 
     def call_when(self, test_fn, *, live=False):
         """Decorator version of :py:meth:`~ZeroState.get_when()`"""
 
-        return self._get_watcher_decorator('get_when', test_fn, live=live)
+        return self._get_watcher_decorator("get_when", test_fn, live=live)
 
     def call_when_equal(self, key, value, *, live=False):
         """Decorator version of :py:meth:`~ZeroState.get_when_equal()`"""
 
-        return self._get_watcher_decorator('get_when_equal', key, value, live=live)
+        return self._get_watcher_decorator("get_when_equal", key, value, live=live)
 
     def call_when_not_equal(self, key, value, *, live=False):
         """Decorator version of :py:meth:`~ZeroState.get_when_not_equal()`"""
 
-        return self._get_watcher_decorator('get_when_not_equal', key, value, live=live)
+        return self._get_watcher_decorator("get_when_not_equal", key, value, live=live)
 
     def start_all(self):
         """
