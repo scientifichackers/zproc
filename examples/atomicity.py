@@ -3,7 +3,7 @@ Shows how much ZProc is resillient to race conditions.
 Complete with a fuzz! (Thanks to Raymond's talk on the Concurrency)
 
 Spawns 100 processes that do non-atomic operation (incrementation) on state.
-Since the operations are wrapped inside @state.atomify(), they magically avoid race conditions!
+Since the operations are run using ".atomic()", they magically avoid race conditions!
 
 Expected Output:
 
