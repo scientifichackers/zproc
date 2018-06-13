@@ -26,8 +26,8 @@ instructions for getting the most out of ZProc.
 .. toctree::
 
     user/quickstart
-    user/state_watching
     user/atomicity
+    user/state_watching
 
 The API Documentation / Guide
 -----------------------------
