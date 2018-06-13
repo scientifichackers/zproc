@@ -152,10 +152,6 @@ class ZeroState:
 
         return state_method
 
-    def go_live(self):
-        self.sub_sock.close()
-        self.sub_sock = self._new_sub_sock()
-
     def atomic(self, fn, *args, **kwargs):
         """
         | Run a task (fn) on the state, in an atomic fashion.
@@ -433,6 +429,14 @@ class ZeroState:
                 sock.close()
             elif timeout != -1:
                 sock.setsockopt(zmq.RCVTIMEO, -1)
+
+    def go_live(self):
+        """
+        Clear the events buffer, thus removing past events that were stored.
+        """
+
+        self.sub_sock.close()
+        self.sub_sock = self._new_sub_sock()
 
     def ping(self, **kwargs):
         """

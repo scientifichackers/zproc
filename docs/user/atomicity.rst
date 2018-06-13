@@ -47,12 +47,10 @@ Let's make some changes to our example..
     increment(5)
 
 
-If it wasn't clear, ``@state.atomify()`` makes any arbitrary function,
+If it wasn't clear, :py:meth:`~.ZeroState.atomify()` makes any arbitrary function,
 an atomic operation on the state.
 
 
-`🔖 <api.html#zproc.ZeroState.atomic>`_ <- non-decorator version
-
-`🔖 <api.html#zproc.ZeroState.atomify>`_ <- docs
+:py:meth:`~.ZeroState.atomic()` <- non-decorator version
 
 `🔖 <https://github.com/pycampers/zproc/tree/master/examples>`_ <- full example

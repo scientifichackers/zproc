@@ -11,10 +11,10 @@ State watching is primary method of synchronization in ZProc.
 
 It boils down to these methods, in the :class:`.ZeroState` API.
 
-- :func:`~zproc.zproc.ZeroState.get_when_change`
-- :func:`~zproc.zproc.ZeroState.get_when`
-- :func:`~zproc.zproc.ZeroState.get_when_equal`
-- :func:`~zproc.zproc.ZeroState.get_when_not_equal`
+- :py:meth:`~.ZeroState.get_when_change`
+- :py:meth:`~.ZeroState.get_when`
+- :py:meth:`~.ZeroState.get_when_equal`
+- :py:meth:`~.ZeroState.get_when_not_equal`
 
 All these methods have a common parameter, "live".
 
@@ -37,7 +37,7 @@ To modify this behaviour, just pass ``live=False``, like so -
 
 **Human:** Wait a second, a live youtube video can be buffered as well!
 
-| Hence the need for a :func:`~zproc.zproc.ZeroState.go_live` method.
+| Hence the need for a :py:meth:`~.ZeroState.go_live` method.
 | It *clears* the buffer, deleting any previous events.
 
 **Human:** Great, that's exactly like the **LIVE** button on my live stream, that makes it *skip ahead to the live broadcast*.
@@ -48,6 +48,8 @@ To modify this behaviour, just pass ``live=False``, like so -
 | A **live** state watcher is strictly **LIVE**.
 
 
-Using these methods, alongside the ``live`` parameter and :func:`~zproc.zproc.ZeroState.go_live` method, one can create extremely simple looking, yet powerful applications.
+Using these methods,
+alongside the ``live`` parameter and :py:meth:`~.ZeroState.go_live` method,
+one can create extremely simple looking, yet powerful applications.
 
 
