@@ -433,6 +433,8 @@ class ZeroState:
     def go_live(self):
         """
         Clear the events buffer, thus removing past events that were stored.
+
+        See :ref:`state_watching`.
         """
 
         self.sub_sock.close()
