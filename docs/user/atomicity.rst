@@ -51,8 +51,8 @@ If it wasn't clear, ``@state.atomify()`` makes any arbitrary function,
 an atomic operation on the state.
 
 
-`🔖 <http://zproc.readthedocs.io/en/latest/source/zproc.html#zproc.zproc.ZeroState.atomic>`_ <- non-decorator version
+`🔖 <api.html#zproc.ZeroState.atomic>`_ <- non-decorator version
 
-`🔖 <http://zproc.readthedocs.io/en/latest/source/zproc.html#zproc.zproc.ZeroState.atomify>`_ <- docs
+`🔖 <api.html#zproc.ZeroState.atomify>`_ <- docs
 
-`🔖 <examples/atomicity.py>`_ <- full example
+`🔖 <https://github.com/pycampers/zproc/tree/master/examples>`_ <- full example
