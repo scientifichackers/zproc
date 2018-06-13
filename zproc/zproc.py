@@ -612,7 +612,9 @@ class ZeroProcess:
             self.start()
 
     def __repr__(self):
-        return "<ZeroProcess target: {} uuid: {}>".format(self.target, self.uuid)
+        return "<ZeroProcess pid: {} target: {} uuid: {}>".format(
+            self.pid, self.target, self.uuid
+        )
 
     def start(self):
         """
