@@ -1,13 +1,17 @@
 import os
 import pickle
-import signal
 from typing import Tuple
 from uuid import UUID
 
 import zmq
 from tblib import pickling_support
 
-from zproc.util import get_ipc_paths, Message, DICT_MUTABLE_ACTIONS, de_serialize_func, RemoteException, shutdown
+from zproc.util import (
+    get_ipc_paths_from_uuid,
+    Message,
+    de_serialize_func,
+    RemoteException,
+)
 
 pickling_support.install()
 
@@ -17,7 +21,7 @@ class ZProcServer:
         self.uuid = uuid
         self.state = {}
 
-        self.server_ipc_path, self.bcast_ipc_path = get_ipc_paths(self.uuid)
+        self.server_ipc_path, self.publish_ipc_path = get_ipc_paths_from_uuid(self.uuid)
 
         self.zmq_ctx = zmq.Context()
         self.zmq_ctx.setsockopt(zmq.LINGER, 0)
@@ -25,93 +29,93 @@ class ZProcServer:
         self.server_sock = self.zmq_ctx.socket(zmq.ROUTER)
         self.server_sock.bind(self.server_ipc_path)
 
-        self.pub_sock = self.zmq_ctx.socket(zmq.PUB)
-        self.pub_sock.bind(self.bcast_ipc_path)
+        self.publish_sock = self.zmq_ctx.socket(zmq.PUB)
+        self.publish_sock.bind(self.publish_ipc_path)
 
-    def wait_req(self) -> Tuple[str, dict]:
+    def wait_for_request(self) -> Tuple[str, dict]:
         """wait for a client to send a request"""
 
-        ident, msg_dict = self.server_sock.recv_multipart()
-        return ident, pickle.loads(msg_dict)
+        identity, msg_dict = self.server_sock.recv_multipart()
+        return identity, pickle.loads(msg_dict)
 
-    def reply(self, ident, response):
+    def reply(self, identity, response):
         """reply with response to a client (with said identity)"""
 
-        return self.server_sock.send_multipart([ident, pickle.dumps(response, protocol=pickle.HIGHEST_PROTOCOL)])
+        return self.server_sock.send_multipart(
+            [identity, pickle.dumps(response, protocol=pickle.HIGHEST_PROTOCOL)]
+        )
 
-    def reply_state(self, ident, *args):
+    def reply_state(self, identity, *args):
         """reply with state to a client (with said identity)"""
 
-        self.reply(ident, self.state)
+        self.reply(identity, self.state)
 
-    def publish_state(self, ident, old):
+    def publish_state_if_change(self, identity, old_state):
         """Publish the state to everyone"""
 
-        return self.pub_sock.send_multipart([
-            ident,
-            pickle.dumps([old, self.state], protocol=pickle.HIGHEST_PROTOCOL)
-        ])
+        if old_state != self.state:
+            return self.publish_sock.send_multipart(
+                [
+                    identity,
+                    pickle.dumps(
+                        [old_state, self.state], protocol=pickle.HIGHEST_PROTOCOL
+                    ),
+                ]
+            )
 
-    def ping(self, ident, request):
+    def ping(self, identity, request):
 
-        return self.reply(ident, {'pid': os.getpid(), 'ping_data': request[Message.ping_data]})
+        return self.reply(
+            identity, {"pid": os.getpid(), "ping_data": request[Message.ping_data]}
+        )
 
-    def state_method(self, ident, request):
+    def _run_function_atomically_and_safely(self, identity, func, args, kwargs):
+        old_state = self.state.copy()
+
+        try:
+            result = func(*args, **kwargs)
+        except:
+            self.state = old_state  # restore previous state
+            self.resend_error_back_to_process(identity)
+        else:
+            self.reply(identity, result)
+            self.publish_state_if_change(identity, old_state)
+
+    def call_method_on_state(self, identity, request):
         """Call a method on the state dict and return the result."""
 
         method_name = request[Message.method_name]
-
-        can_mutate = method_name in DICT_MUTABLE_ACTIONS
-        if can_mutate:
-            old = self.state.copy()
-
         state_method = getattr(self.state, method_name)
-        result = state_method(*request[Message.args], **request[Message.kwargs])
 
-        self.reply(ident, result)
+        return self._run_function_atomically_and_safely(
+            identity, state_method, request[Message.args], request[Message.kwargs]
+        )
 
-        if can_mutate and old != self.state:
-            self.publish_state(ident, old)
-
-    def state_func(self, ident: str, msg_dict: dict):
-        """Run a function on the state"""
-
-        old = self.state.copy()
+    def run_atomic_function(self, identity: str, msg_dict: dict):
+        """Run a function on the state, safely and atomically"""
 
         func = de_serialize_func(msg_dict[Message.func])
-        result = func(self.state, *msg_dict[Message.args], **msg_dict[Message.kwargs])
+        args = (self.state, *msg_dict[Message.args])
 
-        self.reply(ident, result)
-
-        if old != self.state:
-            self.publish_state(ident, old)
+        return self._run_function_atomically_and_safely(
+            identity, func, args, msg_dict[Message.kwargs]
+        )
 
     def close(self):
         self.server_sock.close()
-        self.pub_sock.close()
+        self.publish_sock.close()
         self.zmq_ctx.destroy()
         self.zmq_ctx.term()
 
+    def resend_error_back_to_process(self, identity):
+        return self.reply(identity, RemoteException())
 
-def signal_handler(*args):
-    raise KeyboardInterrupt
+    def mainloop(self):
+        while True:
+            identity, request = self.wait_for_request()
+            # print(request, identity)
 
-
-def zproc_server_proc(uuid: UUID):
-    server = ZProcServer(uuid)
-
-    def hander(*args):
-        server.close()
-
-        shutdown(*args)
-
-    signal.signal(signal.SIGTERM, hander)
-
-    # server mainloop
-    while True:
-        ident, request = server.wait_req()
-        # print(request, ident)
-        try:
-            getattr(server, request[Message.server_action])(ident, request)
-        except Exception:
-            server.reply(ident, RemoteException())
+            try:
+                getattr(self, request[Message.server_action])(identity, request)
+            except:
+                self.resend_error_back_to_process(identity)

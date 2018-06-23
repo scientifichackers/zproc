@@ -13,6 +13,7 @@ dill = "*"
 tinydb = "*"
 ipython = "*"
 sphinx = "*"
+yappi = "*"
 
 [requires]
 python_version = "3.5"

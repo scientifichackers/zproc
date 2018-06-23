@@ -28,44 +28,39 @@ import zproc
 
 
 def child1():
-    print('child1:', os.getpid())
+    print("child1:", os.getpid())
     sleep(5)
 
 
 def child2(state):
-    print('child2:', os.getpid())
-    print('child2:', state.get('foo') == 'bar')
+    print("child2:", os.getpid())
+    print("child2:", state.get("foo") == "bar")
     sleep(5)
 
 
 def child3(state, props):
-    print('child3:', os.getpid())
-    print('child3:', state.get('foo') == 'bar')
-    print('child3:', props == 'test_props')
+    print("child3:", os.getpid())
+    print("child3:", state.get("foo") == "bar")
+    print("child3:", props == "test_props")
     sleep(5)
 
 
 def child4(state, props, proc):
-    print('child4:', os.getpid())
-    print('child4:', state.get('foo') == 'bar')
-    print('child4:', props == 'test_props')
-    print('child4:', proc.pid == os.getpid())
+    print("child4:", os.getpid())
+    print("child4:", state.get("foo") == "bar")
+    print("child4:", props == "test_props")
+    print("child4:", proc.pid == os.getpid())
     sleep(5)
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     ctx = zproc.Context()
 
-    ctx.state.update({'foo': 'bar'})
+    ctx.state.update({"foo": "bar"})
 
-    ctx.process_factory(child1, child2, child3, child4, props='test_props', start=False)  # notice start=False
+    ctx.process_factory(
+        child1, child2, child3, child4, props="test_props", start=False
+    )  # notice start=False
 
     ctx.start_all()
-
-    print(ctx.procs)
-
-    input('Press Enter to stop: ')
-
-    ctx.stop_all()
-
-    print(ctx.procs)
+    print(ctx.process_list)

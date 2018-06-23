@@ -1,9 +1,8 @@
 import atexit
-import inspect
 import os
 import pickle
 import signal
-from functools import wraps
+from functools import wraps, update_wrapper
 from multiprocessing import Process
 from typing import Callable
 from uuid import UUID, uuid1
@@ -12,20 +11,18 @@ import zmq
 from time import sleep
 
 from zproc.util import (
-    shutdown,
-    get_ipc_paths,
+    get_ipc_paths_from_uuid,
     Message,
-    STATE_DICT_DYNAMIC_METHODS,
     serialize_func,
     handle_server_response,
-    method_injector,
-    print_crash_report,
+    STATE_INJECTED_METHODS,
+    handle_crash,
     signal_to_exception,
     SignalException,
+    shutdown_current_process_tree,
+    get_kwargs_for_function,
 )
-from zproc.zproc_server import ZProcServer, zproc_server_proc
-
-signal.signal(signal.SIGTERM, shutdown)  # Add handler for the SIGTERM signal
+from zproc.zproc_server import ZProcServer
 
 
 def ping(uuid: UUID, **kwargs):
@@ -35,11 +32,11 @@ def ping(uuid: UUID, **kwargs):
     :param uuid: The ``UUID`` object for identifying the Context.
 
                  You can use the UUID to reconstruct a ZeroState object, from any Process, at any time.
-    :param timeout: (optional) Sets the timeout in seconds. By default it is set to -1.
+    :param timeout: (optional) Sets the timeout in seconds. By default it is set to :py:class:`None`.
 
                     If the value is 0, it will return immediately, with a :py:exc:`TimeoutError`.
 
-                    If the value is -1, it will block until the ZProc Server replies.
+                    If the value is :py:class:`None`, it will block until the ZProc Server replies.
 
                     For all other values, it will wait for a reply,
                     for that amount of time before returning with a :py:exc:`TimeoutError`.
@@ -49,15 +46,15 @@ def ping(uuid: UUID, **kwargs):
     :return: The ZProc Server's ``pid`` if the ping was successful, else :py:class:`False`
     """
 
-    kwargs.setdefault("timeout", -1)
+    kwargs.setdefault("timeout", None)
     kwargs.setdefault("ping_data", os.urandom(56))
 
     ctx = zmq.Context()
     ctx.setsockopt(zmq.LINGER, 0)
     sock = ctx.socket(zmq.DEALER)
-    sock.connect(get_ipc_paths(uuid)[0])
+    sock.connect(get_ipc_paths_from_uuid(uuid)[0])
 
-    if kwargs["timeout"] != -1:
+    if kwargs["timeout"] is not None:
         sock.setsockopt(zmq.RCVTIMEO, int(kwargs["timeout"] * 1000))
 
     ping_msg = {
@@ -78,6 +75,69 @@ def ping(uuid: UUID, **kwargs):
             return False
     finally:
         sock.close()
+
+
+def atomic(fn):
+    """
+    Hack on a normal looking function, to create an atomic operation out of it.
+
+    No Process shall access the state in any way whilst fn is running.
+    This helps avoid race-conditions, almost entirely.
+
+    :return: wrapped function
+    :rtype: function
+
+    .. code:: python
+
+        import zproc
+
+        @zproc.atomic
+        def increment(state):
+            return state['count'] += 1
+
+        ctx = zproc.Context()
+        ctx.state['count'] = 0
+
+        print(increment(ctx.state))  # 1
+    """
+
+    serialized_fn = serialize_func(fn)
+
+    @wraps(fn)
+    def wrapper(state, *args, **kwargs):
+        return state._req_rep(
+            {
+                Message.server_action: ZProcServer.run_atomic_function.__name__,
+                Message.func: serialized_fn,
+                Message.args: args,
+                Message.kwargs: kwargs,
+            }
+        )
+
+    return wrapper
+
+
+def _state_watcher_mainloop_executor(self, live, timeout):
+    def watcher_loop_executor(fn):
+        if live:
+            sock = self._get_subscribe_sock()
+        else:
+            sock = self.subscribe_sock
+
+        if timeout is not None:
+            sock.setsockopt(zmq.RCVTIMEO, int(timeout * 1000))
+
+        try:
+            return fn(sock)
+        except zmq.error.Again:
+            raise TimeoutError("Timed-out waiting for an update")
+        finally:
+            if live:
+                sock.close()
+            elif timeout is not None:
+                sock.setsockopt(zmq.RCVTIMEO, -1)
+
+    return watcher_loop_executor
 
 
 class ZeroState:
@@ -109,121 +169,36 @@ class ZeroState:
         self.zmq_ctx = zmq.Context()
         self.zmq_ctx.setsockopt(zmq.LINGER, 0)
 
-        self.server_ipc_path, self.bcast_ipc_path = get_ipc_paths(self.uuid)
+        self.server_ipc_path, self.subscribe_ipc_path = get_ipc_paths_from_uuid(
+            self.uuid
+        )
 
         self.server_sock = self.zmq_ctx.socket(zmq.DEALER)
         self.server_sock.setsockopt(zmq.IDENTITY, self.identity)
         self.server_sock.connect(self.server_ipc_path)
 
-        self.sub_sock = self._new_sub_sock()
+        self.subscribe_sock = self._get_subscribe_sock()
 
-    def _new_sub_sock(self):
+    def _get_subscribe_sock(self):
         sock = self.zmq_ctx.socket(zmq.SUB)
-        sock.connect(self.bcast_ipc_path)
-
+        sock.connect(self.subscribe_ipc_path)
         sock.setsockopt(zmq.SUBSCRIBE, b"")
-
         return sock
 
-    def _sub_recv(self, sock):
+    def _subscribe(self, sock):
         while True:
-            ident, response = sock.recv_multipart()
+            identity, response = sock.recv_multipart()
 
-            if ident != self.identity:
+            # only accept updates from other processes, not this one.
+            if identity != self.identity:
                 return handle_server_response(pickle.loads(response))
 
     def _req_rep(self, request):
-        self.server_sock.send_pyobj(
-            request, protocol=pickle.HIGHEST_PROTOCOL
-        )  # send msg
-        response = self.server_sock.recv_pyobj()  # wait for reply
+        self.server_sock.send_pyobj(request, protocol=pickle.HIGHEST_PROTOCOL)
+        response = self.server_sock.recv_pyobj()
         return handle_server_response(response)
 
-    def _get_state_method(self, name):
-        def state_method(*args, **kwargs):
-            return self._req_rep(
-                {
-                    Message.server_action: ZProcServer.state_method.__name__,
-                    Message.method_name: name,
-                    Message.args: args,
-                    Message.kwargs: kwargs,
-                }
-            )
-
-        return state_method
-
-    def atomic(self, fn, *args, **kwargs):
-        """
-        | Run a task (fn) on the state, in an atomic fashion.
-        |
-        | No Process shall access the state in any way whilst ``fn`` is running.
-        | This helps avoid race-conditions, almost entirely.
-
-        :param fn: A user-defined function.
-        :param args: Passed on to fn
-        :param kwargs: Passed on to fn
-        :return: Roughly, ``fn(state, *args, **kwargs)``
-
-        .. code:: python
-
-            from zproc import Context
-
-            ctx = Context()
-            state = ctx.state
-
-            state['count'] = 0
-
-            def increment(state):
-                return state['count'] += 1
-
-            print(state.atomic(increment)) # 1
-        """
-
-        return self._req_rep(
-            {
-                Message.server_action: ZProcServer.state_func.__name__,
-                Message.func: serialize_func(fn),
-                Message.args: args,
-                Message.kwargs: kwargs,
-            }
-        )
-
-    def atomify(self):
-        """
-        | Hack on a normal looking function to make an "atomic" task out of it.
-        | Allows making an arbitrary number of operations on sate, atomic.
-        |
-        | Decorator version of :py:meth:`~ZeroState.atomic()`
-
-        :return: An atomic decorator, which itself returns - ``wrapped_fn(state, *args, **kwargs)``
-        :rtype: function
-
-        .. code:: python
-
-            from zproc import Context
-
-            ctx = Context()
-            state = ctx.state
-
-            state['count'] = 0
-
-            @atomify()
-            def increment(state):
-                return state['count'] += 1
-
-            print(increment()) # 1
-        """
-
-        def atomic_decorator(fn):
-            @wraps(fn)
-            def atomic_wrapper(*args, **kwargs):
-                return self.atomic(fn, *args, **kwargs)
-
-            return atomic_wrapper
-
-        return atomic_decorator
-
-    def get_when_change(self, *keys, live=True, timeout=-1):
+    def get_when_change(self, *keys, live=True, timeout=None):
         """
         | Block until a change is observed.
 
@@ -231,12 +206,12 @@ class ZeroState:
 
                      If no key is provided, any change in the ``state`` is respected.
         :param live: Whether to get "live" updates. See :ref:`state_watching`.
-        :param timeout: Sets the timeout in seconds. By default it is set to -1.
+        :param timeout: Sets the timeout in seconds. By default it is set to :py:class:`None`.
 
                         If the value is 0, it will return immediately, with a :py:exc:`TimeoutError`,
                         if no update is available.
 
-                        If the value is -1, it will block until an update is available.
+                        If the value is :py:class:`None`, it will block until an update is available.
 
                         For all other values, it will wait for and update,
                         for that amount of time before returning with a :py:exc:`TimeoutError`.
@@ -255,46 +230,38 @@ class ZeroState:
                 return state.copy()
         """
 
-        if live:
-            sock = self._new_sub_sock()
-        else:
-            sock = self.sub_sock
-
-        if timeout != -1:
-            sock.setsockopt(zmq.RCVTIMEO, int(timeout * 1000))
-
         num_keys = len(keys)
-        try:
-            if num_keys == 1:
-                key = keys[0]
 
+        if num_keys == 1:
+            key = keys[0]
+
+            @_state_watcher_mainloop_executor(self, live, timeout)
+            def mainloop(sock):
                 while True:
-                    old, new = self._sub_recv(sock)
-
-                    if new.get(key) != old.get(key):
+                    old, new = self._subscribe(sock)
+                    if old.get(key) != new.get(key):
                         return new
-            elif num_keys:
-                while True:
-                    old, new = self._sub_recv(sock)
 
+        elif num_keys:
+
+            @_state_watcher_mainloop_executor(self, live, timeout)
+            def mainloop(sock):
+                while True:
+                    old, new = self._subscribe(sock)
                     for key in keys:
                         if new.get(key) != old.get(key):
                             return [new.get(key) for key in keys]
-            else:
-                while True:
-                    old, new = self._sub_recv(sock)
 
+        else:
+
+            @_state_watcher_mainloop_executor(self, live, timeout)
+            def mainloop(sock):
+                while True:
+                    old, new = self._subscribe(sock)
                     if new != old:
                         return new
-        except zmq.error.Again:
-            raise TimeoutError("Timed-out waiting for an update")
-        finally:
-            if live:
-                sock.close()
-            elif timeout != -1:
-                sock.setsockopt(zmq.RCVTIMEO, -1)
 
-    def get_when(self, test_fn, *, live=True, timeout=-1):
+    def get_when(self, test_fn, *, live=True, timeout=None):
         """
         | Block until ``test_fn(state: ZeroState)`` returns a True-like value
         |
@@ -307,12 +274,12 @@ class ZeroState:
 
         :param test_fn: A ``function``, which is called on each state-change.
         :param live: Whether to get "live" updates. See :ref:`state_watching`.
-        :param timeout: Sets the timeout in seconds. By default it is set to -1.
+        :param timeout: Sets the timeout in seconds. By default it is set to :py:class:`None`.
 
                         If the value is 0, it will return immediately, with a :py:exc:`TimeoutError`,
                         if no update is available.
 
-                        If the value is -1, it will block until an update is available.
+                        If the value is :py:class:`None`, it will block until an update is available.
 
                         For all other values, it will wait for and update,
                         for that amount of time before returning with a :py:exc:`TimeoutError`.
@@ -321,42 +288,28 @@ class ZeroState:
         :rtype: ``dict``
         """
 
-        if live:
-            sock = self._new_sub_sock()
-        else:
-            sock = self.sub_sock
-
-        if timeout != -1:
-            sock.setsockopt(zmq.RCVTIMEO, int(timeout * 1000))
-
-        new = self.copy()
-        try:
+        @_state_watcher_mainloop_executor(self, live, timeout)
+        def mainloop(sock):
+            latest_state = self.copy()
             while True:
-                if test_fn(new):
-                    return new
+                if test_fn(latest_state):
+                    return latest_state
                 else:
-                    new = self._sub_recv(sock)[-1]
-        except zmq.error.Again:
-            raise TimeoutError("Timed-out waiting for an update")
-        finally:
-            if live:
-                sock.close()
-            elif timeout != -1:
-                sock.setsockopt(zmq.RCVTIMEO, -1)
+                    latest_state = self._subscribe(sock)[-1]
 
-    def get_when_equal(self, key, value, *, live=True, timeout=-1):
+    def get_when_equal(self, key, value, *, live=True, timeout=None):
         """
         | Block until ``state.get(key) == value``.
 
         :param key: ``dict`` key
         :param value: ``dict`` value.
         :param live: Whether to get "live" updates. See :ref:`state_watching`.
-        :param timeout: Sets the timeout in seconds. By default it is set to -1.
+        :param timeout: Sets the timeout in seconds. By default it is set to :py:class:`None`.
 
                         If the value is 0, it will return immediately, with a :py:exc:`TimeoutError`,
                         if no update is available.
 
-                        If the value is -1, it will block until an update is available.
+                        If the value is :py:class:`None`, it will block until an update is available.
 
                         For all other values, it will wait for and update,
                         for that amount of time before returning with a :py:exc:`TimeoutError`.
@@ -364,42 +317,28 @@ class ZeroState:
         :return: ``state.get(key)``
         """
 
-        if live:
-            sock = self._new_sub_sock()
-        else:
-            sock = self.sub_sock
-
-        if timeout != -1:
-            sock.setsockopt(zmq.RCVTIMEO, int(timeout * 1000))
-
-        new = self.get(key)
-        try:
+        @_state_watcher_mainloop_executor(self, live, timeout)
+        def mainloop(sock):
+            latest_key = self.get(key)
             while True:
-                if new == value:
-                    return new
+                if latest_key == value:
+                    return latest_key
                 else:
-                    new = self._sub_recv(sock)[-1].get(key)
-        except zmq.error.Again:
-            raise TimeoutError("Timed-out waiting for an update")
-        finally:
-            if live:
-                sock.close()
-            elif timeout != -1:
-                sock.setsockopt(zmq.RCVTIMEO, -1)
+                    latest_key = self._subscribe(sock)[-1].get(key)
 
-    def get_when_not_equal(self, key, value, *, live=True, timeout=-1):
+    def get_when_not_equal(self, key, value, *, live=True, timeout=None):
         """
         | Block until ``state.get(key) != value``.
 
         :param key: ``dict`` key.
         :param value: ``dict`` value.
         :param live: Whether to get "live" updates. See :ref:`state_watching`.
-        :param timeout: Sets the timeout in seconds. By default it is set to -1.
+        :param timeout: Sets the timeout in seconds. By default it is set to :py:class:`None`.
 
                         If the value is 0, it will return immediately, with a :py:exc:`TimeoutError`,
                         if no update is available.
 
-                        If the value is -1, it will block until an update is available.
+                        If the value is :py:class:`None`, it will block until an update is available.
 
                         For all other values, it will wait for and update,
                         for that amount of time before returning with a :py:exc:`TimeoutError`.
@@ -407,28 +346,14 @@ class ZeroState:
         :return: ``state.get(key)``
         """
 
-        if live:
-            sock = self._new_sub_sock()
-        else:
-            sock = self.sub_sock
-
-        if timeout != -1:
-            sock.setsockopt(zmq.RCVTIMEO, int(timeout * 1000))
-
-        new = self.get(key)
-        try:
+        @_state_watcher_mainloop_executor(self, live, timeout)
+        def mainloop(sock):
+            latest_key = self.get(key)
             while True:
-                if new != value:
-                    return new
+                if latest_key != value:
+                    return latest_key
                 else:
-                    new = self._sub_recv(sock)[-1].get(key)
-        except zmq.error.Again:
-            raise TimeoutError("Timed-out waiting for an update")
-        finally:
-            if live:
-                sock.close()
-            elif timeout != -1:
-                sock.setsockopt(zmq.RCVTIMEO, -1)
+                    latest_key = self._subscribe(sock)[-1].get(key)
 
     def go_live(self):
         """
@@ -437,8 +362,8 @@ class ZeroState:
         See :ref:`state_watching`.
         """
 
-        self.sub_sock.close()
-        self.sub_sock = self._new_sub_sock()
+        self.subscribe_sock.close()
+        self.subscribe_sock = self._get_subscribe_sock()
 
     def ping(self, **kwargs):
         """
@@ -456,7 +381,7 @@ class ZeroState:
         """
 
         self.server_sock.close()
-        self.sub_sock.close()
+        self.subscribe_sock.close()
         self.zmq_ctx.destroy()
         self.zmq_ctx.term()
 
@@ -476,36 +401,31 @@ class ZeroState:
         return "<ZeroState state: {} uuid: {}>".format(self.copy(), self.uuid)
 
 
-def _get_remote_method(name):
-    def remote_method(self, *args, **kwargs):
-        return self._get_state_method(name)(*args, **kwargs)
+def get_injected_method(method_name):
+    def injected_method(self, *args, **kwargs):
+        return self._req_rep(
+            {
+                Message.server_action: ZProcServer.call_method_on_state.__name__,
+                Message.method_name: method_name,
+                Message.args: args,
+                Message.kwargs: kwargs,
+            }
+        )
 
-    return remote_method
+    return injected_method
 
 
-method_injector(ZeroState, STATE_DICT_DYNAMIC_METHODS, _get_remote_method)
+for method_name in STATE_INJECTED_METHODS:
+    setattr(ZeroState, method_name, get_injected_method(method_name))
 
 
-def _child_proc(proc: "ZeroProcess"):
+def _child_process(proc: "ZeroProcess"):
     state = ZeroState(proc.uuid)
-
-    target_params = inspect.signature(proc.target).parameters.copy()
-
-    if "kwargs" in target_params:
-        target_kwargs = {"state": state, "props": proc.kwargs["props"], "proc": proc}
-    else:
-        target_kwargs = {}
-        if "state" in target_params:
-            target_kwargs["state"] = state
-        if "props" in target_params:
-            target_kwargs["props"] = proc.kwargs["props"]
-        if "proc" in target_params:
-            target_kwargs["proc"] = proc
 
     exceptions = [SignalException]
     for i in proc.kwargs["retry_for"]:
         if type(i) == signal.Signals:
-            signal_to_exception(i)  # converts signal to exception!
+            signal_to_exception(i)
         elif issubclass(i, BaseException):
             exceptions.append(i)
         else:
@@ -514,8 +434,11 @@ def _child_proc(proc: "ZeroProcess"):
                     repr(type(i))
                 )
             )
-
     exceptions = tuple(exceptions)
+
+    target_kwargs = get_kwargs_for_function(
+        proc.target, state, proc.kwargs["props"], proc
+    )
 
     tries = 0
     while True:
@@ -523,17 +446,21 @@ def _child_proc(proc: "ZeroProcess"):
             tries += 1
             proc.target(**target_kwargs)
         except exceptions as e:
-            print_crash_report(
-                proc, e, proc.kwargs["retry_delay"], tries, proc.kwargs["max_retries"]
-            )
-
-            if proc.kwargs["max_retries"] != -1 and tries > proc.kwargs["max_retries"]:
+            if (proc.kwargs["max_retries"] is not None) and (
+                tries > proc.kwargs["max_retries"]
+            ):
                 raise e
             else:
+                handle_crash(
+                    proc,
+                    e,
+                    proc.kwargs["retry_delay"],
+                    tries,
+                    proc.kwargs["max_retries"],
+                )
+
                 if "props" in target_kwargs:
                     target_kwargs["props"] = proc.kwargs["retry_props"]
-
-                sleep(proc.kwargs["retry_delay"])
         else:
             break
 
@@ -568,7 +495,7 @@ class ZeroProcess:
 
                                 # retry if a ConnectionError, ValueError or signal.SIGTERM is received.
                                 ctx.process(
-                                    lambda: None,
+                                    my_process,
                                     retry_for=(ConnectionError, ValueError, signal.SIGTERM)
                                 )
 
@@ -585,16 +512,16 @@ class ZeroProcess:
                             Used to control how your application behaves, under retry conditions.
 
 
-        :param max_retries: (optional) Give up after this many attempts. By default, it is set to ``-1``.
+        :param max_retries: (optional) Give up after this many attempts. By default, it is set to :py:class:`None`.
 
-                            A value of ``-1`` will result in an *infinite* number of retries.
+                            A value of :py:class:`None` will result in an *infinite* number of retries.
 
                             After "max_tries", any Exception will be raised normally.
 
         :ivar uuid: Passed on from constructor.
         :ivar target: Passed on from constructor.
         :ivar kwargs: Passed on from constructor.
-        :ivar proc: The :py:class:`Process` object associated with this ZeroProcess.
+        :ivar child: The :py:class:`Process` object associated with this ZeroProcess.
         """
 
         assert callable(target), '"target" must be a `Callable`, not `{}`'.format(
@@ -610,9 +537,9 @@ class ZeroProcess:
         self.kwargs.setdefault("retry_for", ())
         self.kwargs.setdefault("retry_delay", 5)
         self.kwargs.setdefault("retry_props", self.kwargs["props"])
-        self.kwargs.setdefault("max_retries", -1)
+        self.kwargs.setdefault("max_retries", None)
 
-        self.proc = Process(target=_child_proc, args=(self,))
+        self.child = Process(target=_child_process, args=(self,))
 
         if self.kwargs["start"]:
             self.start()
@@ -631,8 +558,8 @@ class ZeroProcess:
         :return: the process PID
         """
 
-        self.proc.start()
-        return self.proc.pid
+        self.child.start()
+        return self.child.pid
 
     def stop(self):
         """
@@ -641,8 +568,23 @@ class ZeroProcess:
         :return: :py:attr:`~exitcode`.
         """
 
-        self.proc.terminate()
-        return self.proc.exitcode
+        self.child.terminate()
+        return self.child.exitcode
+
+    def wait(self, timoeut=None):
+        """
+        Wait until the process finishes execution.
+
+        :param timeout: If the value is :py:class:`None`, it will block until the ZProc Server replies.
+
+                        For all other values, it will wait for a reply,
+                        for that amount of time before returning with a :py:exc:`TimeoutError`.
+        """
+
+        self.child.join(timeout=timoeut)
+
+        if self.child.is_alive():
+            raise TimeoutError("Timed-out waiting for process to finish")
 
     @property
     def is_alive(self):
@@ -654,7 +596,7 @@ class ZeroProcess:
         | until the child process is stopped manually (using stop()) or naturally exits
         """
 
-        return self.proc and self.proc.is_alive()
+        return self.child and self.child.is_alive()
 
     @property
     def pid(self):
@@ -663,8 +605,8 @@ class ZeroProcess:
         | Before the process is started, this will be None.
         """
 
-        if self.proc is not None:
-            return self.proc.pid
+        if self.child is not None:
+            return self.child.pid
 
     @property
     def exitcode(self):
@@ -674,14 +616,23 @@ class ZeroProcess:
         | A negative value -N indicates that the child was terminated by signal N.
         """
 
-        if self.proc is not None:
-            return self.proc.exitcode
+        if self.child is not None:
+            return self.child.exitcode
+
+
+def _zproc_server_process(uuid: UUID):
+    server = ZProcServer(uuid)
+
+    def signal_handler(*args):
+        server.close()
+        shutdown_current_process_tree(*args)
+
+    signal.signal(signal.SIGTERM, signal_handler)
+    server.mainloop()
 
 
 class Context:
-    def __init__(
-        self, background: bool = False, uuid: UUID = None, timeout=-1, **kwargs
-    ):
+    def __init__(self, background: bool = False, uuid: UUID = None, **kwargs):
         """
         A Context holds information about the current process.
 
@@ -694,7 +645,7 @@ class Context:
 
                            Background tasks keep running even when your main (parent) script finishes execution.
 
-                           Avoids manually calling ``signal.pause()``
+                           Avoids manually calling :py:meth:`~Context.wait_all`
 
         :param uuid: The :py:class:`UUID` object for identifying Context. By default, it is set to :py:class:`None`
 
@@ -703,7 +654,6 @@ class Context:
 
                      If a :py:class:`UUID` object is provided,
                      then it will connect to an existing ZProc Server :py:class:`Process`, corresponding to that uuid.
-        :param timeout: Passed on to :py:meth:`~Context.ping`.
         :param \*\*kwargs: Optional keyword arguments that :py:class:`ZeroProcess` takes.
 
                            If provided, these will be used while creation of any and all Processes under this Context.
@@ -712,20 +662,22 @@ class Context:
         :ivar kwargs: Passed from constructor.
         :ivar uuid:  A ``UUID`` for identifying the ZProc Server.
         :ivar state: :py:class:`ZeroState` object. The global state.
-        :ivar procs: :py:class:`list` ``[`` :py:class:`ZeroProcess` ``]``.
-                     The child Process(s) created under this Context.
-        :ivar server_proc: A :py:class:`Process` object for the server.
+        :ivar process_list: :py:class:`list` ``[`` :py:class:`ZeroProcess` ``]``.
+                            The child Process(s) created under this Context.
+        :ivar server_process: A :py:class:`Process` object for the server.
         """
 
-        self.procs = []
+        self.process_list = []
         self.background = background
         self.kwargs = kwargs
 
         if uuid is None:
             self.uuid = uuid1()
 
-            self.server_proc = Process(target=zproc_server_proc, args=(self.uuid,))
-            self.server_proc.start()
+            self.server_process = Process(
+                target=_zproc_server_process, args=(self.uuid,)
+            )
+            self.server_process.start()
         else:
             assert isinstance(
                 uuid, UUID
@@ -734,12 +686,14 @@ class Context:
             )
 
             self.uuid = uuid
-            self.server_proc = None
-
-        if not background:
-            atexit.register(shutdown)  # kill all the child procs when main script exits
+            self.server_process = None
 
         self.state = ZeroState(self.uuid)
+
+        signal.signal(signal.SIGTERM, shutdown_current_process_tree)
+        atexit.register(shutdown_current_process_tree)
+        if background:
+            atexit.register(self.wait_all)
 
     def process(self, target, **kwargs):
         """
@@ -751,19 +705,18 @@ class Context:
 
         _kwargs = self.kwargs.copy()
         _kwargs.update(kwargs)
-
-        proc = ZeroProcess(self.uuid, target, **_kwargs)
-
-        self.procs.append(proc)
-
-        return proc
+        process = ZeroProcess(self.uuid, target, **_kwargs)
+        self.process_list.append(process)
+        return process
 
     def processify(self, **kwargs):
         """
         The decorator version of :py:meth:`~Context.process`
 
         :param \*\*kwargs: Optional keyword arguments that :py:class:`ZeroProcess` takes.
-        :return: A processify decorator, which itself returns a :py:class:`ZeroProcess` instance.
+        :return: A wrapper function.
+
+                The wrapper function will return the :py:class:`ZeroProcess` instance created
         :rtype: function
         """
 
@@ -787,53 +740,157 @@ class Context:
         for target in targets:
             for _ in range(count):
                 procs.append(self.process(target, **kwargs))
-        self.procs += procs
+        self.process_list += procs
 
         return procs
 
-    def _get_watcher_decorator(self, fn_name, *args, **kwargs):
-        def watcher_decorator(fn):
-            def watcher_proc(state, props, proc):
-                target_params = inspect.signature(fn).parameters.copy()
-
-                if "kwargs" in target_params:
-                    target_kwargs = {"state": state, "props": props, "proc": proc}
-                else:
-                    target_kwargs = {}
-                    if "state" in target_params:
-                        target_kwargs["state"] = state
-                    if "props" in target_params:
-                        target_kwargs["props"] = props
-                    if "proc" in target_params:
-                        target_kwargs["proc"] = proc
+    def _get_watcher_process_wrapper(self, fn_name, process_kwargs, *args, **kwargs):
+        def wrapper(fn):
+            @self.processify(**process_kwargs)
+            def watcher_process(state, props, proc):
+                target_kwargs = get_kwargs_for_function(fn, state, props, proc)
 
                 while True:
                     getattr(state, fn_name)(*args, **kwargs)
                     fn(**target_kwargs)
 
-            return self.process(watcher_proc)
+            update_wrapper(watcher_process.target, fn)
+            return watcher_process
 
-        return watcher_decorator
+        return wrapper
 
-    def call_when_change(self, *keys, live=False):
-        """Decorator version of :py:meth:`~ZeroState.get_when_change()`"""
+    def call_when_change(self, *keys, live=False, **process_kwargs):
+        """
+        Decorator version of :py:meth:`~ZeroState.get_when_change()`
 
-        return self._get_watcher_decorator("get_when_change", *keys, live=live)
+        Spawns a new Process that watches the state and calls the wrapped function,
+        repeatedly
 
-    def call_when(self, test_fn, *, live=False):
-        """Decorator version of :py:meth:`~ZeroState.get_when()`"""
+        :param process_kwargs: Passed on to :py:class:`ZeroProcess` constructor
 
-        return self._get_watcher_decorator("get_when", test_fn, live=live)
+        All other parameters have same meaning as :py:meth:`~ZeroState.get_when_change()`
 
-    def call_when_equal(self, key, value, *, live=False):
-        """Decorator version of :py:meth:`~ZeroState.get_when_equal()`"""
+        :return: A wrapper function
 
-        return self._get_watcher_decorator("get_when_equal", key, value, live=live)
+                The wrapper function will return the :py:class:`ZeroProcess` instance created
+        :rtype: function
 
-    def call_when_not_equal(self, key, value, *, live=False):
-        """Decorator version of :py:meth:`~ZeroState.get_when_not_equal()`"""
+        .. code:: python
 
-        return self._get_watcher_decorator("get_when_not_equal", key, value, live=live)
+            import zproc
+
+            ctx = zproc.Context()
+
+            @ctx.call_when_change()
+            def test(state):
+                print(state)
+        """
+
+        return self._get_watcher_process_wrapper(
+            "get_when_change", process_kwargs, *keys, live=live
+        )
+
+    def call_when(self, test_fn, *, live=False, **process_kwargs):
+        """
+        Decorator version of :py:meth:`~ZeroState.get_when()`
+
+        Spawns a new Process that watches the state and calls the wrapped function,
+        repeatedly
+
+        :param process_kwargs: Passed on to :py:class:`ZeroProcess` constructor
+
+        All other parameters have same meaning as :py:meth:`~ZeroState.get_when()`
+
+        :return: A wrapper function
+
+                The wrapper function will return the :py:class:`ZeroProcess` instance created
+        :rtype: function
+
+        .. code:: python
+
+            import zproc
+
+            ctx = zproc.Context()
+
+            @ctx.get_state_when(lambda state: state['foo'] == 5)
+            def test(state):
+                print(state)
+        """
+
+        return self._get_watcher_process_wrapper(
+            "get_when", process_kwargs, test_fn, live=live
+        )
+
+    def call_when_equal(self, key, value, *, live=False, **process_kwargs):
+        """
+        Decorator version of :py:meth:`~ZeroState.get_when_equal()`
+
+        Spawns a new Process that watches the state and calls the wrapped function,
+        repeatedly
+
+        :param process_kwargs: Passed on to :py:class:`ZeroProcess` constructor
+
+        All other parameters have same meaning as :py:meth:`~ZeroState.get_when_equal()`
+
+        :return: A wrapper function
+
+                The wrapper function will return the :py:class:`ZeroProcess` instance created
+        :rtype: function
+
+        .. code:: python
+
+            import zproc
+
+            ctx = zproc.Context()
+
+            @ctx.call_when_equal('foo', 5)
+            def test(state):
+                print(state)
+        """
+
+        return self._get_watcher_process_wrapper(
+            "get_when_equal", process_kwargs, key, value, live=live
+        )
+
+    def call_when_not_equal(self, key, value, *, live=False, **process_kwargs):
+        """
+        Decorator version of :py:meth:`~ZeroState.get_when_not_equal()`
+
+        Spawns a new Process that watches the state and calls the wrapped function,
+        repeatedly
+
+        :param process_kwargs: Passed on to :py:class:`ZeroProcess` constructor
+
+        All other parameters have same meaning as :py:meth:`~ZeroState.get_when_not_equal()`
+
+        :return: A wrapper function
+
+                The wrapper function will return the :py:class:`ZeroProcess` instance created
+        :rtype: function
+
+        .. code:: python
+
+            import zproc
+
+            ctx = zproc.Context()
+
+            @ctx.call_when_not_equal('foo', 5)
+            def test(state):
+                print(state)
+        """
+
+        return self._get_watcher_process_wrapper(
+            "get_when_not_equal", process_kwargs, key, value, live=live
+        )
+
+    def wait_all(self, *args, **kwargs):
+        """
+        Call :py:meth:`~ZeroProcess.wait()` on all the child processes of this Context.
+        \*args and \*\*kwargs are passed on to :py:meth:`~ZeroProcess.wait()`
+        """
+
+        for proc in self.process_list:
+            proc.wait()
 
     def start_all(self):
         """
@@ -842,7 +899,7 @@ class Context:
         Ignore if process is already started
         """
 
-        for proc in self.procs:
+        for proc in self.process_list:
             try:
                 proc.start()
             except AssertionError:
@@ -851,7 +908,7 @@ class Context:
     def stop_all(self):
         """Call :py:meth:`~ZeroProcess.stop()` on all the child processes of this Context"""
 
-        for proc in self.procs:
+        for proc in self.process_list:
             proc.stop()
 
     def ping(self, **kwargs):
@@ -873,7 +930,7 @@ class Context:
 
         self.stop_all()
 
-        if self.server_proc is not None:
-            self.server_proc.terminate()
+        if self.server_process is not None:
+            self.server_process.terminate()
 
         self.state.close()

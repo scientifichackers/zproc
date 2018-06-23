@@ -3,18 +3,20 @@ Atomicity
 
 **The elephant in the room, race-conditions.**
 
-In ZProc world, a single dict operation is __guaranteed™__ to be atomic.
+When doing multiprocessing, one has to inevitably think about atomicity.
 
-But, in real world applications require arbitrary number of operations to be atomic.
+ZProc __guarantees™__ that a single dict operation is atomic.
+
+However, your application may require arbitrary number of operations to be atomic.
 
 **Exhibit A**
 
 .. code-block:: python
 
-    def increment(step):
+    def increment(state, step):
         state['count'] += step
 
-    increment(5)
+    increment(state, 5)
 
 ``increment()`` might look like a single operation, but don't get fooled! (They're 2)
 
@@ -25,7 +27,7 @@ But, in real world applications require arbitrary number of operations to be ato
 ``__getitiem__` and ``__setitem__`` are **guarateed™** to be atomtic on their own, but NOT in conjunction.
 
 If these operations are not done atomically,
-it exposes the possiblity of other Processes trying to do operations between "1" and "2"
+it exposes the possibility of other Processes trying to do operations between "1" and "2"
 
 
 Clearly, a remedy is required.
@@ -36,21 +38,21 @@ With ZProc, it's dead simple.
 
 Let's make some changes to our example..
 
-**Exhibit A (Part 2)**
-
 .. code-block:: python
 
-    @state.atomify()
+    @zproc.atomic
     def increment(state, step):
         state['count'] += step
 
-    increment(5)
+    increment(state, 5)
 
-
-If it wasn't clear, :py:meth:`~.ZeroState.atomify()` makes any arbitrary function,
+:py:meth:`~.atomic()` makes any arbitrary function,
 an atomic operation on the state.
 
+This is very different from traditional locks. Locks are just flags. This is NOT a flag.
 
-:py:meth:`~.ZeroState.atomic()` <- non-decorator version
+It's a hard restriction on state.
+
+Also, If an error shall occur while the function is running, the state will remain UNAFFECTED.
 
 `🔖 <https://github.com/pycampers/zproc/tree/master/examples>`_ <- full example

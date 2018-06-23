@@ -16,25 +16,27 @@ Expected Output:
 100
 """
 
-import zproc
-from time import sleep
 from random import random
 
-ctx = zproc.Context(background=True)
+from time import sleep
 
+import zproc
+
+ctx = zproc.Context(background=True)
 ctx.state["count"] = 0
 
 
+@zproc.atomic
 def increment(state):
     count = state["count"]
     sleep(random())  # this ensures that this operation is non-atomic
     state["count"] = count + 1
 
-    return state["count"]
+    print(state["count"])
 
 
 def child(state):
-    print(state.atomic(increment))
+    increment(state)
 
 
 ctx.process_factory(child, count=100)
