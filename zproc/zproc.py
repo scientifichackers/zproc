@@ -245,7 +245,7 @@ class ZeroState:
                 while True:
                     old, new = self._subscribe(sock)
                     if old.get(key) != new.get(key):
-                        return new
+                        return new.get(key)
 
         elif num_keys:
 
@@ -265,6 +265,8 @@ class ZeroState:
                     old, new = self._subscribe(sock)
                     if new != old:
                         return new
+
+        return mainloop
 
     def get_when(self, test_fn, *, live=True, timeout=None):
         """
@@ -297,10 +299,12 @@ class ZeroState:
         def mainloop(sock):
             latest_state = self.copy()
             while True:
-                if test_fn(latest_state):
+                if test_fn(latest_state.copy()):
                     return latest_state
                 else:
                     latest_state = self._subscribe(sock)[-1]
+
+        return mainloop
 
     def get_when_equal(self, key, value, *, live=True, timeout=None):
         """
@@ -331,6 +335,8 @@ class ZeroState:
                 else:
                     latest_key = self._subscribe(sock)[-1].get(key)
 
+        return mainloop
+
     def get_when_not_equal(self, key, value, *, live=True, timeout=None):
         """
         | Block until ``state.get(key) != value``.
@@ -359,6 +365,8 @@ class ZeroState:
                     return latest_key
                 else:
                     latest_key = self._subscribe(sock)[-1].get(key)
+
+        return mainloop
 
     def go_live(self):
         """
@@ -655,7 +663,9 @@ def _zproc_server_process(uuid: UUID):
 
 
 class Context:
-    def __init__(self, background: bool = False, uuid: UUID = None, **process_kwargs):
+    def __init__(
+        self, *, background: bool = False, uuid: UUID = None, **process_kwargs
+    ):
         """
         A Context holds information about the current process.
 
@@ -668,14 +678,14 @@ class Context:
         A Context object is not thread-safe.
 
         :param background:
-            Whether to run Processes under this Context as "background tasks".
+            (optional) Whether to run Processes under this Context as "background tasks".
 
             If enabled, it "waits" for all Process to finish their work,
             before your main script can exit.
 
             Avoids manually calling :py:meth:`~Context.wait_all`
         :param uuid:
-            A :py:class:`UUID` object for identifying this Context,
+            (optional) A :py:class:`UUID` object for identifying this Context,
             and the zproc server associated with it.
 
             By default, it is set to :py:class:`None`

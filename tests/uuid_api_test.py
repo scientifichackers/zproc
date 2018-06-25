@@ -5,30 +5,25 @@ Tests the re-creation of object, using the UUID feature
 import unittest
 
 import zproc
+import uuid
 
 
 class TestUUIDAPI(unittest.TestCase):
     def setUp(self):
-        self.ctx = zproc.Context()
-        self.ctx.state["foo"] = 42
+        self.uuid = uuid.uuid1()
 
-    def test_new_ctx_from_ctx(self):
-        ctx = zproc.Context(uuid=self.ctx.uuid)
+        ctx = zproc.Context(uuid=self.uuid)
+        ctx.start_server()
+
+        ctx.state["foo"] = 42
+
+    def test_ctx_from_uuid(self):
+        ctx = zproc.Context(uuid=self.uuid)
 
         self.assertEqual(ctx.state.copy(), {"foo": 42})
 
-    def test_new_ctx_from_state(self):
-        ctx = zproc.Context(uuid=self.ctx.state.uuid, old=True)
-
-        self.assertEqual(ctx.state.copy(), {"foo": 42})
-
-    def test_new_state_from_ctx(self):
-        state = zproc.ZeroState(uuid=self.ctx.uuid)
-
-        self.assertEqual(state.copy(), {"foo": 42})
-
-    def test_new_state_from_state(self):
-        state = zproc.ZeroState(uuid=self.ctx.state.uuid)
+    def test_state_from_uuid(self):
+        state = zproc.ZeroState(uuid=self.uuid)
 
         self.assertEqual(state.copy(), {"foo": 42})
 
