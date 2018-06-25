@@ -1,7 +1,6 @@
 import atexit
 import os
 import pickle
-from copy import deepcopy
 import signal
 from functools import wraps, update_wrapper
 from multiprocessing import Process
@@ -299,7 +298,7 @@ class ZeroState:
         def mainloop(sock):
             latest_state = self.copy()
             while True:
-                if test_fn(deepcopy(latest_state)):
+                if test_fn(latest_state):
                     return latest_state
                 else:
                     latest_state = self._subscribe(sock)[-1]

@@ -1,8 +1,9 @@
 import os
 import pickle
+from copy import deepcopy
 from typing import Tuple
 from uuid import UUID
-from copy import deepcopy
+
 import zmq
 from tblib import pickling_support
 
