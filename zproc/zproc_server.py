@@ -2,14 +2,14 @@ import os
 import pickle
 from typing import Tuple
 from uuid import UUID
-
+from copy import deepcopy
 import zmq
 from tblib import pickling_support
 
 from zproc.util import (
     get_ipc_paths_from_uuid,
     Message,
-    de_serialize_func,
+    deserialize_func,
     RemoteException,
 )
 
@@ -64,13 +64,12 @@ class ZProcServer:
             )
 
     def ping(self, identity, request):
-
         return self.reply(
             identity, {"pid": os.getpid(), "ping_data": request[Message.ping_data]}
         )
 
     def _run_function_atomically_and_safely(self, identity, func, args, kwargs):
-        old_state = self.state.copy()
+        old_state = deepcopy(self.state)
 
         try:
             result = func(*args, **kwargs)
@@ -94,7 +93,7 @@ class ZProcServer:
     def run_atomic_function(self, identity: str, msg_dict: dict):
         """Run a function on the state, safely and atomically"""
 
-        func = de_serialize_func(msg_dict[Message.func])
+        func = deserialize_func(msg_dict[Message.func])
         args = (self.state, *msg_dict[Message.args])
 
         return self._run_function_atomically_and_safely(

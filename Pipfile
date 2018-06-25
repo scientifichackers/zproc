@@ -7,7 +7,6 @@ name = "pypi"
 pyzmq = "*"
 tblib = "*"
 psutil = "*"
-dill = "*"
 
 [dev-packages]
 tinydb = "*"

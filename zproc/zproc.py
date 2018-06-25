@@ -1,6 +1,7 @@
 import atexit
 import os
 import pickle
+from copy import deepcopy
 import signal
 from functools import wraps, update_wrapper
 from multiprocessing import Process
@@ -8,7 +9,6 @@ from typing import Callable
 from uuid import UUID, uuid1
 
 import zmq
-from time import sleep
 
 from zproc.util import (
     get_ipc_paths_from_uuid,
@@ -104,7 +104,7 @@ def atomic(fn):
     serialized_fn = serialize_func(fn)
 
     @wraps(fn)
-    def wrapper(state, *args, **kwargs):
+    def atomic_wrapper(state, *args, **kwargs):
         return state._req_rep(
             {
                 Message.server_action: ZProcServer.run_atomic_function.__name__,
@@ -114,7 +114,7 @@ def atomic(fn):
             }
         )
 
-    return wrapper
+    return atomic_wrapper
 
 
 def _state_watcher_mainloop_executor(self, live, timeout):
@@ -299,7 +299,7 @@ class ZeroState:
         def mainloop(sock):
             latest_state = self.copy()
             while True:
-                if test_fn(latest_state.copy()):
+                if test_fn(deepcopy(latest_state)):
                     return latest_state
                 else:
                     latest_state = self._subscribe(sock)[-1]

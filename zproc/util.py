@@ -1,15 +1,17 @@
 import inspect
+import marshal
 import os
 import signal
 import sys
 import traceback
+import types
 from collections import deque
 from pathlib import Path
 from types import FunctionType
 from typing import Tuple
 from uuid import uuid1, UUID
 
-import dill
+# import dill
 import psutil
 from time import sleep
 
@@ -51,12 +53,14 @@ def restore_signal_exception_behavior(e):
         signal.signal(e.sig, signal.SIG_DFL)
 
 
-def de_serialize_func(fn_bytes: bytes) -> FunctionType:
-    return dill.loads(fn_bytes)
+def deserialize_func(serialized_fn):
+    return types.FunctionType(
+        marshal.loads(serialized_fn[0]), globals(), serialized_fn[1]
+    )
 
 
-def serialize_func(fn: FunctionType) -> bytes:
-    return dill.dumps(fn)
+def serialize_func(fn):
+    return (marshal.dumps(fn.__code__), fn.__name__)
 
 
 def get_random_ipc() -> Tuple[str, str]:
