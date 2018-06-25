@@ -143,24 +143,29 @@ def _state_watcher_mainloop_executor(self, live, timeout):
 class ZeroState:
     def __init__(self, uuid: UUID):
         """
-        :param uuid: The ``UUID`` object for identifying the Context.
+        Allows accessing state stored on the ZProc Server, through a dict-like API.
 
-                     You can use the UUID to reconstruct a ZeroState object, from any Process, at any time.
+        Communicates to the ZProc Server using the ZMQ sockets.
 
-        :ivar uuid: Passed on from constructor
+        Don't share a ZeroState object between Process/Threads.
+        A ZeroState object is not thread-safe.
 
-        | Allows accessing state stored on the ZProc Server, through a dict-like API.
-        | Communicates to the ZProc Server using the ROUTER-DEALER pattern.
-
-        | Don't share a ZeroState object between Process/Threads.
-        | A ZeroState object is not thread-safe.
-
-        Boasts the following ``dict``-like members:
+        Boasts the following ``dict``-like members, to access the state:
 
         - Magic  methods:
-            __contains__(),  __delitem__(), __eq__(), __getitem__(), __iter__(), __len__(), __ne__(), __setitem__()
+            __contains__(),  __delitem__(), __eq__(), __getitem__(), __iter__(),
+            __len__(), __ne__(), __setitem__()
         - Methods:
-            clear(), copy(), fromkeys(), get(), items(),  keys(), pop(), popitem(), setdefault(), update(), values()
+            clear(), copy(), fromkeys(), get(), items(),  keys(), pop(), popitem(),
+             setdefault(), update(), values()
+
+        :param uuid:
+            A ``UUID`` object for identifying the Context.
+
+            You can use the UUID to reconstruct a ZeroState object,
+            from any Process, at any time.
+
+        :ivar uuid: Passed on from constructor
         """
 
         self.uuid = uuid
@@ -470,53 +475,71 @@ class ZeroProcess:
         """
         Provides a high level wrapper over :py:class:`Process`.
 
-        :param uuid: The :py:class:`UUID` object for identifying the Context.
+        :param uuid:
+            A :py:class:`UUID` object for identifying the Context.
 
-                     You may use this to reconstruct a :py:class:`ZeroState` object, from any Process, at any time.
+            You may use this to reconstruct a :py:class:`ZeroState` object,
+            from any Process, at any time.
+        :param target:
+            The Callable to be invoked by the start() method.
 
-        :param target: The Callable to be invoked by the start() method.
+            It is run inside a :py:class:`Process` with following kwargs:
 
-                        | It is run inside a :py:class:`Process` with following kwargs:
-                        | ``target(state=<ZeroState>, props=<props>, proc=<ZeroProcess>)``
+            ``target(state, props, proc)``
 
-                        | You may omit these, shall you not want them.
+            - state : :py:class:`ZeroState`.
+            - props : Passed on from Constructor.
+            - proc  : This ZeroProcess instance.
 
-        :param props: (optional) Passed on to the target. By default, it is set to :py:class:`None`
+            You can omit these arguments, if you don't need them.
+            However their names cannot change.
 
-        :param start: (optional) Automatically call :py:meth:`.start()` on the process.
-                      By default, it is set to ``True``.
+        :param props:
+            (optional) Passed on to the target.
 
-        :param retry_for: (optional) Automatically retry  whenever a particular Exception / signal is raised.
-                          By default, it is an empty ``tuple``
+            By default, it is set to :py:class:`None`
+        :param start:
+            (optional) Automatically call :py:meth:`.start()` on the process.
 
-                          .. code:: python
+            By default, it is set to ``True``.
+        :param retry_for:
+            (optional) Retry whenever a particular Exception / signal is raised.
 
-                                import signal
+            By default, it is an empty ``tuple``
 
-                                # retry if a ConnectionError, ValueError or signal.SIGTERM is received.
-                                ctx.process(
-                                    my_process,
-                                    retry_for=(ConnectionError, ValueError, signal.SIGTERM)
-                                )
+            .. code:: python
 
-                          | To retry for *any* **Exception**, just do
-                          | ``retry_for=(Exception,)``
+                import signal
 
-                          There is no such feature as retry for *any* **signal**, for now.
+                # retry if a ConnectionError, ValueError or signal.SIGTERM is received.
+                ctx.process(
+                    my_process,
+                    retry_for=(ConnectionError, ValueError, signal.SIGTERM)
+                )
 
-        :param retry_delay: (optional) The delay in seconds, before auto-retrying. By default, it is set to 5 secs
+            To retry for *any* **Exception**:
 
-        :param retry_props: (optional) Provide different ``props`` to a Process when it's retrying.
-                            By default, it is the same as ``props``
+            ``retry_for=(Exception,)``
 
-                            Used to control how your application behaves, under retry conditions.
+            There is no such feature as retry for *any* **signal**, for now.
+        :param retry_delay:
+            (optional) The delay in seconds, before retrying.
 
+            By default, it is set to 5 secs
+        :param retry_props:
+            (optional) Provide different ``props`` to a Process when it's "retrying".
 
-        :param max_retries: (optional) Give up after this many attempts. By default, it is set to :py:class:`None`.
+            By default, it is the same as ``props``
 
-                            A value of :py:class:`None` will result in an *infinite* number of retries.
+            Can be used to control how your application behaves, under retry conditions.
+        :param max_retries:
+            (optional) Give up after this many attempts.
 
-                            After "max_tries", any Exception will be raised normally.
+            By default, it is set to :py:class:`None`.
+
+            A value of :py:class:`None` will result in an *infinite* number of retries.
+
+            After "max_tries", any Exception / Signal will exhibit default behavior.
 
         :ivar uuid: Passed on from constructor.
         :ivar target: Passed on from constructor.
@@ -632,59 +655,80 @@ def _zproc_server_process(uuid: UUID):
 
 
 class Context:
-    def __init__(self, background: bool = False, uuid: UUID = None, **kwargs):
+    def __init__(self, background: bool = False, uuid: UUID = None, **process_kwargs):
         """
         A Context holds information about the current process.
 
         It is responsible for the creation and management of Processes.
 
-        | Don't share a Context object between Process/Threads.
-        | A Context object is not thread-safe.
+        Each Context is also associated with a server process,
+        which is used internally, to manage the state.
 
-        :param background: Whether to run Processes under this Context as background tasks.
+        Don't share a Context object between Process/Threads.
+        A Context object is not thread-safe.
 
-                           Background tasks keep running even when your main (parent) script finishes execution.
+        :param background:
+            Whether to run Processes under this Context as "background tasks".
 
-                           Avoids manually calling :py:meth:`~Context.wait_all`
+            If enabled, it "waits" for all Process to finish their work,
+            before your main script can exit.
 
-        :param uuid: The :py:class:`UUID` object for identifying Context. By default, it is set to :py:class:`None`
+            Avoids manually calling :py:meth:`~Context.wait_all`
+        :param uuid:
+            A :py:class:`UUID` object for identifying this Context,
+            and the zproc server associated with it.
 
-                     If uuid is :py:class:`None`,
-                     then one will be generated and a new ZProc Server :py:class:`Process` will be spawned.
+            By default, it is set to :py:class:`None`
 
-                     If a :py:class:`UUID` object is provided,
-                     then it will connect to an existing ZProc Server :py:class:`Process`, corresponding to that uuid.
-        :param \*\*kwargs: Optional keyword arguments that :py:class:`ZeroProcess` takes.
+            If uuid is :py:class:`None`,
+            then one will be generated,
+            and a new server process will be started.
 
-                           If provided, these will be used while creation of any and all Processes under this Context.
+            If a :py:class:`UUID` object is provided,
+            then it will connect to an existing server process,
+            corresponding to that uuid.
 
-        :ivar background: Passed from constructor.
-        :ivar kwargs: Passed from constructor.
-        :ivar uuid:  A ``UUID`` for identifying the ZProc Server.
-        :ivar state: :py:class:`ZeroState` object. The global state.
-        :ivar process_list: :py:class:`list` ``[`` :py:class:`ZeroProcess` ``]``.
-                            The child Process(s) created under this Context.
-        :ivar server_process: A :py:class:`Process` object for the server.
+            .. caution::
+
+                If you provide a custom uuid,
+                then it's your responsibility to start the server manually,
+                using :py:meth:`~Context.start_server`
+
+                Also note that starting multiple server processes
+                is bound to cause issues.
+        :param \*\*process_kwargs:
+            Optional keyword arguments that :py:class:`ZeroProcess` takes.
+
+            If provided, these will be used while creating
+            Processes under this Context.
+
+        :ivar background:
+            Passed from constructor.
+        :ivar kwargs:
+            Passed from constructor.
+        :ivar uuid:
+            A ``UUID`` for identifying the ZProc Server.
+        :ivar state:
+            A :py:class:`ZeroState` object connecting to the global state.
+        :ivar process_list:
+            A list of child Process(s) created under this Context.
+        :ivar server_process:
+            A :py:class:`Process` object for the server, or None.
         """
 
         self.process_list = []
         self.background = background
-        self.kwargs = kwargs
+        self.process_kwargs = process_kwargs
 
         if uuid is None:
             self.uuid = uuid1()
-
-            self.server_process = Process(
-                target=_zproc_server_process, args=(self.uuid,)
-            )
-            self.server_process.start()
+            self.start_server()
         else:
             assert isinstance(
                 uuid, UUID
             ), '"uuid" must be `None`, or an instance of `uuid.UUID`, not `{}`'.format(
                 (type(uuid))
             )
-
             self.uuid = uuid
             self.server_process = None
 
@@ -695,6 +739,16 @@ class Context:
         if background:
             atexit.register(self.wait_all)
 
+    def start_server(self):
+        """
+        Start the ZProc Server.
+
+        Automatically called at ``__init__()`` if custom "uuid" wasn't provided
+        """
+
+        self.server_process = Process(target=_zproc_server_process, args=(self.uuid,))
+        self.server_process.start()
+
     def process(self, target, **kwargs):
         """
         Produce a child process bound to this context.
@@ -703,7 +757,7 @@ class Context:
         :param \*\*kwargs: Optional keyword arguments that :py:class:`ZeroProcess` takes.
         """
 
-        _kwargs = self.kwargs.copy()
+        _kwargs = self.process_kwargs.copy()
         _kwargs.update(kwargs)
         process = ZeroProcess(self.uuid, target, **_kwargs)
         self.process_list.append(process)
@@ -863,9 +917,10 @@ class Context:
 
         All other parameters have same meaning as :py:meth:`~ZeroState.get_when_not_equal()`
 
-        :return: A wrapper function
+        :return:
+            A wrapper function
 
-                The wrapper function will return the :py:class:`ZeroProcess` instance created
+            The wrapper function will return the :py:class:`ZeroProcess` instance created
         :rtype: function
 
         .. code:: python

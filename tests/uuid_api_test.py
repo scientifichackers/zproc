@@ -10,28 +10,28 @@ import zproc
 class TestUUIDAPI(unittest.TestCase):
     def setUp(self):
         self.ctx = zproc.Context()
-        self.ctx.state['foo'] = 42
+        self.ctx.state["foo"] = 42
 
     def test_new_ctx_from_ctx(self):
         ctx = zproc.Context(uuid=self.ctx.uuid)
 
-        self.assertEqual(ctx.state.copy(), {'foo': 42})
+        self.assertEqual(ctx.state.copy(), {"foo": 42})
 
     def test_new_ctx_from_state(self):
-        ctx = zproc.Context(uuid=self.ctx.state.uuid)
+        ctx = zproc.Context(uuid=self.ctx.state.uuid, old=True)
 
-        self.assertEqual(ctx.state.copy(), {'foo': 42})
+        self.assertEqual(ctx.state.copy(), {"foo": 42})
 
     def test_new_state_from_ctx(self):
         state = zproc.ZeroState(uuid=self.ctx.uuid)
 
-        self.assertEqual(state.copy(), {'foo': 42})
+        self.assertEqual(state.copy(), {"foo": 42})
 
     def test_new_state_from_state(self):
         state = zproc.ZeroState(uuid=self.ctx.state.uuid)
 
-        self.assertEqual(state.copy(), {'foo': 42})
+        self.assertEqual(state.copy(), {"foo": 42})
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     unittest.main()
