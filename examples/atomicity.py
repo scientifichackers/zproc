@@ -22,7 +22,7 @@ from random import random
 
 import zproc
 
-ctx = zproc.Context(background=True)
+ctx = zproc.Context(wait=True)
 ctx.state["count"] = 0
 
 

@@ -15,7 +15,7 @@ from time import time
 
 import zproc
 
-SAMPLES = 5
+SAMPLES = 10
 
 sites = {
     "https://www.yahoo.com/",

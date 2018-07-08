@@ -15,7 +15,7 @@ P.S. ZProc is short for _Zero_ Process
 ```python
 import zproc
 
-ctx = zproc.Context(background=True)
+ctx = zproc.Context(wait=True)
 ctx.state["cookies"] = 0
 
 

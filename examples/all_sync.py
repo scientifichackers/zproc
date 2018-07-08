@@ -53,7 +53,7 @@ def child6(state):
 
 
 if __name__ == "__main__":
-    ctx = zproc.Context(background=True)  # background waits for all processes to finish
+    ctx = zproc.Context(wait=True)
 
     ctx.state.setdefault("flag1", False)
     ctx.state.setdefault("flag2", False)

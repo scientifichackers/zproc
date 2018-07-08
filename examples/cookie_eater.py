@@ -17,7 +17,7 @@ nom nom nom
 
 import zproc
 
-ctx = zproc.Context(background=True)  # background waits for all processes to finish
+ctx = zproc.Context(wait=True)  # background waits for all processes to finish
 ctx.state["cookies"] = 0
 
 

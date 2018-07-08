@@ -828,6 +828,7 @@ class Context:
             atexit.register(util.cleanup_current_process_tree)
 
         if background:
+            warnings.simplefilter("always", DeprecationWarning)
             warnings.warn(
                 '"background" is deprecated. You can use "wait" instead.',
                 category=DeprecationWarning,
@@ -840,6 +841,8 @@ class Context:
     def process(self, target: typing.Callable = None, **process_kwargs):
         """
         Produce a child process bound to this context.
+
+        Can be used as both function call, and as decorator.
 
         :param target:
             Passed on to :py:class:`ZeroProcess`'s constructor.
@@ -876,7 +879,6 @@ class Context:
         """
 
         warnings.simplefilter("always", DeprecationWarning)
-
         warnings.warn(
             '"Context.processify()" is deprecated. You can now use "Context.process()" as a wrapper instead.',
             category=DeprecationWarning,
