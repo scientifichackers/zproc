@@ -866,7 +866,7 @@ class Context:
 
     def processify(self, **process_kwargs):
         """
-        The decorator version of :py:meth:`~Context.process`
+        DEPRECATED: Just use :py:meth:`~Context.process` as a decorator.
 
         :param \*\*process_kwargs:
             Keyword arguments that :py:class:`ZeroProcess` takes.
