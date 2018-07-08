@@ -28,6 +28,7 @@ instructions for getting the most out of ZProc.
     user/quickstart
     user/atomicity
     user/state_watching
+    user/communication.rst
 
 The API Documentation / Guide
 -----------------------------
@@ -44,5 +45,4 @@ Indicies
 * :ref:`genindex`
 * :ref:`modindex`
 * :ref:`search`
-
 

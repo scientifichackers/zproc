@@ -1,17 +1,29 @@
-Atomicity
-=========
+.. _atomicity:
 
-**The elephant in the room, race-conditions.**
+Atomicity and race conditions
+=============================
 
-When doing multiprocessing, one has to inevitably think about atomicity.
+When writing parallel code, one has to think about atomicity.
 
-ZProc __guarantees™__ that a single dict operation is atomic.
+If an operation is atomic, then it means that the operation is indivisible, just like an atom.
 
-However, your application may require arbitrary number of operations to be atomic.
+If an operation can be divided into pieces, then processes might jump
+in and out between the pieces and try to meddle with your work, confusing everyone.
 
-**Exhibit A**
+While zproc does provide mechanisms to avoid these kind of race conditions,
+it is ultimately up-to you to figure out if an operation is atomic or not.
 
-.. code-block:: python
+zproc **guarantees™** that a single method call on a ``dict`` is atomic.
+
+This takes out a lot of guesswork in determining the atomicity of an operation.
+
+Just think in terms of ``dict`` methods.
+
+
+Example
+-------
+
+::
 
     def increment(state, step):
         state['count'] += step
@@ -20,11 +32,12 @@ However, your application may require arbitrary number of operations to be atomi
 
 ``increment()`` might look like a single operation, but don't get fooled! (They're 2)
 
-1. ``__getitem__``  -> get ``'count'``
+1. get ``'count'``. (``dict.__getitem__()``)
 
-2. ``__setitem__``  -> set ``'count'` to ``<count> + 1``
+2. set ``'count'`` to ``<count> + 1``. (``dict.__setitem__()``)
 
-``__getitiem__` and ``__setitem__`` are **guarateed™** to be atomtic on their own, but NOT in conjunction.
+``dict.__getitiem__()`` and ``dict.__setitem__()`` are **guarateed™**
+to be atomic on their own, but NOT in conjunction.
 
 If these operations are not done atomically,
 it exposes the possibility of other Processes trying to do operations between "1" and "2"
@@ -38,7 +51,7 @@ With ZProc, it's dead simple.
 
 Let's make some changes to our example..
 
-.. code-block:: python
+::
 
     @zproc.atomic
     def increment(state, step):
@@ -46,7 +59,7 @@ Let's make some changes to our example..
 
     increment(state, 5)
 
-:py:meth:`~.atomic()` makes any arbitrary function,
+:py:meth:`~.atomic()` transforms any arbitrary function into
 an atomic operation on the state.
 
 This is very different from traditional locks. Locks are just flags. This is NOT a flag.
@@ -55,4 +68,4 @@ It's a hard restriction on state.
 
 Also, If an error shall occur while the function is running, the state will remain UNAFFECTED.
 
-`🔖 <https://github.com/pycampers/zproc/tree/master/examples>`_ <- full example
+`🔖 <https://github.com/pycampers/zproc/tree/master/examples/atomicity.py>`_ <- full example

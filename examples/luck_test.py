@@ -21,36 +21,36 @@ import random
 import zproc
 
 
-def num_listener(state: zproc.ZeroState, props):
+def num_listener(state, low, high):
     # blocks until num is between the specified range
-    state.get_when(lambda state: props[0] < state.get('num') < props[1])
+    state.get_when(lambda state: low < state.get("num") < high)
 
-    print('listener: foo is between {0} and {1}, so I awake'.format(props[0], props[1]))
+    print("listener: foo is between {0} and {1}, so I awake".format(low, high))
 
-    state['STOP'] = True
-    print('listener: I set STOP to True')
+    state["STOP"] = True
+    print("listener: I set STOP to True")
 
-    print('listener: I exit')
+    print("listener: I exit")
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     ctx = zproc.Context()  # create a context for us to work with
     state = ctx.state
 
-    state.setdefault('num', 0)  # set the default value, just to be safe
+    state.setdefault("num", 0)  # set the default value, just to be safe
 
     # give the context some processes to work with
     # also give some props to the num listener
-    ctx.process(num_listener, props=(0.6, 0.601))
+    ctx.process(num_listener, args=(0.6, 0.601))
 
     while True:
-        if state.get('STOP'):
-            print('num gen: STOP was set to True, so lets exit')
+        if state.get("STOP"):
+            print("num gen: STOP was set to True, so lets exit")
             break
         else:
             num = random.random()
-            state['num'] = num
+            state["num"] = num
 
-            print('num gen:', num)
+            print("num gen:", num)
 
-    print('num gen: I exit')
+    print("num gen: I exit")

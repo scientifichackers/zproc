@@ -108,11 +108,10 @@ It does message passing, without you ever knowing that it's doing it.
 It also borrows the concept of `state` and `props` from reactJS.
 
 Hence, provides you a global `dict` called `state`.<br>
-Each Process can also be supplied with some `props` that make processes re-usable.<br>
 The `state` is **not** a shared object.<br>
 It works _purely_ on message passing.
 
-Unlike reactJS, you are free to mutate the state and ZProc won't sweat.
+Unlike reactJS, you are free to mutate the state, up-to a certain extent.
 
 Behind the covers, it simulates the [Actor Model](https://en.wikipedia.org/wiki/Actor_model).<br>
 ZProc doesn't blindly follow it, but you can think of it as such.

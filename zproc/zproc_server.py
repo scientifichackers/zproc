@@ -1,48 +1,63 @@
 import os
 import pickle
+import uuid
 from copy import deepcopy
 from typing import Tuple
-from uuid import UUID
 
 import zmq
 from tblib import pickling_support
 
-from zproc.util import (
-    get_ipc_paths_from_uuid,
-    Message,
-    deserialize_func,
-    RemoteException,
-)
+from zproc.util import Message, deserialize_func, RemoteException, ipc_base_dir
 
 pickling_support.install()
 
 
 class ZProcServer:
-    def __init__(self, uuid: UUID):
-        self.uuid = uuid
+    def __init__(self, server_address, address_queue):
         self.state = {}
-
-        self.server_ipc_path, self.publish_ipc_path = get_ipc_paths_from_uuid(self.uuid)
 
         self.zmq_ctx = zmq.Context()
         self.zmq_ctx.setsockopt(zmq.LINGER, 0)
 
-        self.server_sock = self.zmq_ctx.socket(zmq.ROUTER)
-        self.server_sock.bind(self.server_ipc_path)
+        self.req_rep_sock = self.zmq_ctx.socket(zmq.ROUTER)
+        self.pub_sub_sock = self.zmq_ctx.socket(zmq.PUB)
 
-        self.publish_sock = self.zmq_ctx.socket(zmq.PUB)
-        self.publish_sock.bind(self.publish_ipc_path)
+        if server_address is None:
+            if os.system == "posix":
+                base_address = "ipc://" + str(ipc_base_dir)
+                self.req_rep_address, self.pub_sub_address = (
+                    base_address + str(uuid.uuid1()),
+                    base_address + str(uuid.uuid1()),
+                )
+
+                self.req_rep_sock.bind(self.req_rep_address)
+                self.pub_sub_sock.bind(self.pub_sub_address)
+            else:
+                req_rep_port = self.req_rep_sock.bind_to_random_port("tcp://*")
+                pub_sub_port = self.pub_sub_sock.bind_to_random_port("tcp://*")
+
+                self.req_rep_address, self.pub_sub_address = (
+                    "tcp://127.0.0.1:{}".format(req_rep_port),
+                    "tcp://127.0.0.1:{}".format(pub_sub_port),
+                )
+        else:
+            self.req_rep_address, self.pub_sub_address = server_address
+
+            self.req_rep_sock.bind(self.req_rep_address)
+            self.pub_sub_sock.bind(self.pub_sub_address)
+
+        address_queue.put((self.req_rep_address, self.pub_sub_address))
 
     def wait_for_request(self) -> Tuple[str, dict]:
         """wait for a client to send a request"""
 
-        identity, msg_dict = self.server_sock.recv_multipart()
+        identity, msg_dict = self.req_rep_sock.recv_multipart()
         return identity, pickle.loads(msg_dict)
 
     def reply(self, identity, response):
         """reply with response to a client (with said identity)"""
 
-        return self.server_sock.send_multipart(
+        return self.req_rep_sock.send_multipart(
             [identity, pickle.dumps(response, protocol=pickle.HIGHEST_PROTOCOL)]
         )
 
@@ -55,7 +70,7 @@ class ZProcServer:
         """Publish the state to everyone"""
 
         if old_state != self.state:
-            return self.publish_sock.send_multipart(
+            return self.pub_sub_sock.send_multipart(
                 [
                     identity,
                     pickle.dumps(
@@ -66,7 +81,8 @@ class ZProcServer:
 
     def ping(self, identity, request):
         return self.reply(
-            identity, {"pid": os.getpid(), "ping_data": request[Message.ping_data]}
+            identity,
+            {Message.pid: os.getpid(), Message.payload: request[Message.payload]},
         )
 
     def _run_function_atomically_and_safely(self, identity, func, args, kwargs):
@@ -102,8 +118,8 @@ class ZProcServer:
         )
 
     def close(self):
-        self.server_sock.close()
-        self.publish_sock.close()
+        self.req_rep_sock.close()
+        self.pub_sub_sock.close()
         self.zmq_ctx.destroy()
         self.zmq_ctx.term()
 
@@ -117,5 +133,7 @@ class ZProcServer:
 
             try:
                 getattr(self, request[Message.server_action])(identity, request)
+            except KeyboardInterrupt:
+                return self.close()
             except:
                 self.resend_error_back_to_process(identity)

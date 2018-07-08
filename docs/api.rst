@@ -38,3 +38,5 @@ Functions
 These helper functions are useful for miscellaneous tasks that don't require setting up a Context.
 
 .. autofunction:: zproc.ping
+.. autofunction:: zproc.atomic
+.. autofunction:: zproc.start_server

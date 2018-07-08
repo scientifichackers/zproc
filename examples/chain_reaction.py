@@ -19,7 +19,7 @@ import zproc
 
 
 # define a child process
-def child1(state: zproc.ZeroState):
+def child1(state):
     val = state.get_when_change("foo")  # wait for foo to change
     print("child1: foo changed, so I wake, now foo =", val)
 
@@ -29,7 +29,7 @@ def child1(state: zproc.ZeroState):
 
 
 # define another child process
-def child2(state: zproc.ZeroState):
+def child2(state):
     state.get_when(lambda s: s.get("foo") == "bar")  # wait for bar_equals_bar
     print("child2: foo changed to bar, so I wake")
     print("child2: I exit")

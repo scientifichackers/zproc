@@ -66,18 +66,19 @@ def tally(state, url, size):
         state["winner"] = {"url": url, "size": size}
 
 
-def downloader(state, props):
+def downloader(state, url):
     size = 0
     for i in range(SAMPLES):
-        size += len(requests.get(props, headers={"Cache-Control": "no-cache"}).text)
+        size += len(requests.get(url, headers={"Cache-Control": "no-cache"}).text)
 
-    tally(state, props, size / SAMPLES)
+    tally(state, url, size / SAMPLES)
 
 
 s = time()
 
 for url in sites:
-    ctx.process(downloader, props=url)
+    ctx.process(downloader, args=(url,))
+
 ctx.wait_all()
 
 winner = ctx.state["winner"]

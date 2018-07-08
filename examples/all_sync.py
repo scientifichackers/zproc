@@ -1,19 +1,19 @@
 """
-A test of all synchronization techniques ZProc has to offer
+A demonstration of all synchronization techniques zproc has to offer
 
 
 # Expected output
 
-main: I set foo to foobar
 main: child processes started
-main: I set foo to xxx
-.get_when_change() > {'foo': 'xxx'}
-.get_when_not_equal('foo', 'foobar') > xxx
-.get_when_change('foo') > xxx
-main: I set foo to bar
+main: I set flag1
+.get_when(lambda s: s.get("flag1") is True) -> {'flag1': True, 'flag2': False}
+.get_when_change() -> {'flag1': True, 'flag2': False}
+.get_when_equal('flag1', True) -> True
+.get_when_not_equal('flag1', False) -> True
+main: I set flag2
 main: I exit
-.get_when(foo_equals_bar) > {'foo': 'bar'}
-.get_when_equal('foo', 'bar') > bar
+.get_when_change("flag1", exclude=True) -> {'flag1': True, 'flag2': True}
+.get_when_change("flag2") -> True
 
 """
 
@@ -22,54 +22,54 @@ from time import sleep
 import zproc
 
 
-def child1(state: zproc.ZeroState):
-    val = state.get_when(lambda s: s.get("foo") == "bar")
-    print(".get_when(foo_equals_bar) >", val)
+def child1(state):
+    val = state.get_when(lambda s: s.get("flag1") is True)
+    print('.get_when(lambda s: s.get("flag1") is True) ->', val)
 
 
-def child2(state: zproc.ZeroState):
-    val = state.get_when_equal("foo", "bar")
-    print(".get_when_equal('foo', 'bar') >", val)
+def child2(state):
+    val = state.get_when_equal("flag1", True)
+    print(".get_when_equal('flag1', True) ->", val)
 
 
-def child3(state: zproc.ZeroState):
-    val = state.get_when_not_equal("foo", "foobar")
-    print(".get_when_not_equal('foo', 'foobar') >", val)
+def child3(state):
+    val = state.get_when_not_equal("flag1", False)
+    print(".get_when_not_equal('flag1', False) ->", val)
 
 
-def child4(state: zproc.ZeroState):
-    val = state.get_when_change()
-    print(".get_when_change() >", val)
+def child4(state):
+    val = state.get_when_change("flag1")
+    print(".get_when_change() ->", val)
 
 
-def child5(state: zproc.ZeroState):
-    val = state.get_when_change("foo")
-    print(".get_when_change('foo') >", val)
+def child5(state):
+    val = state.get_when_change("flag2")
+    print('.get_when_change("flag2") ->', val)
+
+
+def child6(state):
+    val = state.get_when_change("flag1", exclude=True)
+    print('.get_when_change("flag1", exclude=True) ->', val)
 
 
 if __name__ == "__main__":
-    ctx = zproc.Context()  # create a context for us to work with
+    ctx = zproc.Context(background=True)  # background waits for all processes to finish
 
-    ctx.state["foo"] = "foobar"
+    ctx.state.setdefault("flag1", False)
+    ctx.state.setdefault("flag2", False)
 
-    print("main: I set foo to foobar")
-
-    ctx.process_factory(
-        child1, child2, child3, child4, child5
-    )  # give the context some processes to work with
-
-    iter(ctx.state)
+    ctx.process_factory(child1, child2, child3, child4, child5, child6)
 
     print("main: child processes started")
 
-    sleep(1)  # sleep for no reason
+    sleep(1)
 
-    ctx.state["foo"] = "xxx"
-    print("main: I set foo to xxx")
+    ctx.state["flag1"] = True
+    print("main: I set flag1")
 
-    sleep(1)  # sleep for no reason
+    sleep(1)
 
-    ctx.state["foo"] = "bar"
-    print("main: I set foo to bar")
+    ctx.state["flag2"] = True
+    print("main: I set flag2")
 
     print("main: I exit")

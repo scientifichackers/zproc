@@ -7,13 +7,10 @@ import traceback
 import types
 from collections import deque
 from pathlib import Path
-from types import FunctionType
-from typing import Tuple
-from uuid import uuid1, UUID
 
-# import dill
 import psutil
 from time import sleep
+
 
 ipc_base_dir = Path.home().joinpath(".tmp")
 
@@ -53,26 +50,13 @@ def restore_signal_exception_behavior(e):
         signal.signal(e.sig, signal.SIG_DFL)
 
 
-def deserialize_func(serialized_fn):
-    return types.FunctionType(
-        marshal.loads(serialized_fn[0]), globals(), serialized_fn[1]
-    )
-
-
 def serialize_func(fn):
     return (marshal.dumps(fn.__code__), fn.__name__)
 
 
-def get_random_ipc() -> Tuple[str, str]:
-    return get_ipc_paths_from_uuid(uuid1())
-
-
-def get_ipc_paths_from_uuid(uuid: UUID) -> Tuple[str, str]:
-    """Given a UUID, identifying the Context, return a tuple -> (<ROUTER/DEALER ipc path>, <PUB/SUB ipc path>)"""
-
-    return (
-        "ipc://" + str(ipc_base_dir.joinpath("zproc_req_rep_" + str(uuid))),
-        "ipc://" + str(ipc_base_dir.joinpath("zproc_pub_sub_" + str(uuid))),
+def deserialize_func(serialized_fn):
+    return types.FunctionType(
+        marshal.loads(serialized_fn[0]), globals(), serialized_fn[1]
     )
 
 
@@ -84,7 +68,7 @@ def handle_server_response(response):
         return response
 
 
-def shutdown_current_process_tree(*signal_handler_args):
+def cleanup_current_process_tree(*signal_handler_args):
     procs = psutil.Process().children(recursive=True)
 
     for proc in procs:
@@ -137,7 +121,7 @@ class Queue(deque):
                 break
 
 
-def handle_crash(proc, exc, retry_delay, tries, max_tries):
+def handle_crash(*, process, exc, retry_delay, tries, max_tries):
     msg = "\nZProc crash report:\n"
 
     if isinstance(exc, SignalException):
@@ -145,7 +129,7 @@ def handle_crash(proc, exc, retry_delay, tries, max_tries):
     else:
         traceback.print_exc()
 
-    msg += "\t{}\n".format(proc)
+    msg += "\t{}\n".format(process)
     msg += "\tTried - {} time(s)\n".format(tries)
 
     if max_tries is not None and tries >= max_tries:
@@ -155,7 +139,7 @@ def handle_crash(proc, exc, retry_delay, tries, max_tries):
         msg += "\tNext retry in - {} sec\n".format(retry_delay)
 
     print(msg)
-    sleep(proc.kwargs["retry_delay"])
+    sleep(process.kwargs["retry_delay"])
 
 
 # static declarations
@@ -203,7 +187,8 @@ class Message:
     value = "value"
 
     method_name = "method"
-    ping_data = "ping"
+    payload = "load"
+    pid = "pid"
 
 
 WINDOWS_SIGNALS = (
