@@ -1,3 +1,4 @@
+setuptools
 alabaster==0.7.11
 Babel==2.6.0
 backcall==0.1.0
@@ -39,4 +40,3 @@ traitlets==4.3.2
 twine==1.11.0
 urllib3==1.23
 wcwidth==0.1.7
-setuptools
