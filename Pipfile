@@ -7,13 +7,13 @@ name = "pypi"
 pyzmq = "*"
 tblib = "*"
 psutil = "*"
-sphinxcontrib-inlinesyntaxhighlight = "*"
 
 [dev-packages]
 tinydb = "*"
 ipython = "*"
 sphinx = "*"
-yappi = "*"
+twine = "*"
+sphinxcontrib-inlinesyntaxhighlight = "*"
 
 [requires]
 python_version = "3.5"
