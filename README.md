@@ -105,13 +105,11 @@ This is where ZProc comes in.
 
 It does message passing, without you ever knowing that it's doing it.
 
-It also borrows the concept of `state` and `props` from reactJS.
-
-Hence, provides you a global `dict` called `state`.<br>
+It provides you a global `dict` called `state`.<br>
 The `state` is **not** a shared object.<br>
 It works _purely_ on message passing.
 
-Unlike reactJS, you are free to mutate the state, up-to a certain extent.
+It also supports a fair bit of reactive programming, (kind of like ReactJS) using [state watchers](http://zproc.readthedocs.io/en/latest/user/state_watching.html)
 
 Behind the covers, it simulates the [Actor Model](https://en.wikipedia.org/wiki/Actor_model).<br>
 ZProc doesn't blindly follow it, but you can think of it as such.
