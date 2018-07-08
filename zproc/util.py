@@ -175,7 +175,8 @@ STATE_INJECTED_METHODS = set(STATE_DICT_LIKE_METHODS) - {
 
 
 class Message:
-    server_action = "action"
+    server_method = "server"
+    dict_method = "dict"
 
     args = "args"
     kwargs = "kwargs"
@@ -186,7 +187,6 @@ class Message:
     keys = "keys"
     value = "value"
 
-    method_name = "method"
     payload = "load"
     pid = "pid"
 

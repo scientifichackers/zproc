@@ -1,13 +1,13 @@
 import os
 import pickle
+import typing
 import uuid
 from copy import deepcopy
-from typing import Tuple
 
 import zmq
 from tblib import pickling_support
 
-from zproc.util import Message, deserialize_func, RemoteException, ipc_base_dir
+from zproc import util
 
 pickling_support.install()
 
@@ -24,7 +24,7 @@ class ZProcServer:
 
         if server_address is None:
             if os.system == "posix":
-                base_address = "ipc://" + str(ipc_base_dir)
+                base_address = "ipc://" + str(util.ipc_base_dir)
                 self.req_rep_address, self.pub_sub_address = (
                     base_address + str(uuid.uuid1()),
                     base_address + str(uuid.uuid1()),
@@ -48,7 +48,7 @@ class ZProcServer:
 
         address_queue.put((self.req_rep_address, self.pub_sub_address))
 
-    def wait_for_request(self) -> Tuple[str, dict]:
+    def wait_for_request(self) -> typing.Tuple[str, dict]:
         """wait for a client to send a request"""
 
         identity, msg_dict = self.req_rep_sock.recv_multipart()
@@ -82,7 +82,10 @@ class ZProcServer:
     def ping(self, identity, request):
         return self.reply(
             identity,
-            {Message.pid: os.getpid(), Message.payload: request[Message.payload]},
+            {
+                util.Message.pid: os.getpid(),
+                util.Message.payload: request[util.Message.payload],
+            },
         )
 
     def _run_function_atomically_and_safely(self, identity, func, args, kwargs):
@@ -100,21 +103,24 @@ class ZProcServer:
     def call_method_on_state(self, identity, request):
         """Call a method on the state dict and return the result."""
 
-        method_name = request[Message.method_name]
+        method_name = request[util.Message.dict_method]
         state_method = getattr(self.state, method_name)
 
         return self._run_function_atomically_and_safely(
-            identity, state_method, request[Message.args], request[Message.kwargs]
+            identity,
+            state_method,
+            request[util.Message.args],
+            request[util.Message.kwargs],
         )
 
     def run_atomic_function(self, identity: str, msg_dict: dict):
         """Run a function on the state, safely and atomically"""
 
-        func = deserialize_func(msg_dict[Message.func])
-        args = (self.state, *msg_dict[Message.args])
+        func = util.deserialize_func(msg_dict[util.Message.func])
+        args = (self.state, *msg_dict[util.Message.args])
 
         return self._run_function_atomically_and_safely(
-            identity, func, args, msg_dict[Message.kwargs]
+            identity, func, args, msg_dict[util.Message.kwargs]
         )
 
     def close(self):
@@ -124,7 +130,7 @@ class ZProcServer:
         self.zmq_ctx.term()
 
     def resend_error_back_to_process(self, identity):
-        return self.reply(identity, RemoteException())
+        return self.reply(identity, util.RemoteException())
 
     def mainloop(self):
         while True:
@@ -132,7 +138,7 @@ class ZProcServer:
             # print(request, identity)
 
             try:
-                getattr(self, request[Message.server_action])(identity, request)
+                getattr(self, request[util.Message.server_method])(identity, request)
             except KeyboardInterrupt:
                 return self.close()
             except:

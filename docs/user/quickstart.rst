@@ -86,6 +86,19 @@ that appending to lists in a dict is not atomic and try to do it safely with loc
 
 You can read more about :ref:`atomicity`.
 
+.. note::
+    There is always a cost to safety.
+    You can write more performant code without zproc.
+
+    However, when you weigh in the safety and ease of use of zproc,
+    performance really falls short.
+
+    And it's not like zproc is slow, see for yourself:
+    `async vs zproc <https://github.com/pycampers/zproc/blob/master/examples/async_vs_zproc.py>`_
+
+
+    (plus, this next bit is surely faster with zproc)
+
 Reactive programming with zproc
 -------------------------------
 
@@ -129,3 +142,5 @@ until you finally give up getting to the sweet spot, and switch to zproc.
 
 This eats very little to no CPU, and is fast enough for my (and probably your) needs.
 
+Best part is that it doesn't do any of that expensive "busy" waiting.
+Like underneath, it's actually a socket connecting waiting for a request.

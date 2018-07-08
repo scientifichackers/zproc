@@ -1,26 +1,16 @@
 import atexit
+import functools
+import itertools
+import multiprocessing
 import os
 import pickle
 import signal
+import typing
 import warnings
-from functools import wraps, update_wrapper, partial
-from itertools import chain
-from multiprocessing import Process
-from multiprocessing import Queue
-from typing import Callable
 
 import zmq
 
-from zproc.util import (
-    Message,
-    serialize_func,
-    handle_server_response,
-    STATE_INJECTED_METHODS,
-    handle_crash,
-    signal_to_exception,
-    SignalException,
-    cleanup_current_process_tree,
-)
+from zproc import util
 from zproc.zproc_server import ZProcServer
 
 
@@ -64,8 +54,8 @@ def ping(server_address: tuple, **kwargs):
         sock.setsockopt(zmq.RCVTIMEO, int(kwargs["timeout"] * 1000))
 
     ping_msg = {
-        Message.server_action: ZProcServer.ping.__name__,
-        Message.payload: kwargs["payload"],
+        util.Message.server_method: ZProcServer.ping.__name__,
+        util.Message.payload: kwargs["payload"],
     }
 
     sock.send_pyobj(ping_msg, protocol=pickle.HIGHEST_PROTOCOL)
@@ -75,7 +65,7 @@ def ping(server_address: tuple, **kwargs):
     except zmq.error.Again:
         raise TimeoutError("Connection to zproc server timed out!")
     else:
-        if response[Message.payload] == kwargs["payload"]:
+        if response[util.Message.payload] == kwargs["payload"]:
             return response["pid"]
         else:
             return False
@@ -88,7 +78,7 @@ def _server_process(*args, **kwargs):
 
     def signal_handler(*args):
         server.close()
-        cleanup_current_process_tree(*args)
+        util.cleanup_current_process_tree(*args)
 
     signal.signal(signal.SIGTERM, signal_handler)
     server.mainloop()
@@ -107,9 +97,9 @@ def start_server(server_address: tuple = None):
     :return: ``tuple``, containing a ``Process`` object for server and the server address.
     """
 
-    address_queue = Queue()
+    address_queue = multiprocessing.Queue()
 
-    server_process = Process(
+    server_process = multiprocessing.Process(
         target=_server_process, args=(server_address, address_queue)
     )
     server_process.start()
@@ -117,7 +107,7 @@ def start_server(server_address: tuple = None):
     return server_process, address_queue.get()
 
 
-def atomic(fn: Callable):
+def atomic(fn: typing.Callable):
     """
     Hack on a normal looking function, to create an atomic operation out of it.
 
@@ -156,16 +146,16 @@ def atomic(fn: Callable):
 
     """
 
-    serialized_fn = serialize_func(fn)
+    serialized_fn = util.serialize_func(fn)
 
-    @wraps(fn)
+    @functools.wraps(fn)
     def atomic_wrapper(state, *args, **kwargs):
         return state._req_rep(
             {
-                Message.server_action: ZProcServer.run_atomic_function.__name__,
-                Message.func: serialized_fn,
-                Message.args: args,
-                Message.kwargs: kwargs,
+                util.Message.server_method: ZProcServer.run_atomic_function.__name__,
+                util.Message.func: serialized_fn,
+                util.Message.args: args,
+                util.Message.kwargs: kwargs,
             }
         )
 
@@ -231,23 +221,22 @@ class ZeroState:
         :ivar server_address: Passed on from constructor
         """
 
-        self.identity = os.urandom(5)
-
-        self.zmq_ctx = zmq.Context()
-        self.zmq_ctx.setsockopt(zmq.LINGER, 0)
+        self._zmq_ctx = zmq.Context()
+        self._zmq_ctx.setsockopt(zmq.LINGER, 0)
 
         self.server_address = server_address
-        self.req_rep_address, self.pub_sub_address = server_address
+        self._req_rep_address, self._pub_sub_address = server_address
 
-        self.req_rep_sock = self.zmq_ctx.socket(zmq.DEALER)
-        self.req_rep_sock.setsockopt(zmq.IDENTITY, self.identity)
-        self.req_rep_sock.connect(self.req_rep_address)
+        self._req_rep_sock = self._zmq_ctx.socket(zmq.DEALER)
+        self._identity = os.urandom(5)
+        self._req_rep_sock.setsockopt(zmq.IDENTITY, self._identity)
+        self._req_rep_sock.connect(self._req_rep_address)
 
-        self.pub_sub_sock = self._get_subscribe_sock()
+        self._pub_sub_sock = self._get_subscribe_sock()
 
     def _get_subscribe_sock(self):
-        sock = self.zmq_ctx.socket(zmq.SUB)
-        sock.connect(self.pub_sub_address)
+        sock = self._zmq_ctx.socket(zmq.SUB)
+        sock.connect(self._pub_sub_address)
         sock.setsockopt(zmq.SUBSCRIBE, b"")
         return sock
 
@@ -256,13 +245,13 @@ class ZeroState:
             identity, response = sock.recv_multipart()
 
             # only accept updates from other processes, not this one.
-            if identity != self.identity:
-                return handle_server_response(pickle.loads(response))
+            if identity != self._identity:
+                return util.handle_server_response(pickle.loads(response))
 
     def _req_rep(self, request):
-        self.req_rep_sock.send_pyobj(request, protocol=pickle.HIGHEST_PROTOCOL)
-        response = self.req_rep_sock.recv_pyobj()
-        return handle_server_response(response)
+        self._req_rep_sock.send_pyobj(request, protocol=pickle.HIGHEST_PROTOCOL)
+        response = self._req_rep_sock.recv_pyobj()
+        return util.handle_server_response(response)
 
     def get_when_change(self, *keys, exclude=False, live=True, timeout=None):
         """
@@ -316,7 +305,7 @@ class ZeroState:
                 def select_keys(old_state, new_state):
                     return (
                         key
-                        for key in chain(old_state.keys(), new_state.keys())
+                        for key in itertools.chain(old_state.keys(), new_state.keys())
                         if key not in keys
                     )
 
@@ -325,7 +314,7 @@ class ZeroState:
                 def select_keys(old, new_state):
                     return (
                         key
-                        for key in chain(old.keys(), new_state.keys())
+                        for key in itertools.chain(old.keys(), new_state.keys())
                         if key in keys
                     )
 
@@ -463,8 +452,8 @@ class ZeroState:
         (See :ref:`live-events`)
         """
 
-        self.pub_sub_sock.close()
-        self.pub_sub_sock = self._get_subscribe_sock()
+        self._pub_sub_sock.close()
+        self._pub_sub_sock = self._get_subscribe_sock()
 
     def ping(self, **kwargs):
         """
@@ -481,13 +470,15 @@ class ZeroState:
         Close this ZeroState and disconnect with the ZProcServer
         """
 
-        self.req_rep_sock.close()
-        self.pub_sub_sock.close()
-        self.zmq_ctx.destroy()
-        self.zmq_ctx.term()
+        self._req_rep_sock.close()
+        self._pub_sub_sock.close()
+        self._zmq_ctx.destroy()
+        self._zmq_ctx.term()
 
     def copy(self):
-        return self._req_rep({Message.server_action: ZProcServer.reply_state.__name__})
+        return self._req_rep(
+            {util.Message.server_method: ZProcServer.reply_state.__name__}
+        )
 
     def keys(self):
         return self.copy().keys()
@@ -506,17 +497,17 @@ def create_remote_method(method_name):
     def remote_method(self, *args, **kwargs):
         return self._req_rep(
             {
-                Message.server_action: ZProcServer.call_method_on_state.__name__,
-                Message.method_name: method_name,
-                Message.args: args,
-                Message.kwargs: kwargs,
+                util.Message.server_method: ZProcServer.call_method_on_state.__name__,
+                util.Message.dict_method: method_name,
+                util.Message.args: args,
+                util.Message.kwargs: kwargs,
             }
         )
 
     return remote_method
 
 
-for method_name in STATE_INJECTED_METHODS:
+for method_name in util.STATE_INJECTED_METHODS:
     setattr(ZeroState, method_name, create_remote_method(method_name))
 
 
@@ -533,10 +524,10 @@ def _child_process(
 ):
     state = ZeroState(process.server_address)
 
-    exceptions = [SignalException]
+    exceptions = [util.SignalException]
     for i in retry_for:
         if type(i) == signal.Signals:
-            signal_to_exception(i)
+            util.signal_to_exception(i)
         elif issubclass(i, BaseException):
             exceptions.append(i)
         else:
@@ -556,7 +547,7 @@ def _child_process(
             if (max_retries is not None) and (tries > max_retries):
                 raise e
             else:
-                handle_crash(
+                util.handle_crash(
                     process=process,
                     exc=e,
                     retry_delay=retry_delay,
@@ -576,7 +567,7 @@ class ZeroProcess:
     def __init__(
         self,
         server_address: tuple,
-        target: Callable,
+        target: typing.Callable,
         *,
         args=(),
         kwargs={},
@@ -655,20 +646,19 @@ class ZeroProcess:
 
             If set to ``None``, then it has no effect.
 
-        :ivar uuid: Passed on from constructor.
+        :ivar server_address: Passed on from constructor.
         :ivar target: Passed on from constructor.
-        :ivar process_kwargs: Passed on from constructor.
-        :ivar child: The ``Process`` object associated with this ZeroProcess.
+        :ivar child: A ``multiprocessing.Process`` instance for the child process.
         """
 
         assert callable(target), '"target" must be a `Callable`, not `{}`'.format(
             type(target)
         )
 
-        self.target = target
         self.server_address = server_address
+        self.target = target
 
-        self.child = Process(
+        self.child = multiprocessing.Process(
             target=_child_process,
             kwargs=dict(
                 process=self,
@@ -818,7 +808,7 @@ class Context:
         :ivar process_list:
             A list of child Process(s) created under this Context.
         :ivar server_process:
-            A ``Process`` object for the server, or None.
+            A ``multiprocessing.Process`` object for the server, or None.
         :ivar server_address:
             The server address.
         """
@@ -834,8 +824,8 @@ class Context:
         self.state = ZeroState(self.server_address)
 
         if cleanup:
-            signal.signal(signal.SIGTERM, cleanup_current_process_tree)
-            atexit.register(cleanup_current_process_tree)
+            signal.signal(signal.SIGTERM, util.cleanup_current_process_tree)
+            atexit.register(util.cleanup_current_process_tree)
 
         if background:
             warnings.warn(
@@ -847,7 +837,7 @@ class Context:
         if wait:
             atexit.register(self.wait_all)
 
-    def process(self, target=None, **process_kwargs):
+    def process(self, target: typing.Callable = None, **process_kwargs):
         """
         Produce a child process bound to this context.
 
@@ -863,10 +853,9 @@ class Context:
             def wrapper(func, **kwargs):
                 return self.process(func, **kwargs)
 
-            return partial(wrapper, **process_kwargs)
+            return functools.partial(wrapper, **process_kwargs)
 
-        kwargs = self.process_kwargs.copy()
-        kwargs.update(process_kwargs)
+        process_kwargs.update(self.process_kwargs)
 
         process = ZeroProcess(self.server_address, target, **process_kwargs)
         self.process_list.append(process)
@@ -898,7 +887,7 @@ class Context:
 
         return processify_decorator
 
-    def process_factory(self, *targets: Callable, count=1, **process_kwargs):
+    def process_factory(self, *targets: typing.Callable, count=1, **process_kwargs):
         """
         Produce multiple child process(s) bound to this context.
 
@@ -925,7 +914,7 @@ class Context:
                     fn(state, *_args, **_kwargs)
 
             watcher_process = self.process(watcher_process, **process_kwargs)
-            update_wrapper(watcher_process.target, fn)
+            functools.update_wrapper(watcher_process.target, fn)
 
             return watcher_process
 
