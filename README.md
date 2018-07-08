@@ -109,7 +109,7 @@ It provides you a global `dict` called `state`.<br>
 The `state` is **not** a shared object.<br>
 It works _purely_ on message passing.
 
-It also supports a fair bit of reactive programming, (kind of like ReactJS) using [state watchers](http://zproc.readthedocs.io/en/latest/user/state_watching.html)
+It also supports a fair bit of reactive programming, (kind of like ReactJS) using [state watchers](http://zproc.readthedocs.io/en/latest/user/state_watching.html).
 
 Behind the covers, it simulates the [Actor Model](https://en.wikipedia.org/wiki/Actor_model).<br>
 ZProc doesn't blindly follow it, but you can think of it as such.
