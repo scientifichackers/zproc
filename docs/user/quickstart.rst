@@ -30,7 +30,7 @@ If you like to be cool like me, then you can use it as a decorator.
 
 ::
 
-    @ctx.process()
+    @ctx.process
     def my_process(state):
         pass
 

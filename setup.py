@@ -24,7 +24,7 @@ VERSION = "0.6.1"
 REQUIRED = ["pyzmq", "tblib", "psutil"]
 
 # What packages are optional?
-EXTRA = {"build docs": ["sphinx"], "tinydb storage": ["tinydb"]}
+EXTRA = {}
 
 # The rest you shouldn't have to touch too much :)
 # ------------------------------------------------

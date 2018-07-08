@@ -36,7 +36,7 @@ def cookie_eater(state):
     eat_cookie(state)
 
 
-@ctx.processify()
+@ctx.process
 def cookie_baker(state):
     for i in range(5):
         bake_cookie(state)
