@@ -5,5 +5,6 @@ python:
   version: 3.5
   pip_install: true
   setup_py_install: true
+  formats: []
   extra_requirements:
     - docs
