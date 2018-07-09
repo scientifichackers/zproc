@@ -150,7 +150,7 @@ which is to say using the :py:func:`~.atomic` decorator.
 
 ::
 
-    zproc.atomic
+    @zproc.atomic
     def add_a_number(state, to_add)
         state['numbers'].append(to_add)
 
