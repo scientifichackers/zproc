@@ -25,7 +25,7 @@ def ping(server_address: tuple, **kwargs):
     :param timeout:
         (optional) The timeout in seconds.
 
-        If the value is ``None``, it will block until the zproc server replies.
+        If this is set to ``None``, then it will block forever, until the zproc server replies.
 
         For all other values, it will wait for a reply,
         for that amount of time before returning with a ``TimeoutError``.
@@ -115,10 +115,9 @@ def atomic(fn: typing.Callable):
 
     The first argument to the wrapped function must be a :py:class:`State` object.
 
-    Read :ref:`atomicity`
+    Read :ref:`atomicity`.
 
     :return: wrapped function
-    :rtype: function
 
     .. code-block:: py
         :caption: Example
@@ -339,9 +338,11 @@ class State:
 
     def get_when(self, test_fn, *, live=True, timeout=None):
         """
-        | Block until ``test_fn(state: State)`` returns a True-like value
-        |
-        | Roughly, ``if test_fn(state): return state.copy()``
+         Block until ``test_fn(state)`` returns a True-like value.
+
+         Where, ``state`` is a :py:class:`State` instance.
+
+         Roughly, ``if test_fn(state): return state.copy()``
 
         :param test_fn: A ``function``, which is called on each state-change.
         :param live: Whether to get "live" updates. (See :ref:`live-events`)
@@ -449,7 +450,7 @@ class State:
         """
         Ping the zproc server corresponding to this State's Context
 
-        :param kwargs: Optional keyword arguments that :py:func:`ping` takes.
+        :param kwargs: Keyword arguments that :py:func:`ping` takes, except ``server_address``.
         :return: Same as :py:func:`ping`
         """
 
@@ -578,20 +579,22 @@ class Process:
             If you are using a :py:class:`Context`, then this is automatically provided.
 
         :param target:
-            The Callable to be invoked by the start() method.
+            The Callable to be invoked inside a new process.
 
-            It is run inside a ``multiprocessing.Process`` with following signature:
+            It is run with the following signature:
 
-            ``target(state, *args, **target_args)``
+            ``target(state, *args, **kwargs)``
 
-            Where ``state`` is a :py:class:`State` object
-            and \*args & \*\*kwargs are passed from the constructor.
+            Where:
+
+            - ``state`` is a :py:class:`State` instance.
+            - ``args`` and ``kwargs`` are passed from the constructor.
 
         :param args:
-            The argument tuple for the *target* invocation.
+            The argument tuple for ``target``.
 
         :param kwargs:
-            A dictionary of keyword arguments for the *target* invocation.
+            A dictionary of keyword arguments for ``target``.
 
         :param start:
             Automatically call :py:meth:`.start()` on the process.
@@ -610,11 +613,7 @@ class Process:
                     retry_for=(ConnectionError, ValueError, signal.SIGTERM)
                 )
 
-            To retry for *any* **Exception**:
-
-            ``retry_for=(Exception,)``
-
-            There is no such feature as retry for *any* **signal**, for now.
+            To retry for *any* Exception -  ``retry_for=(Exception, )``
 
         :param retry_delay:
             The delay in seconds, before retrying.
@@ -627,12 +626,12 @@ class Process:
             After "max_tries", any Exception / Signal will exhibit default behavior.
 
         :param retry_args:
-            used instead of *args* when retrying.
+            Used in place of ``args`` when retrying.
 
             If set to ``None``, then it has no effect.
 
         :param retry_kwargs:
-            used instead of *kwargs* when retrying.
+            Used in place of ``kwargs`` when retrying.
 
             If set to ``None``, then it has no effect.
 
@@ -752,7 +751,6 @@ class Context:
         server_address: tuple = None,
         *,
         wait=False,
-        background=False,
         cleanup=True,
         **process_kwargs
     ):
@@ -761,7 +759,7 @@ class Context:
 
         Used to manage and launch processes using zproc.
 
-        All processes launched with using a Context, share the same state.
+        All processes launched using a Context, share the same state.
 
         Don't share a Context object between Processes / Threads.
         A Context object is not thread-safe.
@@ -778,33 +776,29 @@ class Context:
             .. caution::
 
                 If you provide a "server_address", be sure to manually start the server,
-                as described here: :ref:`start-server`
+                as described here - :ref:`start-server`.
 
         :param wait:
-            wait for all Process to finish their work,
-            before the main script can exit.
+            Wait for all running process to finish their work before exiting.
 
-            Avoids manually calling :py:meth:`~Context.wait_all`
-        :param background:
-            same as "wait". Preserved for backward compatibility.
-
+            Avoids manually calling :py:meth:`~Context.wait_all` at exit.
         :param cleanup:
-            Whether to cleanup the current process tree while exiting.
+            Whether to cleanup the process tree before exiting.
 
-            Attaches a signal handler for SIGTERM along with an exit handler.
+            Registers a signal handler for ``SIGTERM`` and an ``atexit`` handler.
 
         :param \*\*process_kwargs:
-            Optional keyword arguments that :py:class:`~Process` takes.
+            Keyword arguments that :py:class:`~Process` takes, except ``server_address`` and ``target``.
 
             If provided, these will be used while creating
-            Processes under this Context.
+            processes using this Context.
 
         :ivar process_kwargs:
             Passed from constructor.
         :ivar state:
-            A :py:class:`State` object connecting to the global state.
+            A :py:class:`State` instance.
         :ivar process_list:
-            A list of child Process(s) created under this Context.
+            A list of child ``Process`` (s) created under this Context.
         :ivar server_process:
             A ``multiprocessing.Process`` object for the server, or None.
         :ivar server_address:
@@ -825,14 +819,6 @@ class Context:
             signal.signal(signal.SIGTERM, util.cleanup_current_process_tree)
             atexit.register(util.cleanup_current_process_tree)
 
-        if background:
-            warnings.simplefilter("always", DeprecationWarning)
-            warnings.warn(
-                '"background" is deprecated. You can use "wait" instead.',
-                category=DeprecationWarning,
-            )
-            wait = background
-
         if wait:
             atexit.register(self.wait_all)
 
@@ -840,13 +826,15 @@ class Context:
         """
         Produce a child process bound to this context.
 
-        Can be used as both function call, and as decorator.
+        Can be used as a function call, or as a decorator.
 
         :param target:
             Passed on to :py:class:`Process`'s constructor.
 
         :param \*\*process_kwargs:
-            Keyword arguments that :py:class:`Process` takes.
+            Keyword arguments that :py:class:`Process` takes, except ``server_address``.
+
+        :return: A :py:class:`Process` instance.
         """
 
         if not callable(target):
@@ -862,49 +850,23 @@ class Context:
         self.process_list.append(process)
         return process
 
-    def processify(self, **process_kwargs):
-        """
-        DEPRECATED: Just use :py:meth:`~Context.process` as a decorator.
-
-        :param \*\*process_kwargs:
-            Keyword arguments that :py:class:`Process` takes.
-
-        :return:
-            A wrapper function.
-
-            The wrapper function will return the :py:class:`Process` instance created
-        :rtype: function
-        """
-
-        warnings.simplefilter("always", DeprecationWarning)
-        warnings.warn(
-            '"Context.processify()" is deprecated. You can now use "Context.process()" as a wrapper instead.',
-            category=DeprecationWarning,
-        )
-
-        def processify_decorator(func):
-            return self.process(func, **process_kwargs)
-
-        return processify_decorator
-
     def process_factory(self, *targets: typing.Callable, count=1, **process_kwargs):
         """
         Produce multiple child process(s) bound to this context.
 
-        :param targets: Passed on to :py:class:`Process`'s constructor.
-        :param count: The number of processes to spawn for each target
-        :param \*\*process_kwargs: Keyword arguments that :py:class:`Process` takes.
-        :return: spawned processes
-        :rtype: ``list[`` :py:class:`Process` ``]``
+        :param \*targets: Passed on to :py:class:`Process`'s constructor, one at a time.
+        :param count: The number of processes to spawn, for each target.
+        :param \*\*process_kwargs: Keyword arguments that :py:class:`Process` takes, except ``server_address``.
+        :return: A list of :py:class:`Process` instances.
         """
 
-        procs = []
+        process_list = []
         for target in targets:
             for _ in range(count):
-                procs.append(self.process(target, **process_kwargs))
-        self.process_list += procs
+                process_list.append(self.process(target, **process_kwargs))
+        self.process_list += process_list
 
-        return procs
+        return process_list
 
     def _create_watcher_process_wrapper(self, fn_name, process_kwargs, *args, **kwargs):
         def wrapper(fn):
@@ -922,12 +884,11 @@ class Context:
 
     def call_when_change(self, *keys, exclude=False, live=False, **process_kwargs):
         """
-        Decorator version of :py:meth:`~State.get_when_change()`
+        Decorator version of :py:meth:`~State.get_when_change()`.
 
-        Spawns a new Process that watches the state and calls the wrapped function,
-        repeatedly
+        Spawns a new Process that watches the state and calls the wrapped function forever.
 
-        :param \*\*process_kwargs: Keyword arguments that :py:class:`Process` takes.
+        :param \*\*process_kwargs: Keyword arguments that :py:class:`Process` takes, except ``server_address``.
 
         All other parameters have same meaning as :py:meth:`~State.get_when_change()`
 
@@ -954,12 +915,11 @@ class Context:
 
     def call_when(self, test_fn, *, live=False, **process_kwargs):
         """
-        Decorator version of :py:meth:`~State.get_when()`
+        Decorator version of :py:meth:`~State.get_when()`.
 
-        Spawns a new Process that watches the state and calls the wrapped function,
-        repeatedly
+        Spawns a new Process that watches the state and calls the wrapped function forever.
 
-        :param \*\*process_kwargs: Keyword arguments that :py:class:`Process` takes.
+        :param \*\*process_kwargs: Keyword arguments that :py:class:`Process` takes, except ``server_address``.
 
         All other parameters have same meaning as :py:meth:`~State.get_when()`
 
@@ -986,12 +946,11 @@ class Context:
 
     def call_when_equal(self, key, value, *, live=False, **process_kwargs):
         """
-        Decorator version of :py:meth:`~State.get_when_equal()`
+        Decorator version of :py:meth:`~State.get_when_equal()`.
 
-        Spawns a new Process that watches the state and calls the wrapped function,
-        repeatedly
+        Spawns a new Process that watches the state and calls the wrapped function forever.
 
-        :param \*\*process_kwargs: Keyword arguments that :py:class:`Process` takes.
+        :param \*\*process_kwargs: Keyword arguments that :py:class:`Process` takes, except ``server_address``.
 
         All other parameters have same meaning as :py:meth:`~State.get_when_equal()`
 
@@ -1018,12 +977,11 @@ class Context:
 
     def call_when_not_equal(self, key, value, *, live=False, **process_kwargs):
         """
-        Decorator version of :py:meth:`~State.get_when_not_equal()`
+        Decorator version of :py:meth:`~State.get_when_not_equal()`.
 
-        Spawns a new Process that watches the state and calls the wrapped function,
-        repeatedly
+        Spawns a new Process that watches the state and calls the wrapped function forever.
 
-        :param \*\*process_kwargs: Keyword arguments that :py:class:`Process` takes.
+        :param \*\*process_kwargs: Keyword arguments that :py:class:`Process` takes, except ``server_address``.
 
         All other parameters have same meaning as :py:meth:`~State.get_when_not_equal()`
 
@@ -1078,9 +1036,9 @@ class Context:
 
     def ping(self, **kwargs):
         """
-        Ping the zproc server corresponding to this Context
+        Ping the zproc server.
 
-        :param \*\*kwargs: Keyword arguments that :py:func:`ping` takes.
+        :param \*\*kwargs: Keyword arguments that :py:func:`ping` takes, except ``server_address``.
         :return: Same as :py:func:`ping`
         """
         return ping(self.server_address, **kwargs)

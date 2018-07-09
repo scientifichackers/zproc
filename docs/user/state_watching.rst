@@ -22,8 +22,7 @@ and print out a message when the number of "cookies" is "5".
     state.get_when_equal('cookies', 5)
     print('5 cookies!')
 
-There also these utility methods in py:class:`.Context`
-that are just a wrapper over their counterparts in :py:class:`.State`.
+There also these utility methods in :py:class:`.Context` that are just a wrapper over their counterparts in :py:class:`.State`.
 
 - :py:meth:`~.Context.call_when_change`
 - :py:meth:`~.Context.call_when`
@@ -42,15 +41,15 @@ Live-ness of events
 zproc provides 2 different "modes" for watching the state.
 
 By default, the ``State.get_when*`` methods provide **live updates**,
-while the ``Context.call_when*`` provide buffered updates.
+and the ``Context.call_when*`` methods provide buffered updates.
 
 ------
 
-When consuming live updates, Process **will miss events**, if it's not paying attention.
+When consuming live updates, your code **can miss events**, if it's not paying attention.
 
 *like a live youtube video, you only see what's currently happening.*
 
-For example -
+
 
 ::
 
@@ -64,7 +63,7 @@ The above code will miss any updates that happen while it is sleeping (``sleep(5
 
 ------
 
-To modify this behaviour, you need to pass ``live=False``
+To modify this behaviour, you need to pass ``live=False``.
 
 ::
 
@@ -120,7 +119,7 @@ Timeouts
 
 You can also provide timeouts while watching the state, using ``timeout`` parameter.
 
-If an update occurs doesn't happen within the timeout, a ``TimeoutError`` is raised.
+If an update doesn't occur within the timeout, a ``TimeoutError`` is raised.
 
 ::
 
@@ -139,14 +138,11 @@ Let's take an example, to put what we learned into real world usage.
 
 Here, we want to watch a button press, and determine whether it was a long or a short press.
 
-It is assumed that the state is constantly updated with the value of button,
-from another process, whose details are irrelevant.
+Some assumptions:
 
-We assume that the value of ``'button'`` is ``True``,
-when the button is pressed, and ``False`` when it is not.
-
-The ``Reader`` is any arbitrary source of a value, say a GPIO pin,
-or socket sending the value of an IOT button.
+- If the value of ``'button'`` is ``True``, the the button is pressed
+- If the value of ``'button'`` is ``False``, the button is not pressed.
+- The ``Reader`` is any arbitrary source of a value, e.g. a GPIO pin or a socket connection, receiving the value from an IOT button.
 
 ::
 
@@ -196,10 +192,10 @@ Here, passing ``live=True`` makes sense, since we don't care about a missed butt
 It makes the software respond to the button in real-time.
 
 If ``live=False`` was passed, then it would not be real-time,
-and sometimes the application would lag behind the real world button state,
+and sometimes the application would lag behind the real world button state.
 
-This behavior is undesirable when making Human computer interfaces.
-Keeping stuff responsive is a priority.
+This behavior is undesirable when making Human computer interfaces,
+where keeping stuff responsive is a priority.
 
 
-(The above code is simplified version of the code `this <https://github.com/pycampers/muro>`_ project).
+(The above code is simplified version of the code used in `this <https://github.com/pycampers/muro>`_ project).

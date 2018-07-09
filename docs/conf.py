@@ -24,7 +24,7 @@ html_theme_path = ["_themes"]
 
 project = "ZProc"
 copyright = "{}, dev aggarwal".format(datetime.now().year)
-author = "dev aggarwal"
+author = "Dev Aggarwal"
 
 # The short X.Y version
 version = ""
@@ -40,11 +40,7 @@ release = ""
 # Add any Sphinx extension module names here, as strings. They can be
 # extensions coming with Sphinx (named 'sphinx.ext.*') or your custom
 # ones.
-extensions = [
-    "sphinx.ext.autodoc",
-    "sphinx.ext.viewcode",
-    "sphinxcontrib.inlinesyntaxhighlight",
-]
+extensions = ["sphinx.ext.autodoc", "sphinx.ext.viewcode"]
 
 # Add any paths that contain templates here, relative to this directory.
 templates_path = ["_templates"]
@@ -78,7 +74,7 @@ pygments_style = "sphinx"
 # The theme to use for HTML and HTML Help pages.  See the documentation for
 # a list of builtin themes.
 #
-html_theme = "alabaster"
+html_theme = "sphinx_rtd_theme"
 
 # Theme options are theme-specific and customize the look and feel of a theme
 # further.  For a list of options available for each theme, see the
@@ -94,14 +90,13 @@ html_sidebars = {
     ]
 }
 html_theme_options = {
-    "description": "Multi-Tasking how it should've been.",
-    "github_user": "pycampers",
-    "github_repo": "zproc",
-    "github_type": "star",
-    "fixed_sidebar": True,
-    "github_banner": True,
-    "analytics_id": "UA-119542427-1",
-    # 'font_family': 'Alegreya'
+    # "description": "Multi-Tasking how it should've been.",
+    # "github_user": "pycampers",
+    # "github_repo": "zproc",
+    # "github_type": "star",
+    # "fixed_sidebar": True,
+    # "github_banner": True,
+    "analytics_id": "UA-119542427-1"
 }
 # Add any paths that contain custom static files (such as style sheets) here,
 # relative to this directory. They are copied after the builtin static files,
@@ -176,10 +171,9 @@ texinfo_documents = [
 autoclass_content = "both"
 autodoc_member_order = "bysource"
 
-# rst_prolog = """.. highlight:: py"""
-# rst_prolog = """\
-# .. role:: python(code)
-#     :language: py
-# """
-inline_highlight_respect_highlight = True
-inline_highlight_literals = True
+rst_prolog = """
+:github_url: https://github.com/pycampers/zproc
+"""
+
+# inline_highlight_respect_highlight = True
+# inline_highlight_literals = True

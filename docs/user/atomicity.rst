@@ -32,9 +32,8 @@ Example
 
 ``increment()`` might look like a single operation, but don't get fooled! (They're 2)
 
-1. get ``'count'``. (``dict.__getitem__()``)
-
-2. set ``'count'`` to ``<count> + 1``. (``dict.__setitem__()``)
+1. get ``'count'``, a.k.a. ``dict.__getitem__('count')``
+2. set ``'count'`` to ``count + 1``, a.k.a. ``dict.__setitem__('count', count + 1)``
 
 ``dict.__getitiem__()`` and ``dict.__setitem__()`` are **guarateed™**
 to be atomic on their own, but NOT in conjunction.
@@ -67,17 +66,18 @@ Also, If an error shall occur while the function is running, the state will rema
 
 .. note ::
 
-    The first argument to a function that is wrapped with :py:func:`~.atomic()` must be a :py:class:`.State` object.
+    The first argument to the atomic function must be a :py:class:`.State` object.
 
 .. note ::
 
-    The ``state`` you get inside an atomic wrapped function
+    The ``state`` you get inside the atomic function
     is not a :py:class:`.State` object,
-    but instead the full underlying ``dict`` object.
+    but the complete underlying ``dict`` object.
 
-    This means you can't perform the operations like state watching,
-    BUT, you can mutate objects inside the state freely,
-    since you're directly mutating the underlying ``dict`` object.
+    SO, while you can't do cool stuff like state watching,
+    you can freely mutate objects inside the state.
+
+    You're simply accessing the underlying ``dict`` object.
 
     (This means, things like appending to a list will work)
 

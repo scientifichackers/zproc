@@ -18,13 +18,13 @@ URL = "https://github.com/devxpy/zproc"
 EMAIL = "devxpy@gmail.com"
 AUTHOR = "Dev Aggarwal"
 REQUIRES_PYTHON = ">=3.5"
-VERSION = "0.7.0"
+VERSION = "0.8.0"
 
 # What packages are required for this module to be executed?
 REQUIRED = ["pyzmq", "tblib", "psutil"]
 
 # What packages are optional?
-EXTRA = {"docs": ["sphinx", "twine", "sphinxcontrib-inlinesyntaxhighlight"]}
+EXTRA = {"docs": ["sphinx", "twine", "sphinx_rtd_theme"]}
 
 # The rest you shouldn't have to touch too much :)
 # ------------------------------------------------

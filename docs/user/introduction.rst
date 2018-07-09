@@ -1,5 +1,5 @@
-QuickStart
-==========
+Introduction to ZProc
+=====================
 
 The whole architecture of zproc is built around a :py:class:`.State` object.
 
@@ -172,8 +172,7 @@ You can write more performant code without zproc.
 However, when you weigh in the safety and ease of use of zproc,
 performance really falls short.
 
-And it's not like zproc is slow, see for yourself:
-`async vs zproc <https://github.com/pycampers/zproc/blob/master/examples/async_vs_zproc.py>`_
+And it's not like zproc is slow, see for yourself - `async vs zproc <https://github.com/pycampers/zproc/blob/master/examples/async_vs_zproc.py>`_
 
 Bottom line, minimizing the number of times your application accesses the state will
 result in lean and fast code.

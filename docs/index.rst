@@ -25,7 +25,7 @@ instructions for getting the most out of ZProc.
 
 .. toctree::
 
-    user/quickstart
+    user/introduction
     user/atomicity
     user/state_watching
     user/communication.rst
