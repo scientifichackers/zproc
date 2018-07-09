@@ -11,7 +11,7 @@ with very little modifications.
 Furthermore, you can even take your existing code and scale it across
 multiple computers on your network.
 
-This is the benefit of NOT using shared memory.
+This is the benefit of message passing parallelism.
 Your whole stack is built on communication, and hence,
 becomes extremely scalable and flexible when you need it to be.
 
