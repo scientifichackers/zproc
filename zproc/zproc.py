@@ -160,7 +160,7 @@ def _create_state_watcher_decorator(self, live, timeout):
             if live:
                 sock = self._get_subscribe_sock()
             else:
-                sock = self.pub_sub_sock
+                sock = self._pub_sub_sock
 
             if timeout is not None:
                 sock.setsockopt(zmq.RCVTIMEO, int(timeout * 1000))
