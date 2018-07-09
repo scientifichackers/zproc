@@ -76,7 +76,7 @@ If you want multiple :py:class:`.Context` objects to access the same state,
 you can start the server manually, and provide the Context with the address of the server.
 
 If you manually provide the address to :py:class:`.Context`, then zproc won't start the
-server itself, and you have to do it manually, using :py:func:`.start_server`:
+server itself, and you have to do it manually, using :py:func:`.start_server`.
 
 This is useful when you want 2 separate scripts to access the same state.
 
