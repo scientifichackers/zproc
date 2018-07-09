@@ -86,7 +86,7 @@ def _server_process(*args, **kwargs):
 
 def start_server(server_address: tuple = None):
     """
-    Start a new zproc server ``Process``.
+    Start a new zproc server.
 
     :param server_address:
         The zproc server's address.
@@ -94,7 +94,7 @@ def start_server(server_address: tuple = None):
 
         If set to ``None``, then a random address will be used.
 
-    :return: ``tuple``, containing a ``Process`` object for server and the server address.
+    :return: ``tuple``, containing a ``multiprocessing.Process`` object for server and the server address.
     """
 
     address_queue = multiprocessing.Queue()
@@ -109,11 +109,13 @@ def start_server(server_address: tuple = None):
 
 def atomic(fn: typing.Callable):
     """
-    Hack on a normal looking function, to create an atomic operation out of it.
+    Wraps a function, to create an atomic operation out of it.
 
-    No Process shall access the state in any way whilst ``fn`` is running.
+    No Process shall access the state while ``fn`` is running.
 
-    This helps avoid race-conditions, almost entirely.
+    The first argument to the wrapped function must be a :py:class:`State` object.
+
+    Read :ref:`atomicity`
 
     :return: wrapped function
     :rtype: function
@@ -131,18 +133,6 @@ def atomic(fn: typing.Callable):
         ctx.state['count'] = 0
 
         print(increment(ctx.state))  # 1
-
-
-    .. note ::
-        The state object you get inside an atomic wrapped function
-        is not a :py:class:`ZeroState` object,
-        but instead the full underlying ``dict`` object.
-
-        This means you can't perform the operations like state watching,
-        BUT, you can mutate objects inside the state freely,
-        since you're directly mutating the underlying ``dict`` object.
-
-        (This means, things like appending to a list will work)
 
     """
 
@@ -190,15 +180,15 @@ def _create_state_watcher_decorator(self, live, timeout):
     return watcher_loop_decorator
 
 
-class ZeroState:
+class State:
     def __init__(self, server_address):
         """
         Allows accessing state stored on the zproc server, through a dict-like API.
 
         Communicates to the zproc server using the ZMQ sockets.
 
-        Don't share a ZeroState object between Process/Threads.
-        A ZeroState object is not thread-safe.
+        Don't share a State object between Processes / Threads.
+        A State object is not thread-safe.
 
         Boasts the following ``dict``-like members, for accessing the state:
 
@@ -349,7 +339,7 @@ class ZeroState:
 
     def get_when(self, test_fn, *, live=True, timeout=None):
         """
-        | Block until ``test_fn(state: ZeroState)`` returns a True-like value
+        | Block until ``test_fn(state: State)`` returns a True-like value
         |
         | Roughly, ``if test_fn(state): return state.copy()``
 
@@ -467,7 +457,7 @@ class ZeroState:
 
     def close(self):
         """
-        Close this ZeroState and disconnect with the ZProcServer
+        Close this State and disconnect with the Server
         """
 
         self._req_rep_sock.close()
@@ -490,7 +480,7 @@ class ZeroState:
         return self.copy().values()
 
     def __repr__(self):
-        return "<ZeroState state: {}>".format(self.copy())
+        return "<{} value: {}>".format(State.__qualname__, self.copy())
 
 
 def create_remote_method(method_name):
@@ -508,7 +498,7 @@ def create_remote_method(method_name):
 
 
 for method_name in util.STATE_INJECTED_METHODS:
-    setattr(ZeroState, method_name, create_remote_method(method_name))
+    setattr(State, method_name, create_remote_method(method_name))
 
 
 def _child_process(
@@ -522,7 +512,7 @@ def _child_process(
     target_args,
     target_kwargs
 ):
-    state = ZeroState(process.server_address)
+    state = State(process.server_address)
 
     exceptions = [util.SignalException]
     for i in retry_for:
@@ -563,7 +553,7 @@ def _child_process(
             break
 
 
-class ZeroProcess:
+class Process:
     def __init__(
         self,
         server_address: tuple,
@@ -579,7 +569,7 @@ class ZeroProcess:
         retry_kwargs=None
     ):
         """
-        Provides a high level wrapper over ``Process``.
+        Provides a high level wrapper over ``multiprocessing.Process``.
 
         :param server_address:
             The address of zproc server.
@@ -590,11 +580,11 @@ class ZeroProcess:
         :param target:
             The Callable to be invoked by the start() method.
 
-            It is run inside a ``Process`` with following signature:
+            It is run inside a ``multiprocessing.Process`` with following signature:
 
             ``target(state, *args, **target_args)``
 
-            Where ``state`` is a :py:class:`ZeroState` object
+            Where ``state`` is a :py:class:`State` object
             and \*args & \*\*kwargs are passed from the constructor.
 
         :param args:
@@ -676,7 +666,9 @@ class ZeroProcess:
             self.child.start()
 
     def __repr__(self):
-        return "<ZeroProcess pid: {} target: {}>".format(self.pid, self.target)
+        return "<{} pid: {} target: {}>".format(
+            Process.__qualname__, self.pid, self.target
+        )
 
     def start(self):
         """
@@ -700,7 +692,7 @@ class ZeroProcess:
         self.child.terminate()
         return self.child.exitcode
 
-    def wait(self, timoeut=None):
+    def wait(self, timeout=None):
         """
         Wait until the process finishes execution.
 
@@ -713,7 +705,7 @@ class ZeroProcess:
             for that amount of time before returning with a ``TimeoutError``.
         """
 
-        self.child.join(timeout=timoeut)
+        self.child.join(timeout=timeout)
 
         if self.child.is_alive():
             raise TimeoutError("Timed-out waiting for process to finish")
@@ -765,14 +757,13 @@ class Context:
         **process_kwargs
     ):
         """
-        A Context holds information about the current process.
+        Provides a wrapper over :py:class:`State` and :py:class:`Process`.
 
-        It is responsible for the creation and management of Processes.
+        Used to manage and launch processes using zproc.
 
-        Also calls :py:func:`start_server`,
-        that starts a server process to manage the state.
+        All processes launched with using a Context, share the same state.
 
-        Don't share a Context object between Process/Threads.
+        Don't share a Context object between Processes / Threads.
         A Context object is not thread-safe.
 
         :param server_address:
@@ -781,6 +772,13 @@ class Context:
 
             If set to ``None``,
             then a new server is started and a random address will be used.
+
+            Otherwise, it will connect to an existing server with the address provided.
+
+            .. caution::
+
+                If you provide a "server_address", be sure to manually start the server,
+                as described here: :ref:`start-server`
 
         :param wait:
             wait for all Process to finish their work,
@@ -796,7 +794,7 @@ class Context:
             Attaches a signal handler for SIGTERM along with an exit handler.
 
         :param \*\*process_kwargs:
-            Optional keyword arguments that :py:class:`~ZeroProcess` takes.
+            Optional keyword arguments that :py:class:`~Process` takes.
 
             If provided, these will be used while creating
             Processes under this Context.
@@ -804,7 +802,7 @@ class Context:
         :ivar process_kwargs:
             Passed from constructor.
         :ivar state:
-            A :py:class:`ZeroState` object connecting to the global state.
+            A :py:class:`State` object connecting to the global state.
         :ivar process_list:
             A list of child Process(s) created under this Context.
         :ivar server_process:
@@ -821,7 +819,7 @@ class Context:
         else:
             self.server_process, self.server_address = None, server_address
 
-        self.state = ZeroState(self.server_address)
+        self.state = State(self.server_address)
 
         if cleanup:
             signal.signal(signal.SIGTERM, util.cleanup_current_process_tree)
@@ -845,10 +843,10 @@ class Context:
         Can be used as both function call, and as decorator.
 
         :param target:
-            Passed on to :py:class:`ZeroProcess`'s constructor.
+            Passed on to :py:class:`Process`'s constructor.
 
         :param \*\*process_kwargs:
-            Keyword arguments that :py:class:`ZeroProcess` takes.
+            Keyword arguments that :py:class:`Process` takes.
         """
 
         if not callable(target):
@@ -860,7 +858,7 @@ class Context:
 
         process_kwargs.update(self.process_kwargs)
 
-        process = ZeroProcess(self.server_address, target, **process_kwargs)
+        process = Process(self.server_address, target, **process_kwargs)
         self.process_list.append(process)
         return process
 
@@ -869,12 +867,12 @@ class Context:
         DEPRECATED: Just use :py:meth:`~Context.process` as a decorator.
 
         :param \*\*process_kwargs:
-            Keyword arguments that :py:class:`ZeroProcess` takes.
+            Keyword arguments that :py:class:`Process` takes.
 
         :return:
             A wrapper function.
 
-            The wrapper function will return the :py:class:`ZeroProcess` instance created
+            The wrapper function will return the :py:class:`Process` instance created
         :rtype: function
         """
 
@@ -893,11 +891,11 @@ class Context:
         """
         Produce multiple child process(s) bound to this context.
 
-        :param targets: Passed on to :py:class:`ZeroProcess`'s constructor.
+        :param targets: Passed on to :py:class:`Process`'s constructor.
         :param count: The number of processes to spawn for each target
-        :param \*\*process_kwargs: Keyword arguments that :py:class:`ZeroProcess` takes.
+        :param \*\*process_kwargs: Keyword arguments that :py:class:`Process` takes.
         :return: spawned processes
-        :rtype: ``list[`` :py:class:`ZeroProcess` ``]``
+        :rtype: ``list[`` :py:class:`Process` ``]``
         """
 
         procs = []
@@ -924,18 +922,18 @@ class Context:
 
     def call_when_change(self, *keys, exclude=False, live=False, **process_kwargs):
         """
-        Decorator version of :py:meth:`~ZeroState.get_when_change()`
+        Decorator version of :py:meth:`~State.get_when_change()`
 
         Spawns a new Process that watches the state and calls the wrapped function,
         repeatedly
 
-        :param \*\*process_kwargs: Keyword arguments that :py:class:`ZeroProcess` takes.
+        :param \*\*process_kwargs: Keyword arguments that :py:class:`Process` takes.
 
-        All other parameters have same meaning as :py:meth:`~ZeroState.get_when_change()`
+        All other parameters have same meaning as :py:meth:`~State.get_when_change()`
 
         :return: A wrapper function
 
-                The wrapper function will return the :py:class:`ZeroProcess` instance created
+                The wrapper function will return the :py:class:`Process` instance created
         :rtype: function
 
         .. code-block:: py
@@ -956,18 +954,18 @@ class Context:
 
     def call_when(self, test_fn, *, live=False, **process_kwargs):
         """
-        Decorator version of :py:meth:`~ZeroState.get_when()`
+        Decorator version of :py:meth:`~State.get_when()`
 
         Spawns a new Process that watches the state and calls the wrapped function,
         repeatedly
 
-        :param \*\*process_kwargs: Keyword arguments that :py:class:`ZeroProcess` takes.
+        :param \*\*process_kwargs: Keyword arguments that :py:class:`Process` takes.
 
-        All other parameters have same meaning as :py:meth:`~ZeroState.get_when()`
+        All other parameters have same meaning as :py:meth:`~State.get_when()`
 
         :return: A wrapper function
 
-                The wrapper function will return the :py:class:`ZeroProcess` instance created
+                The wrapper function will return the :py:class:`Process` instance created
         :rtype: function
 
         .. code-block:: py
@@ -988,18 +986,18 @@ class Context:
 
     def call_when_equal(self, key, value, *, live=False, **process_kwargs):
         """
-        Decorator version of :py:meth:`~ZeroState.get_when_equal()`
+        Decorator version of :py:meth:`~State.get_when_equal()`
 
         Spawns a new Process that watches the state and calls the wrapped function,
         repeatedly
 
-        :param \*\*process_kwargs: Keyword arguments that :py:class:`ZeroProcess` takes.
+        :param \*\*process_kwargs: Keyword arguments that :py:class:`Process` takes.
 
-        All other parameters have same meaning as :py:meth:`~ZeroState.get_when_equal()`
+        All other parameters have same meaning as :py:meth:`~State.get_when_equal()`
 
         :return: A wrapper function
 
-                The wrapper function will return the :py:class:`ZeroProcess` instance created
+                The wrapper function will return the :py:class:`Process` instance created
         :rtype: function
 
         .. code-block:: py
@@ -1020,19 +1018,19 @@ class Context:
 
     def call_when_not_equal(self, key, value, *, live=False, **process_kwargs):
         """
-        Decorator version of :py:meth:`~ZeroState.get_when_not_equal()`
+        Decorator version of :py:meth:`~State.get_when_not_equal()`
 
         Spawns a new Process that watches the state and calls the wrapped function,
         repeatedly
 
-        :param \*\*process_kwargs: Keyword arguments that :py:class:`ZeroProcess` takes.
+        :param \*\*process_kwargs: Keyword arguments that :py:class:`Process` takes.
 
-        All other parameters have same meaning as :py:meth:`~ZeroState.get_when_not_equal()`
+        All other parameters have same meaning as :py:meth:`~State.get_when_not_equal()`
 
         :return:
             A wrapper function
 
-            The wrapper function will return the :py:class:`ZeroProcess` instance created
+            The wrapper function will return the :py:class:`Process` instance created
         :rtype: function
 
         .. code-block:: py
@@ -1053,7 +1051,7 @@ class Context:
 
     def wait_all(self):
         """
-        Call :py:meth:`~ZeroProcess.wait()` on all the child processes of this Context.
+        Call :py:meth:`~Process.wait()` on all the child processes of this Context.
         """
 
         for proc in self.process_list:
@@ -1061,7 +1059,7 @@ class Context:
 
     def start_all(self):
         """
-        Call :py:meth:`~ZeroProcess.start()` on all the child processes of this Context
+        Call :py:meth:`~Process.start()` on all the child processes of this Context
 
         Ignore if process is already started
         """
@@ -1073,7 +1071,7 @@ class Context:
                 pass
 
     def stop_all(self):
-        """Call :py:meth:`~ZeroProcess.stop()` on all the child processes of this Context"""
+        """Call :py:meth:`~Process.stop()` on all the child processes of this Context"""
 
         for proc in self.process_list:
             proc.stop()

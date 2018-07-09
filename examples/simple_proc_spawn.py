@@ -5,7 +5,7 @@ Demonstration of simple process spawn
 
 child1: 30631
 child2: 30632
-[<zproc.zproc.ZeroProcess object at 0x7f7929460c18>, <zproc.zproc.ZeroProcess object at 0x7f7926fc4c50>, <zproc.zproc.ZeroProcess object at 0x7f7926fd4a20>, <zproc.zproc.ZeroProcess object at 0x7f7926fd4a90>]
+[<zproc.zproc.Process object at 0x7f7929460c18>, <zproc.zproc.Process object at 0x7f7926fc4c50>, <zproc.zproc.Process object at 0x7f7926fd4a20>, <zproc.zproc.Process object at 0x7f7926fd4a90>]
 child2: True
 {30632, 30633, 30636, 30631}
 child3: 30633
@@ -16,7 +16,7 @@ child4: True
 child4: True
 child4: True
 Press Enter to stop: ↵
-[<zproc.zproc.ZeroProcess object at 0x7f7929460c18>, <zproc.zproc.ZeroProcess object at 0x7f7926fc4c50>, <zproc.zproc.ZeroProcess object at 0x7f7926fd4a20>, <zproc.zproc.ZeroProcess object at 0x7f7926fd4a90>]
+[<zproc.zproc.Process object at 0x7f7929460c18>, <zproc.zproc.Process object at 0x7f7926fc4c50>, <zproc.zproc.Process object at 0x7f7926fd4a20>, <zproc.zproc.Process object at 0x7f7926fd4a90>]
 set()
 """
 

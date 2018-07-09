@@ -23,7 +23,7 @@ class TestUUIDAPI(unittest.TestCase):
         self.assertEqual(ctx.state.copy(), {"foo": 42})
 
     def test2(self):
-        state = zproc.ZeroState(self.server_address)
+        state = zproc.State(self.server_address)
 
         self.assertEqual(state.copy(), {"foo": 42})
 
@@ -33,7 +33,7 @@ class TestUUIDAPI(unittest.TestCase):
         ctx = zproc.Context(ADDRESS)
         self.assertEqual(ctx.state.copy(), {})
 
-        state = zproc.ZeroState(ADDRESS)
+        state = zproc.State(ADDRESS)
         self.assertEqual(state.copy(), {})
 
 

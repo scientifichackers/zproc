@@ -1,5 +1,5 @@
 """
-Test the dict API, offered by ZeroState
+Test the dict API, offered by State
 """
 
 import unittest

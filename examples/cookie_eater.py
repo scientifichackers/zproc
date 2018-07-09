@@ -1,8 +1,8 @@
 """
 Expected output:
 
-<ZeroProcess pid: 2555 target: <function cookie_eater at 0x7f5b4542c9d8> uuid: e74521ae-76ca-11e8-bd1f-7c7a912e12b5>
-<ZeroProcess pid: 2556 target: <function cookie_baker at 0x7f5b4542c950> uuid: e74521ae-76ca-11e8-bd1f-7c7a912e12b5>
+<Process pid: 2555 target: <function cookie_eater at 0x7f5b4542c9d8> uuid: e74521ae-76ca-11e8-bd1f-7c7a912e12b5>
+<Process pid: 2556 target: <function cookie_baker at 0x7f5b4542c950> uuid: e74521ae-76ca-11e8-bd1f-7c7a912e12b5>
 Here's a cookie!
 Here's a cookie!
 Here's a cookie!

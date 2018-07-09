@@ -63,19 +63,24 @@ For other use-cases, TCP.
 
 By default, zproc will use IPC if it sees a POSIX, else TCP.
 
+.. _start-server:
 
 Starting the server manually
 ----------------------------
 
 By default, zproc will start the server when you create a :py:class:`.Context` object.
 
-As a result, each :py:class:`.Context` has its own, mutually exclusive state.
+Each :py:class:`.Context` (and its processes) have a separate, isolated state.
 
-But, when you want multiple :py:class:`.Context` objects to access the same same state,
-you can start the server manually and provide the Context with the address of the server.
+If you want multiple :py:class:`.Context` objects to access the same state,
+you can start the server manually, and provide the Context with the address of the server.
 
 If you manually provide the address to :py:class:`.Context`, then zproc won't start the
-server itself, and you have to do it manually, like this:
+server itself, and you have to do it manually, using :py:func:`.start_server`:
+
+This is useful when you want 2 separate scripts to access the same state.
+
+You can even create a State object without needing to use a Context.
 
 ::
 
@@ -87,15 +92,16 @@ server itself, and you have to do it manually, like this:
     zproc.start_server(ADDRESS)
 
     zproc.Context(ADDRESS)
-    zproc.ZeroState(ADDRESS)
+
+    zproc.State(ADDRESS)
 
 
 The above example uses tcp, but ipc works just as well.
 
-Some things to keep in mind:
+.. caution::
 
-- Start the server exactly once, per address.
-- Start the server, before using :py:class:`.Context` / :py:class:`.ZeroState`, since they depend on the server being alive.
+    - Start the server exactly once, per address.
+    - Start the server before you access the :py:class:`.State`, since :py:class:`.State` solely depends on the server.
 
-
+You can start the server from anywhere you wish, and then access it though the address.
 

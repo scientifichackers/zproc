@@ -42,12 +42,9 @@ to be atomic on their own, but NOT in conjunction.
 If these operations are not done atomically,
 it exposes the possibility of other Processes trying to do operations between "1" and "2"
 
+----
 
-Clearly, a remedy is required.
-
----------
-
-With ZProc, it's dead simple.
+zproc makes it dead simple to avoid such race conditions.
 
 Let's make some changes to our example..
 
@@ -59,7 +56,7 @@ Let's make some changes to our example..
 
     increment(state, 5)
 
-:py:meth:`~.atomic()` transforms any arbitrary function into
+:py:func:`~.atomic()` transforms any arbitrary function into
 an atomic operation on the state.
 
 This is very different from traditional locks. Locks are just flags. This is NOT a flag.
@@ -67,5 +64,23 @@ This is very different from traditional locks. Locks are just flags. This is NOT
 It's a hard restriction on state.
 
 Also, If an error shall occur while the function is running, the state will remain UNAFFECTED.
+
+.. note ::
+
+    The first argument to a function that is wrapped with :py:func:`~.atomic()` must be a :py:class:`.State` object.
+
+.. note ::
+
+    The ``state`` you get inside an atomic wrapped function
+    is not a :py:class:`.State` object,
+    but instead the full underlying ``dict`` object.
+
+    This means you can't perform the operations like state watching,
+    BUT, you can mutate objects inside the state freely,
+    since you're directly mutating the underlying ``dict`` object.
+
+    (This means, things like appending to a list will work)
+
+
 
 `🔖 <https://github.com/pycampers/zproc/tree/master/examples/atomicity.py>`_ <- full example
