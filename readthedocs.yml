@@ -6,8 +6,8 @@ python:
   pip_install: true
   setup_py_install: true
   extra_requirements:
-    - pyzmq
-    - tblib
-    - psutil
-    - sphinx
-    - sphinxcontrib-inlinesyntaxhighlight
+    - 'pyzmq'
+    - 'tblib'
+    - 'psutil'
+    - 'sphinx'
+    - 'sphinxcontrib-inlinesyntaxhighlight'
