@@ -73,14 +73,15 @@ By default, zproc will start the server when you create a :py:class:`.Context` o
 Each :py:class:`.Context` (and its processes) have a separate, isolated state.
 
 If you want multiple :py:class:`.Context` objects to access the same state,
-you can start the server manually, and provide the Context with the address of the server.
+you can start the server manually,
+and provide the :py:class:`.Context` with the address of the server.
 
 If you manually provide the address to :py:class:`.Context`, then zproc won't start the
 server itself, and you have to do it manually, using :py:func:`.start_server`.
 
 This is useful when you want 2 separate scripts to access the same state.
 
-You can even create a State object without needing to use a Context.
+You can also do the same with :py:class:`.State`.
 
 ::
 
