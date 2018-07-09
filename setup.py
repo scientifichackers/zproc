@@ -24,7 +24,7 @@ VERSION = "0.7.0"
 REQUIRED = ["pyzmq", "tblib", "psutil"]
 
 # What packages are optional?
-EXTRA = {}
+EXTRA = {"docs": ["sphinx", "twine", "sphinxcontrib-inlinesyntaxhighlight"]}
 
 # The rest you shouldn't have to touch too much :)
 # ------------------------------------------------
