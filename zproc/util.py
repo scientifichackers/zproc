@@ -139,7 +139,7 @@ def handle_crash(*, process, exc, retry_delay, tries, max_tries):
         msg += "\tNext retry in - {} sec\n".format(retry_delay)
 
     print(msg)
-    sleep(process.kwargs["retry_delay"])
+    sleep(retry_delay)
 
 
 # static declarations

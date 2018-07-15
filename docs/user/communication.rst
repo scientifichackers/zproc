@@ -20,14 +20,12 @@ becomes extremely scalable and flexible when you need it to be.
 The zproc server address spec
 ------------------------------
 
-By default, zproc produces random connection endpoints for communication,
-and as a result, you never need to provide it any addresses.
+By default, zproc produces random connection endpoints for communication.
 
 However, zproc does expose the necessary API,
-shall you want to manually provide the connection endpoints through which zproc should communicate.
+shall you want to manually provide the connection endpoints through which zproc will communicate.
 
-You will find ``server_address`` in the function arguments / class constructors,
-which allows you provide a custom address.
+*Look for the ``server_address`` argument, which allows you provide a custom address.*
 
 It is simply, a 2-length tuple containing 2 connection endpoints.
 
@@ -83,6 +81,8 @@ This is useful when you want 2 separate scripts to access the same state.
 
 You can also do the same with :py:class:`.State`.
 
+Both :py:class:`.State` and :py:class:`.Context` take ``server_address`` as their first argument.
+
 ::
 
     import zproc
@@ -93,7 +93,6 @@ You can also do the same with :py:class:`.State`.
     zproc.start_server(ADDRESS)
 
     zproc.Context(ADDRESS)
-
     zproc.State(ADDRESS)
 
 
