@@ -834,7 +834,7 @@ class Context:
         :param \*\*process_kwargs:
             Keyword arguments that :py:class:`Process` takes, except ``server_address``.
 
-        :return: A :py:class:`Process` instance.
+        :return: The :py:class:`Process` instance produced.
         """
 
         if not callable(target):
@@ -857,16 +857,14 @@ class Context:
         :param \*targets: Passed on to :py:class:`Process`'s constructor, one at a time.
         :param count: The number of processes to spawn, for each target.
         :param \*\*process_kwargs: Keyword arguments that :py:class:`Process` takes, except ``server_address``.
-        :return: A list of :py:class:`Process` instances.
+        :return: A ``list`` of :py:class:`Process` instance(s) produced.
         """
 
-        process_list = []
-        for target in targets:
-            for _ in range(count):
-                process_list.append(self.process(target, **process_kwargs))
-        self.process_list += process_list
-
-        return process_list
+        return [
+            self.process(target, **process_kwargs)
+            for target in targets
+            for _ in range(count)
+        ]
 
     def _create_watcher_process_wrapper(self, fn_name, process_kwargs, *args, **kwargs):
         def wrapper(fn):

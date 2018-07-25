@@ -11,7 +11,6 @@ from pathlib import Path
 import psutil
 from time import sleep
 
-
 ipc_base_dir = Path.home().joinpath(".tmp")
 
 if not ipc_base_dir.exists():
