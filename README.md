@@ -226,6 +226,12 @@ cd docs
 pipenv run ./build.sh
 ```
 
+## ZProc in the wild
+
+- [Oscilloscope](https://github.com/pycampers/oscilloscope)
+
+- [Muro](https://github.com/pycampers/muro)
+
 ## Thanks
 
 -   Thanks to [pieter hintjens](http://hintjens.com/),
