@@ -5,8 +5,7 @@ import multiprocessing
 import os
 import pickle
 import signal
-import typing
-import warnings
+from typing import Tuple, Callable, Union, Hashable
 
 import zmq
 
@@ -14,7 +13,12 @@ from zproc import util
 from zproc.zproc_server import ZProcServer
 
 
-def ping(server_address: tuple, **kwargs):
+def ping(
+    server_address: Tuple[str, str],
+    *,
+    timeout: Union[None, float, int] = None,
+    payload: Union[None, bytes] = None
+) -> Union[int, None]:
     """
     Ping the zproc server
 
@@ -23,7 +27,7 @@ def ping(server_address: tuple, **kwargs):
         (See :ref:`zproc-server-address-spec`)
 
     :param timeout:
-        (optional) The timeout in seconds.
+        The timeout in seconds.
 
         If this is set to ``None``, then it will block forever, until the zproc server replies.
 
@@ -33,29 +37,28 @@ def ping(server_address: tuple, **kwargs):
         By default it is set to ``None``.
 
     :param payload:
-        (optional) payload that will be sent to the server.
+        payload that will be sent to the server.
 
-        By default, it is set to ``os.urandom(56)``.
-        (56 random bytes)
+        If it is set to None, then ``os.urandom(56)`` (56 random bytes) will be used.
 
     :return:
-        The zproc server's **pid** if the ping was successful, else ``False``
+        The zproc server's **PID** if the ping was successful, else ``None``
     """
 
-    kwargs.setdefault("timeout", None)
-    kwargs.setdefault("payload", os.urandom(56))
+    if payload is None:
+        payload = os.urandom(56)
 
     ctx = zmq.Context()
     ctx.setsockopt(zmq.LINGER, 0)
     sock = ctx.socket(zmq.DEALER)
     sock.connect(server_address[0])
 
-    if kwargs["timeout"] is not None:
-        sock.setsockopt(zmq.RCVTIMEO, int(kwargs["timeout"] * 1000))
+    if timeout is not None:
+        sock.setsockopt(zmq.RCVTIMEO, int(timeout * 1000))
 
     ping_msg = {
         util.Message.server_method: ZProcServer.ping.__name__,
-        util.Message.payload: kwargs["payload"],
+        util.Message.payload: payload,
     }
 
     sock.send_pyobj(ping_msg, protocol=pickle.HIGHEST_PROTOCOL)
@@ -65,10 +68,10 @@ def ping(server_address: tuple, **kwargs):
     except zmq.error.Again:
         raise TimeoutError("Connection to zproc server timed out!")
     else:
-        if response[util.Message.payload] == kwargs["payload"]:
+        if response[util.Message.payload] == payload:
             return response["pid"]
         else:
-            return False
+            return None
     finally:
         sock.close()
 
@@ -84,7 +87,11 @@ def _server_process(*args, **kwargs):
     server.mainloop()
 
 
-def start_server(server_address: tuple = None):
+def start_server(
+    server_address: Union[None, Tuple[str, str]] = None,
+    *,
+    backend: Callable = multiprocessing.Process
+):
     """
     Start a new zproc server.
 
@@ -94,12 +101,19 @@ def start_server(server_address: tuple = None):
 
         If set to ``None``, then a random address will be used.
 
+    :param backend:
+        The backend to use for launch this process.
+
+        For example, you may use ``threading.Thread`` as the backend.
+
+        Warning: Not guaranteed to work well with anything other than ``multiprocessing.Process``.
+
     :return: ``tuple``, containing a ``multiprocessing.Process`` object for server and the server address.
     """
 
     address_queue = multiprocessing.Queue()
 
-    server_process = multiprocessing.Process(
+    server_process = backend(
         target=_server_process, args=(server_address, address_queue)
     )
     server_process.start()
@@ -107,13 +121,14 @@ def start_server(server_address: tuple = None):
     return server_process, address_queue.get()
 
 
-def atomic(fn: typing.Callable):
+def atomic(fn: Callable):
     """
     Wraps a function, to create an atomic operation out of it.
 
     No Process shall access the state while ``fn`` is running.
 
-    The first argument to the wrapped function must be a :py:class:`State` object.
+    .. note::
+        The first argument to the wrapped function must be a :py:class:`State` object.
 
     Read :ref:`atomicity`.
 
@@ -141,7 +156,7 @@ def atomic(fn: typing.Callable):
     def atomic_wrapper(state, *args, **kwargs):
         return state._req_rep(
             {
-                util.Message.server_method: ZProcServer.run_atomic_function.__name__,
+                util.Message.server_method: ZProcServer.exec_atomic_func.__name__,
                 util.Message.func: serialized_fn,
                 util.Message.args: args,
                 util.Message.kwargs: kwargs,
@@ -242,7 +257,22 @@ class State:
         response = self._req_rep_sock.recv_pyobj()
         return util.handle_server_response(response)
 
-    def get_when_change(self, *keys, exclude=False, live=True, timeout=None):
+    def atomic(self):
+        """
+        Run a function atomically.
+
+        Follows the same
+
+        :return:
+        """
+
+    def get_when_change(
+        self,
+        *keys: Hashable,
+        exclude: bool = False,
+        live: bool = True,
+        timeout: Union[None, float, int] = None
+    ):
         """
         | Block until a change is observed.
 
@@ -484,11 +514,11 @@ class State:
         return "<{} value: {}>".format(State.__qualname__, self.copy())
 
 
-def create_remote_method(method_name):
+def create_remote_method(method_name: str):
     def remote_method(self, *args, **kwargs):
         return self._req_rep(
             {
-                util.Message.server_method: ZProcServer.call_method_on_state.__name__,
+                util.Message.server_method: ZProcServer.exec_state_method.__name__,
                 util.Message.dict_method: method_name,
                 util.Message.args: args,
                 util.Message.kwargs: kwargs,
@@ -504,14 +534,14 @@ for method_name in util.STATE_INJECTED_METHODS:
 
 def _child_process(
     *,
-    process,
-    retry_for,
-    retry_delay,
-    max_retries,
-    retry_args,
-    retry_kwargs,
-    target_args,
-    target_kwargs
+    process: "Process",
+    target_args: tuple = (),
+    target_kwargs: dict = {},
+    retry_for: tuple = (),
+    retry_delay: Union[int, float] = 5,
+    max_retries: Union[None, bool] = None,
+    retry_args: Union[None, tuple] = None,
+    retry_kwargs: Union[None, dict] = None
 ):
     state = State(process.server_address)
 
@@ -558,16 +588,17 @@ class Process:
     def __init__(
         self,
         server_address: tuple,
-        target: typing.Callable,
+        target: Callable,
         *,
-        args=(),
-        kwargs={},
-        start=True,
-        retry_for=(),
-        retry_delay=5,
-        max_retries=None,
-        retry_args=None,
-        retry_kwargs=None
+        args: tuple = (),
+        kwargs: dict = {},
+        start: bool = True,
+        retry_for: tuple = (),
+        retry_delay: Union[int, float] = 5,
+        max_retries: Union[None, bool] = None,
+        retry_args: Union[None, tuple] = None,
+        retry_kwargs: Union[None, dict] = None,
+        backend: Callable = multiprocessing.Process
     ):
         """
         Provides a high level wrapper over ``multiprocessing.Process``.
@@ -635,6 +666,13 @@ class Process:
 
             If set to ``None``, then it has no effect.
 
+        :param backend:
+            The backend to use for launch this process.
+
+            For example, you may use ``threading.Thread`` as the backend.
+
+            Warning: Not guaranteed to work with anything other than ``multiprocessing.Process``.
+
         :ivar server_address: Passed on from constructor.
         :ivar target: Passed on from constructor.
         :ivar child: A ``multiprocessing.Process`` instance for the child process.
@@ -647,7 +685,7 @@ class Process:
         self.server_address = server_address
         self.target = target
 
-        self.child = multiprocessing.Process(
+        self.child = backend(
             target=_child_process,
             kwargs=dict(
                 process=self,
@@ -691,7 +729,7 @@ class Process:
         self.child.terminate()
         return self.child.exitcode
 
-    def wait(self, timeout=None):
+    def wait(self, timeout: Union[None, int, float] = None):
         """
         Wait until the process finishes execution.
 
@@ -750,8 +788,8 @@ class Context:
         self,
         server_address: tuple = None,
         *,
-        wait=False,
-        cleanup=True,
+        wait: bool = False,
+        cleanup: bool = True,
         **process_kwargs
     ):
         """
@@ -785,10 +823,11 @@ class Context:
         :param cleanup:
             Whether to cleanup the process tree before exiting.
 
-            Registers a signal handler for ``SIGTERM`` and an ``atexit`` handler.
+            Registers a signal handler for ``SIGTERM``, and an ``atexit`` handler.
 
         :param \*\*process_kwargs:
-            Keyword arguments that :py:class:`~Process` takes, except ``server_address`` and ``target``.
+            Keyword arguments that :py:class:`~Process` takes,
+            except ``server_address`` and ``target``.
 
             If provided, these will be used while creating
             processes using this Context.
@@ -822,17 +861,37 @@ class Context:
         if wait:
             atexit.register(self.wait_all)
 
-    def process(self, target: typing.Callable = None, **process_kwargs):
+    def process(
+        self, target: Union[None, Callable] = None, **process_kwargs
+    ) -> Union["Process", Callable]:
         """
         Produce a child process bound to this context.
 
-        Can be used as a function call, or as a decorator.
+        Can be used both as a function and decorator; which means all these are valid:
+
+        .. code-block::py
+
+            @zproc.process()  # you can pass some arguments here.
+            def my_process1(state):
+                print('hello')
+
+
+            @zproc.process  # or not...
+            def my_process2(state):
+                print('hello')
+
+
+            def my_process3(state):
+                print('hello')
+
+            zproc.process(my_process3)
+
 
         :param target:
             Passed on to :py:class:`Process`'s constructor.
 
         :param \*\*process_kwargs:
-            Keyword arguments that :py:class:`Process` takes, except ``server_address``.
+            Keyword Only arguments that :py:class:`Process` takes.
 
         :return: The :py:class:`Process` instance produced.
         """
@@ -850,7 +909,7 @@ class Context:
         self.process_list.append(process)
         return process
 
-    def process_factory(self, *targets: typing.Callable, count=1, **process_kwargs):
+    def process_factory(self, *targets: Callable, count: int = 1, **process_kwargs):
         """
         Produce multiple child process(s) bound to this context.
 
@@ -866,7 +925,9 @@ class Context:
             for _ in range(count)
         ]
 
-    def _create_watcher_process_wrapper(self, fn_name, process_kwargs, *args, **kwargs):
+    def _create_watcher_process_wrapper(
+        self, fn_name: str, process_kwargs: dict, *args, **kwargs
+    ):
         def wrapper(fn):
             def watcher_process(state, *_args, **_kwargs):
                 while True:
@@ -880,7 +941,13 @@ class Context:
 
         return wrapper
 
-    def call_when_change(self, *keys, exclude=False, live=False, **process_kwargs):
+    def call_when_change(
+        self,
+        *keys: Hashable,
+        exclude: bool = False,
+        live: bool = False,
+        **process_kwargs
+    ):
         """
         Decorator version of :py:meth:`~State.get_when_change()`.
 

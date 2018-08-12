@@ -58,11 +58,21 @@ Let's make some changes to our example..
 :py:func:`~.atomic()` transforms any arbitrary function into
 an atomic operation on the state.
 
-This is very different from traditional locks. Locks are just flags. This is NOT a flag.
+---
 
-It's a hard restriction on state.
+This is different from traditional locks.
+[Locks are just flags](https://www.youtube.com/watch?v=9zinZmE3Ogk).
+This on the other hand, is a hard restriction on the state.
 
-Also, If an error shall occur while the function is running, the state will remain UNAFFECTED.
+Keep in mind,
+you still have to identify the critical points where a race condition can occur,
+and prevent it using :py:func:`~.atomic()`.
+
+However,
+this fundamental difference between locks and :py:func:`~.atomic()`
+makes it easier to write safe and correct parallel code.
+
+For the record, If an error shall occur while the function is running, the state will remain *unaffected*.
 
 .. note ::
 
@@ -82,5 +92,12 @@ Also, If an error shall occur while the function is running, the state will rema
     (This means, things like appending to a list will work)
 
 
-
 `🔖 <https://github.com/pycampers/zproc/tree/master/examples/atomicity.py>`_ <- full example
+
+
+Further reading
+---------------
+
+So we've looked at how we can make a function atomic.
+
+But the cool thing about :py:func:`~.atomic()` is that you can use it both as a function and decorator.

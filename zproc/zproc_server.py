@@ -1,6 +1,6 @@
 import os
 import pickle
-import typing
+from typing import Tuple
 import uuid
 from copy import deepcopy
 
@@ -9,11 +9,12 @@ from tblib import pickling_support
 
 from zproc import util
 
+# installs pickle support for exceptions.
 pickling_support.install()
 
 
 class ZProcServer:
-    def __init__(self, server_address, address_queue):
+    def __init__(self, server_address: Tuple[str, str], address_queue):
         self.state = {}
 
         self.zmq_ctx = zmq.Context()
@@ -48,25 +49,25 @@ class ZProcServer:
 
         address_queue.put((self.req_rep_address, self.pub_sub_address))
 
-    def wait_for_request(self) -> typing.Tuple[str, dict]:
+    def _wait_for_request(self) -> Tuple[str, dict]:
         """wait for a client to send a request"""
 
         identity, msg_dict = self.req_rep_sock.recv_multipart()
         return identity, pickle.loads(msg_dict)
 
-    def reply(self, identity, response):
-        """reply with response to a client (with said identity)"""
+    def _reply(self, identity, response):
+        """reply with ``response`` to a client (with said ``identity``)"""
 
         return self.req_rep_sock.send_multipart(
             [identity, pickle.dumps(response, protocol=pickle.HIGHEST_PROTOCOL)]
         )
 
-    def reply_state(self, identity, *args):
-        """reply with state to a client (with said identity)"""
+    def _reply_exception(self, identity):
+        """Serialize the current exception, serialize it, and send it to the client with ``identity``"""
 
-        self.reply(identity, self.state)
+        return self._reply(identity, util.RemoteException())
 
-    def publish_state_if_change(self, identity, old_state):
+    def _publish_state_if_changed(self, identity, old_state):
         """Publish the state to everyone"""
 
         if old_state != self.state:
@@ -79,8 +80,28 @@ class ZProcServer:
                 ]
             )
 
+    def _func_executor(self, identity, func, args, kwargs):
+        """
+        Run a function atomically (sort-of)
+        and returns the result back to the client with ``identity``.
+
+        - Restores the state if an error occurs.
+        - Publishes the state if it changes after the function executes.
+        """
+
+        old_state = deepcopy(self.state)
+
+        try:
+            result = func(*args, **kwargs)
+        except:
+            self.state = old_state  # restore previous state
+            self._reply_exception(identity)
+        else:
+            self._reply(identity, result)
+            self._publish_state_if_changed(identity, old_state)
+
     def ping(self, identity, request):
-        return self.reply(
+        return self._reply(
             identity,
             {
                 util.Message.pid: os.getpid(),
@@ -88,39 +109,35 @@ class ZProcServer:
             },
         )
 
-    def _run_function_atomically_and_safely(self, identity, func, args, kwargs):
-        old_state = deepcopy(self.state)
+    def reply_state(self, identity, request=None):
+        """reply with state to a client (with said ``identity``)"""
 
-        try:
-            result = func(*args, **kwargs)
-        except:
-            self.state = old_state  # restore previous state
-            self.resend_error_back_to_process(identity)
-        else:
-            self.reply(identity, result)
-            self.publish_state_if_change(identity, old_state)
+        self._reply(identity, self.state)
 
-    def call_method_on_state(self, identity, request):
-        """Call a method on the state dict and return the result."""
+    def exec_state_method(self, identity, request):
+        """Execute a method on the state ``dict`` and reply with the result."""
 
-        method_name = request[util.Message.dict_method]
-        state_method = getattr(self.state, method_name)
-
-        return self._run_function_atomically_and_safely(
-            identity,
-            state_method,
+        method_name, args, kwargs = (
+            request[util.Message.dict_method],
             request[util.Message.args],
             request[util.Message.kwargs],
         )
 
-    def run_atomic_function(self, identity: str, msg_dict: dict):
-        """Run a function on the state, safely and atomically"""
+        return self._func_executor(
+            identity, getattr(self.state, method_name), args, kwargs
+        )
 
-        func = util.deserialize_func(msg_dict[util.Message.func])
-        args = (self.state, *msg_dict[util.Message.args])
+    def exec_atomic_func(self, identity: str, request: dict):
+        """Execute a function, atomically  and reply with the result."""
 
-        return self._run_function_atomically_and_safely(
-            identity, func, args, msg_dict[util.Message.kwargs]
+        func, args, kwargs = (
+            request[util.Message.func],
+            request[util.Message.args],
+            request[util.Message.kwargs],
+        )
+
+        return self._func_executor(
+            identity, util.deserialize_func(func), (self.state, *args), kwargs
         )
 
     def close(self):
@@ -129,17 +146,16 @@ class ZProcServer:
         self.zmq_ctx.destroy()
         self.zmq_ctx.term()
 
-    def resend_error_back_to_process(self, identity):
-        return self.reply(identity, util.RemoteException())
-
     def mainloop(self):
         while True:
-            identity, request = self.wait_for_request()
+            identity, request = self._wait_for_request()
             # print(request, identity)
 
             try:
+                # retrieve the method matching the one in the request,
+                # and then call it with appropriate args.
                 getattr(self, request[util.Message.server_method])(identity, request)
             except KeyboardInterrupt:
                 return self.close()
             except:
-                self.resend_error_back_to_process(identity)
+                self._reply_exception(identity)

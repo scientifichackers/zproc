@@ -31,6 +31,7 @@ Lets launch a process that does nothing
 The :py:meth:`~.Context.process` will launch a process, and provide it with ``state``.
 
 If you like to be cool, then you can use it as a decorator.
+(:py:meth:`~.Context.process` works both as a function, and decorator)
 
 ::
 
