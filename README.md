@@ -1,6 +1,6 @@
 # ZProc - Process on steroids
 
-*Multi-Tasking how it should've been.*
+*Parallel programming, how it should've been.*
 
 <img src="https://i.imgur.com/N0X6zl8.png" height="300" />
 
