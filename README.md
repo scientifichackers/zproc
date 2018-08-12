@@ -1,8 +1,8 @@
 # ZProc - Process on steroids
 
-##### Multi-Tasking how it should've been.
+*Multi-Tasking how it should've been.*
 
-![ZProc logo](https://i.imgur.com/N0X6zl8.png)
+<img src="https://i.imgur.com/N0X6zl8.png" height="300" />
 
 > To make utterly perfect MT programs (and I mean that literally),
 > we don't need mutexes, locks, or any other form of inter-thread
