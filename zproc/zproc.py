@@ -102,11 +102,13 @@ def start_server(
         If set to ``None``, then a random address will be used.
 
     :param backend:
-        The backend to use for launch this process.
+        The backend to use for launching the server process.
 
         For example, you may use ``threading.Thread`` as the backend.
 
-        Warning: Not guaranteed to work well with anything other than ``multiprocessing.Process``.
+        .. warning::
+
+            Not guaranteed to work well with anything other than ``multiprocessing.Process``.
 
     :return: ``tuple``, containing a ``multiprocessing.Process`` object for server and the server address.
     """
@@ -667,11 +669,13 @@ class Process:
             If set to ``None``, then it has no effect.
 
         :param backend:
-            The backend to use for launch this process.
+            The backend to use for launching the process(s).
 
             For example, you may use ``threading.Thread`` as the backend.
 
-            Warning: Not guaranteed to work with anything other than ``multiprocessing.Process``.
+            .. warning::
+
+                Not guaranteed to work well with anything other than ``multiprocessing.Process``.
 
         :ivar server_address: Passed on from constructor.
         :ivar target: Passed on from constructor.
@@ -790,6 +794,7 @@ class Context:
         *,
         wait: bool = False,
         cleanup: bool = True,
+        server_backend: Callable = multiprocessing.Process,
         **process_kwargs
     ):
         """
@@ -825,6 +830,9 @@ class Context:
 
             Registers a signal handler for ``SIGTERM``, and an ``atexit`` handler.
 
+        :param server_backend:
+            Passed on to :py:func:`start_server` as ``backend``.
+
         :param \*\*process_kwargs:
             Keyword arguments that :py:class:`~Process` takes,
             except ``server_address`` and ``target``.
@@ -848,7 +856,9 @@ class Context:
         self.process_kwargs = process_kwargs
 
         if server_address is None:
-            self.server_process, self.server_address = start_server(server_address)
+            self.server_process, self.server_address = start_server(
+                server_address, backend=server_backend
+            )
         else:
             self.server_process, self.server_address = None, server_address
 
@@ -867,11 +877,11 @@ class Context:
         """
         Produce a child process bound to this context.
 
-        Can be used both as a function and decorator; which means all these are valid:
+        Can be used both as a function and decorator:
 
-        .. code-block::py
+        .. code-block:: py
 
-            @zproc.process()  # you can pass some arguments here.
+            @zproc.process()  # you may pass some arguments here
             def my_process1(state):
                 print('hello')
 
@@ -884,7 +894,7 @@ class Context:
             def my_process3(state):
                 print('hello')
 
-            zproc.process(my_process3)
+            zproc.process(my_process3)  # or just use as a good ol' function
 
 
         :param target:

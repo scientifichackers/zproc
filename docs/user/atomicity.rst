@@ -94,10 +94,3 @@ For the record, If an error shall occur while the function is running, the state
 
 `🔖 <https://github.com/pycampers/zproc/tree/master/examples/atomicity.py>`_ <- full example
 
-
-Further reading
----------------
-
-So we've looked at how we can make a function atomic.
-
-But the cool thing about :py:func:`~.atomic()` is that you can use it both as a function and decorator.
