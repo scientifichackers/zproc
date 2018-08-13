@@ -8,8 +8,6 @@
 > we don't need mutexes, locks, or any other form of inter-thread
 > communication except messages sent across ZeroMQ sockets.
 
-P.S. ZProc is short for _Zero_ Process
-
 **Behold, the power of ZProc:**
 
 ```python
@@ -83,27 +81,29 @@ Requires: Python >=3.5
 
 ## Backstory
 
-Traditional Multi Processing involved _shared memory_ (global variables).<br>
-However, it was proven that shared memory tends to _violate_ the laws of Physics.
+Traditional Multi Processing involved _shared memory_, 
+where 2 processes read/write to the same space in memory.
 
-[🔖](https://www.youtube.com/watch?v=bo5WL5IQAd0)
-<- Joe Armstrong, the creator of Erlang.
+However, shared memory often tends to [_violate_ the laws of Physics](https://www.youtube.com/watch?v=bo5WL5IQAd0).
 
-The solution presented by Erlang, (and ZMQ) is the notion of
-**message passing** for achieving parallelism.<br>
-However, Message passing can be tedious, and often un-pythonic.
+The solution presented by Erlang, ZMQ and many others is the notion of
+**message passing** for achieving parallelism.
+
+However, Message passing can be tedious, and often un-pythonic, 
+because of all the manual wiring involved.
 
 This is where ZProc comes in.
 
 **It provides you a middle ground between message passing and shared memory.**
 
-It does message passing, without you ever knowing that it's doing it.
+It lets you do message passing parallelism without the effort of tedious wiring.
 
-It provides you a global `dict` called `state`.<br>
+It does that by providing a global `dict` called `state`.<br>
 The `state` is **not** a shared object.<br>
 It works _purely_ on message passing.
 
-It also supports a fair bit of reactive programming, (kind of like ReactJS) using [state watchers](http://zproc.readthedocs.io/en/latest/user/state_watching.html).
+It also supports a fair bit of reactive programming, 
+using [state watchers](http://zproc.readthedocs.io/en/latest/user/state_watching.html).
 
 Behind the covers, it simulates the [Actor Model](https://en.wikipedia.org/wiki/Actor_model).<br>
 ZProc doesn't blindly follow it, but you can think of it as such.
@@ -168,22 +168,17 @@ Celery it doesn't need a broker.
 
 -   Fast?
 
-    -   Above all, ZProc is written for safety and ease of use.
+    -   Above all, ZProc is written for safety and the ease of use.
     -   However, since its written using ZMQ, it's plenty fast for most stuff.
     -   Run -> [🔖](eamples/async_vs_zproc.py) for a taste.
 
 -   Stable?
 
-    -   The code itself is stable, but the API is quite unstable.
+    -   Mostly. However, since it's still in the `0.x.x` stage, you can expect some API changes. 
 
 -   Production ready?
 
     -   Please don't use it in production right now.
-
--   Real?
-
-    -   YES. It works.
-    -   [🔖](https://github.com/pycampers/muro)
 
 -   Windows compatible?
     -   Probably?
@@ -245,6 +240,8 @@ pipenv run ./build.sh
     His setup.py was used to host this project on pypi.
     Plus lot of documentation is blatantly copied
     from his documentation on requests
+
+P.S. ZProc is short for _Zero_ Process
 
 ---
 
