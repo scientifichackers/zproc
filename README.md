@@ -1,8 +1,8 @@
 # ZProc - Process on steroids
 
-##### Multi-Tasking how it should've been.
+*Parallel programming, how it should've been.*
 
-![ZProc logo](https://i.imgur.com/N0X6zl8.png)
+<img src="https://i.imgur.com/N0X6zl8.png" height="300" />
 
 > To make utterly perfect MT programs (and I mean that literally),
 > we don't need mutexes, locks, or any other form of inter-thread
@@ -15,29 +15,37 @@ P.S. ZProc is short for _Zero_ Process
 ```python
 import zproc
 
-ctx = zproc.Context(wait=True)
+ctx = zproc.Context(wait=True)  # wait for processes in this context
 ctx.state["cookies"] = 0
 
 
 @zproc.atomic
 def eat_cookie(state):
+    """Eat a cookie atomically."""
+    
     state["cookies"] -= 1
     print("nom nom nom")
 
 
 @zproc.atomic
 def bake_cookie(state):
+    """Bake a cookie atomically."""
+
     state["cookies"] += 1
     print("Here's a cookie!")
 
 
 @ctx.call_when_change("cookies")
 def cookie_eater(state):
+    """Eat cookies as they're baked."""
+
     eat_cookie(state)
 
 
 @ctx.process
 def cookie_baker(state):
+    """Bake some cookies."""
+
     for i in range(5):
         bake_cookie(state)
 ```
@@ -59,20 +67,6 @@ nom nom nom
 
 Notice how the outputs are asynchronous,
 because the baker and eater run in different processes.
-
-```
-print(cookie_eater)
-print(cookie_baker)
-```
-
-**output**
-
-```
-<Process pid: 2555 target: <function cookie_eater at 0x7f5b4542c9d8> uuid: e74521ae-76ca-11e8-bd1f-7c7a912e12b5>
-<Process pid: 2556 target: <function cookie_baker at 0x7f5b4542c950> uuid: e74521ae-76ca-11e8-bd1f-7c7a912e12b5>
-```
-
-If two Process instances have the same uuid, that means they share the same state.
 
 ## Install
 
@@ -231,6 +225,12 @@ Assuming you have sphinx installed (Linux)
 cd docs
 pipenv run ./build.sh
 ```
+
+## ZProc in the wild
+
+- [Oscilloscope](https://github.com/pycampers/oscilloscope)
+
+- [Muro](https://github.com/pycampers/muro)
 
 ## Thanks
 
