@@ -8,6 +8,8 @@
 > we don't need mutexes, locks, or any other form of inter-thread
 > communication except messages sent across ZeroMQ sockets.
 
+[🔖](http://zguide.zeromq.org/page:all#Multithreading-with-ZeroMQ)
+
 **Behold, the power of ZProc:**
 
 ```python
@@ -126,6 +128,8 @@ Celery it doesn't need a broker.
 > waste. More generally, “zero” refers to the culture of minimalism
 > that permeates the project. We add power by removing complexity
 > rather than by exposing new functionality.
+
+[🔖](http://zguide.zeromq.org/page:all#The-Zen-of-Zero)
 
 ## Features
 
