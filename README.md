@@ -109,16 +109,16 @@ Celery it doesn't need a broker.
 
 -   🌠 &nbsp; Process management
 
-    -   [Process Factory](http://zproc.readthedocs.io/en/latest/source/zproc.html#zproc.zproc.Context.process_factory)
+    -   [Process Factory](https://zproc.readthedocs.io/en/latest/api.html#zproc.Context.process_factory)
     -   Remembers to kill processes when exiting, for general peace.
         (even when they're nested)
     -   Keeps a record of processes created using ZProc.
-    -   [🔖](http://zproc.readthedocs.io/en/latest/source/zproc.html#zproc.zproc.Context)
+    -   [🔖](https://zproc.readthedocs.io/en/latest/api.html#context)
 
 -   🌠 &nbsp; Atomic Operations
     -   Perform an arbitrary number of operations on state as a single,
         atomic operation.
-    -   [🔖](#atomicity)
+    -   [🔖](https://zproc.readthedocs.io/en/latest/user/atomicity.html)
 
 ## Caveats
 
