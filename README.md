@@ -95,17 +95,12 @@ Celery it doesn't need a broker.
 
 ## Features
 
--   🌠 &nbsp; Global State w/o shared memory
-
-    -   Globally synchronized state (`dict`), without using shared memory.
-    -   [🔖](#inner-workings)
-
 -   🌠 &nbsp; Asynchronous paradigms without `async def`
 
-    -   Build any combination of synchronous and asynchronous systems.
-    -   _watch_ for changes in state, without
+    -   Build a combination of synchronous and asynchronous systems, with ease.
+    -   By _watching_ for changes in state, without
         [Busy Waiting](https://en.wikipedia.org/wiki/Busy_waiting).
-    -   [🔖](http://zproc.readthedocs.io/en/latest/source/zproc.html#zproc.zproc.State)
+    -   [🔖](https://zproc.readthedocs.io/en/latest/api.html#state)
 
 -   🌠 &nbsp; Process management
 
