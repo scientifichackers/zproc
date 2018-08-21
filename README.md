@@ -3,8 +3,6 @@
 
 <img src="https://i.imgur.com/N0X6zl8.png" height="300" />
 
-[🔖](http://zguide.zeromq.org/page:all#Multithreading-with-ZeroMQ)
-
 **Behold, the power of ZProc:**
 
 ```python
@@ -77,7 +75,7 @@ Requires: Python >=3.5
 
 ## Why use ZProc?
 
-At the surface, it's just a better API for Message passsing parallelism.
+At the surface, it's just a better API for Message passsing parallelism (using ZMQ).
 
 Message passing can be tedious because of all the manual wiring involved.
 
