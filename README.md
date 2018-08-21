@@ -1,12 +1,7 @@
 # ZProc - Process on steroids
 
-*Parallel programming, how it should've been.*
 
 <img src="https://i.imgur.com/N0X6zl8.png" height="300" />
-
-> To make utterly perfect MT programs (and I mean that literally),
-> we don't need mutexes, locks, or any other form of inter-thread
-> communication except messages sent across ZeroMQ sockets.
 
 [🔖](http://zguide.zeromq.org/page:all#Multithreading-with-ZeroMQ)
 
@@ -65,8 +60,7 @@ nom nom nom
 nom nom nom
 ```
 
-Notice how the outputs are asynchronous,
-because the baker and eater run in different processes.
+(baker and eater run in different processes)
 
 ## Install
 
@@ -81,24 +75,13 @@ Requires: Python >=3.5
 
 #### [Examples](examples)
 
-## Backstory
+## Why use ZProc?
 
-Traditional Multi Processing involved _shared memory_, 
-where 2 processes read/write to the same space in memory.
+At the surface, it's just a better API for Message passsing parallelism.
 
-However, shared memory often tends to [_violate_ the laws of Physics](https://www.youtube.com/watch?v=bo5WL5IQAd0).
+Message passing can be tedious because of all the manual wiring involved.
 
-The solution presented by Erlang, ZMQ and many others is the notion of
-**message passing** for achieving parallelism.
-
-However, Message passing can be tedious, and often un-pythonic, 
-because of all the manual wiring involved.
-
-This is where ZProc comes in.
-
-**It provides you a middle ground between message passing and shared memory.**
-
-It lets you do message passing parallelism without the effort of tedious wiring.
+ZProc lets you do message passing parallelism with a more pythonic interface.
 
 It does that by providing a global `dict` called `state`.<br>
 The `state` is **not** a shared object.<br>
@@ -107,29 +90,10 @@ It works _purely_ on message passing.
 It also supports a fair bit of reactive programming, 
 using [state watchers](http://zproc.readthedocs.io/en/latest/user/state_watching.html).
 
-Behind the covers, it simulates the [Actor Model](https://en.wikipedia.org/wiki/Actor_model).<br>
-ZProc doesn't blindly follow it, but you can think of it as such.
+Behind the covers, it uses the [Actor Model](https://en.wikipedia.org/wiki/Actor_model).
 
 It also borrows the `autoretry` feature of Celery, but unlike
 Celery it doesn't need a broker.
-
-#### The zen of zero
-
-> The Ø in ØMQ is all about trade-offs. On the one hand, this strange
-> name lowers ØMQ’s visibility on Google and Twitter. On the other hand,
-> it annoys the heck out of some Danish folk who write us things like
-> “ØMG røtfl”, and “Ø is not a funny-looking zero!” and “Rødgrød med
-> Fløde!” (which is apparently an insult that means “May your neighbours
-> be the direct descendants of Grendel!”). Seems like a fair trade.
-
-> Originally, the zero in ØMQ was meant to signify “zero broker” and
-> (as close to) “zero latency” (as possible). Since then, it has come
-> to encompass different goals: zero administration, zero cost, zero
-> waste. More generally, “zero” refers to the culture of minimalism
-> that permeates the project. We add power by removing complexity
-> rather than by exposing new functionality.
-
-[🔖](http://zguide.zeromq.org/page:all#The-Zen-of-Zero)
 
 ## Features
 
@@ -191,7 +155,7 @@ Celery it doesn't need a broker.
 
 -   Zproc uses a Server, which is responsible for storing and communicating the state.
 
-    -   This isolates our resource (state), eliminating the need for locks.
+    -   This isolates our resource (state), and makes it safer to do atomic operations.
 
 -   The process(s) communicate through ZMQ sockets, over `ipc://`.
 
