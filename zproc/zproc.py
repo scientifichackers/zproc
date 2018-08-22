@@ -1,4 +1,3 @@
-from time import time
 import atexit
 import functools
 import itertools
@@ -174,7 +173,7 @@ def atomic(fn: Callable):
 def _create_state_watcher_decorator(self, live):
     """Generates the template for a state watcher"""
 
-    def watcher_loop_decorator(fn):
+    def watcher_loop_decorator(wrapped_fn):
         def watcher_loop_executor():
             if live:
                 sock = self._get_subscribe_sock()
@@ -182,7 +181,7 @@ def _create_state_watcher_decorator(self, live):
                 sock = self._pub_sub_sock
 
             try:
-                return fn(sock)
+                return wrapped_fn(sock)
             finally:
                 if live:
                     sock.close()
@@ -227,18 +226,19 @@ class State:
         self._zmq_ctx.setsockopt(zmq.LINGER, 0)
 
         self.server_address = server_address
-        self._req_rep_address, self._pub_sub_address = server_address
+        self._dealer_sock_address, self._subscribe_sock_address = server_address
 
-        self._req_rep_sock = self._zmq_ctx.socket(zmq.DEALER)
         self._identity = os.urandom(ZMQ_IDENTITY_LEN)
-        self._req_rep_sock.setsockopt(zmq.IDENTITY, self._identity)
-        self._req_rep_sock.connect(self._req_rep_address)
 
-        self._pub_sub_sock = self._get_subscribe_sock()
+        self._dealer_sock = self._zmq_ctx.socket(zmq.DEALER)
+        self._dealer_sock.setsockopt(zmq.IDENTITY, self._identity)
+        self._dealer_sock.connect(self._dealer_sock_address)
+
+        self._subscribe_sock = self._get_subscribe_sock()
 
     def _get_subscribe_sock(self):
         sock = self._zmq_ctx.socket(zmq.SUB)
-        sock.connect(self._pub_sub_address)
+        sock.connect(self._subscribe_sock_address)
 
         # prevents consuming our own updates, resulting in an circular message
         sock.setsockopt(zmq.SUBSCRIBE, self._identity)
@@ -246,33 +246,26 @@ class State:
 
         return sock
 
-    def _subscribe(self, sock, timeout=None):
+    @staticmethod
+    def _subscribe(subscribe_sock, timeout=None):
         if timeout is None:
-            sock.setsockopt(zmq.RCVTIMEO, -1)
+            subscribe_sock.setsockopt(zmq.RCVTIMEO, -1)
         else:
-            sock.setsockopt(zmq.RCVTIMEO, int(timeout * 100))
+            subscribe_sock.setsockopt(zmq.RCVTIMEO, int(timeout * 100))
 
         try:
             while True:
-                response = sock.recv()[ZMQ_IDENTITY_LEN:]
-
-                return util.handle_server_response(pickle.loads(response))
+                return util.handle_server_response(
+                    pickle.loads(subscribe_sock.recv()[ZMQ_IDENTITY_LEN:])
+                )
         except zmq.error.Again:
             raise TimeoutError("Timed-out waiting for an update")
 
     def _req_rep(self, request):
-        self._req_rep_sock.send_pyobj(request, protocol=pickle.HIGHEST_PROTOCOL)
-        response = self._req_rep_sock.recv_pyobj()
+        self._dealer_sock.send_pyobj(request, protocol=pickle.HIGHEST_PROTOCOL)
+        response = self._dealer_sock.recv_pyobj()
+
         return util.handle_server_response(response)
-
-    def atomic(self):
-        """
-        Run a function atomically.
-
-        Follows the same
-
-        :return:
-        """
 
     def get_when_change(
         self,
@@ -481,8 +474,8 @@ class State:
         (See :ref:`live-events`)
         """
 
-        self._pub_sub_sock.close()
-        self._pub_sub_sock = self._get_subscribe_sock()
+        self._subscribe_sock.close()
+        self._subscribe_sock = self._get_subscribe_sock()
 
     def ping(self, **kwargs):
         """
@@ -499,8 +492,8 @@ class State:
         Close this State and disconnect with the Server
         """
 
-        self._req_rep_sock.close()
-        self._pub_sub_sock.close()
+        self._dealer_sock.close()
+        self._subscribe_sock.close()
         self._zmq_ctx.destroy()
         self._zmq_ctx.term()
 
@@ -947,14 +940,16 @@ class Context:
     def _create_watcher_process_wrapper(
         self, fn_name: str, process_kwargs: dict, *args, **kwargs
     ):
-        def wrapper(fn):
-            def watcher_process(state, *_args, **_kwargs):
+        state_watcher_fn = getattr(state, fn_name)
+
+        def wrapper(wrapped_fn):
+            def watcher_process(state, *wrapped_fn_args, **wrapped_fn_kwargs):
                 while True:
-                    getattr(state, fn_name)(*args, **kwargs)
-                    fn(state, *_args, **_kwargs)
+                    state_watcher_fn(*args, **kwargs)
+                    wrapped_fn(state, *wrapped_fn_args, **wrapped_fn_kwargs)
 
             watcher_process = self.process(watcher_process, **process_kwargs)
-            functools.update_wrapper(watcher_process.target, fn)
+            functools.update_wrapper(watcher_process.target, wrapped_fn)
 
             return watcher_process
 
