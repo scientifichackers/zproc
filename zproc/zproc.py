@@ -170,8 +170,8 @@ def atomic(fn: Callable):
     return atomic_wrapper
 
 
-def _create_state_watcher_decorator(self, live):
-    """Generates the template for a state watcher"""
+def _create_state_watch_decorator(self: "State", live: bool):
+    """Generates a template for a state watcher mainloop"""
 
     def watcher_loop_decorator(wrapped_fn):
         def watcher_loop_executor():
@@ -338,7 +338,7 @@ class State:
                         if key in keys
                     )
 
-            @_create_state_watcher_decorator(self, live)
+            @_create_state_watch_decorator(self, live)
             def _get_state(sock):
                 while True:
                     old_state, new_state = self._subscribe(sock, timeout)
@@ -354,7 +354,7 @@ class State:
 
         else:
 
-            @_create_state_watcher_decorator(self, live)
+            @_create_state_watch_decorator(self, live)
             def _get_state(sock):
                 return self._subscribe(sock, timeout)[1]
 
@@ -391,7 +391,7 @@ class State:
         :rtype: ``dict``
         """
 
-        @_create_state_watcher_decorator(self, live)
+        @_create_state_watch_decorator(self, live)
         def mainloop(sock):
             latest_state = self.copy()
 
@@ -423,7 +423,7 @@ class State:
         :return: ``state.get(key)``
         """
 
-        @_create_state_watcher_decorator(self, live)
+        @_create_state_watch_decorator(self, live)
         def mainloop(sock):
             latest_key = self.get(key)
 
@@ -455,7 +455,7 @@ class State:
         :return: ``state.get(key)``
         """
 
-        @_create_state_watcher_decorator(self, live)
+        @_create_state_watch_decorator(self, live)
         def mainloop(sock):
             latest_key = self.get(key)
 
@@ -536,36 +536,41 @@ for method_name in util.STATE_INJECTED_METHODS:
 def _child_process(
     *,
     process: "Process",
-    target_args: tuple = (),
-    target_kwargs: dict = {},
+    target_args: tuple,
+    target_kwargs: dict,
     retry_for: tuple = (),
-    retry_delay: Union[int, float] = 5,
-    max_retries: Union[None, bool] = None,
-    retry_args: Union[None, tuple] = None,
-    retry_kwargs: Union[None, dict] = None
+    retry_delay: Union[int, float],
+    max_retries: Union[None, bool],
+    retry_args: Union[None, tuple],
+    retry_kwargs: Union[None, dict]
 ):
     state = State(process.server_address)
 
-    exceptions = [util.SignalException]
+    if target_args is None:
+        target_args = ()
+    if target_kwargs is None:
+        target_kwargs = {}
+
+    to_catch = [util.SignalException]
     for i in retry_for:
         if type(i) == signal.Signals:
             util.signal_to_exception(i)
         elif issubclass(i, BaseException):
-            exceptions.append(i)
+            to_catch.append(i)
         else:
             raise ValueError(
                 '"retry_for" must contain a `signals.Signal` or `Exception`, not `{}`'.format(
                     repr(type(i))
                 )
             )
-    exceptions = tuple(exceptions)
+    to_catch = tuple(to_catch)
 
     tries = 0
     while True:
         try:
             tries += 1
             process.target(state, *target_args, **target_kwargs)
-        except exceptions as e:
+        except to_catch as e:
             if (max_retries is not None) and (tries > max_retries):
                 raise e
             else:
@@ -591,8 +596,8 @@ class Process:
         server_address: tuple,
         target: Callable,
         *,
-        args: tuple = (),
-        kwargs: dict = {},
+        args: tuple = None,
+        kwargs: dict = None,
         start: bool = True,
         retry_for: tuple = (),
         retry_delay: Union[int, float] = 5,
@@ -625,8 +630,12 @@ class Process:
         :param args:
             The argument tuple for ``target``.
 
+            By default, it is an empty ``tuple``.
+
         :param kwargs:
             A dictionary of keyword arguments for ``target``.
+
+            By default, it is an empty ``dict``.
 
         :param start:
             Automatically call :py:meth:`.start()` on the process.
@@ -645,7 +654,7 @@ class Process:
                     retry_for=(ConnectionError, ValueError, signal.SIGTERM)
                 )
 
-            To retry for *any* Exception -  ``retry_for=(Exception, )``
+            To retry for *any* Exception - ``retry_for=(Exception, )``
 
         :param retry_delay:
             The delay in seconds, before retrying.
