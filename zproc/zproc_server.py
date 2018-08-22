@@ -47,6 +47,9 @@ class ZProcServer:
             self.req_rep_sock.bind(self.req_rep_address)
             self.pub_sub_sock.bind(self.pub_sub_address)
 
+        # see State._get_subscribe_sock() for more
+        self.pub_sub_sock.setsockopt(zmq.INVERT_MATCHING, 1)
+
         address_queue.put((self.req_rep_address, self.pub_sub_address))
 
     def _wait_for_request(self) -> Tuple[str, dict]:
@@ -67,17 +70,15 @@ class ZProcServer:
 
         return self._reply(identity, util.RemoteException())
 
-    def _publish_state_if_changed(self, identity, old_state):
+    def _publish_state_if_changed(self, identity: bytes, old_state: dict):
         """Publish the state to everyone"""
 
         if old_state != self.state:
-            return self.pub_sub_sock.send_multipart(
-                [
-                    identity,
-                    pickle.dumps(
-                        [old_state, self.state], protocol=pickle.HIGHEST_PROTOCOL
-                    ),
-                ]
+            return self.pub_sub_sock.send(
+                identity
+                + pickle.dumps(
+                    [old_state, self.state], protocol=pickle.HIGHEST_PROTOCOL
+                )
             )
 
     def _func_executor(self, identity, func, args, kwargs):

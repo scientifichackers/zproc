@@ -1,3 +1,4 @@
+from time import time
 import atexit
 import functools
 import itertools
@@ -11,6 +12,8 @@ import zmq
 
 from zproc import util
 from zproc.zproc_server import ZProcServer
+
+ZMQ_IDENTITY_LEN = 5
 
 
 def ping(
@@ -168,7 +171,7 @@ def atomic(fn: Callable):
     return atomic_wrapper
 
 
-def _create_state_watcher_decorator(self, live, timeout):
+def _create_state_watcher_decorator(self, live):
     """Generates the template for a state watcher"""
 
     def watcher_loop_decorator(fn):
@@ -178,18 +181,11 @@ def _create_state_watcher_decorator(self, live, timeout):
             else:
                 sock = self._pub_sub_sock
 
-            if timeout is not None:
-                sock.setsockopt(zmq.RCVTIMEO, int(timeout * 1000))
-
             try:
                 return fn(sock)
-            except zmq.error.Again:
-                raise TimeoutError("Timed-out waiting for an update")
             finally:
                 if live:
                     sock.close()
-                elif timeout is not None:
-                    sock.setsockopt(zmq.RCVTIMEO, -1)
 
         return watcher_loop_executor
 
@@ -234,7 +230,7 @@ class State:
         self._req_rep_address, self._pub_sub_address = server_address
 
         self._req_rep_sock = self._zmq_ctx.socket(zmq.DEALER)
-        self._identity = os.urandom(5)
+        self._identity = os.urandom(ZMQ_IDENTITY_LEN)
         self._req_rep_sock.setsockopt(zmq.IDENTITY, self._identity)
         self._req_rep_sock.connect(self._req_rep_address)
 
@@ -243,16 +239,26 @@ class State:
     def _get_subscribe_sock(self):
         sock = self._zmq_ctx.socket(zmq.SUB)
         sock.connect(self._pub_sub_address)
-        sock.setsockopt(zmq.SUBSCRIBE, b"")
+
+        # prevents consuming our own updates, resulting in an circular message
+        sock.setsockopt(zmq.SUBSCRIBE, self._identity)
+        sock.setsockopt(zmq.INVERT_MATCHING, 1)
+
         return sock
 
-    def _subscribe(self, sock):
-        while True:
-            identity, response = sock.recv_multipart()
+    def _subscribe(self, sock, timeout=None):
+        if timeout is None:
+            sock.setsockopt(zmq.RCVTIMEO, -1)
+        else:
+            sock.setsockopt(zmq.RCVTIMEO, int(timeout * 100))
 
-            # only accept updates from other processes, not this one.
-            if identity != self._identity:
+        try:
+            while True:
+                response = sock.recv()[ZMQ_IDENTITY_LEN:]
+
                 return util.handle_server_response(pickle.loads(response))
+        except zmq.error.Again:
+            raise TimeoutError("Timed-out waiting for an update")
 
     def _req_rep(self, request):
         self._req_rep_sock.send_pyobj(request, protocol=pickle.HIGHEST_PROTOCOL)
@@ -339,10 +345,10 @@ class State:
                         if key in keys
                     )
 
-            @_create_state_watcher_decorator(self, live, timeout)
+            @_create_state_watcher_decorator(self, live)
             def _get_state(sock):
                 while True:
-                    old_state, new_state = self._subscribe(sock)
+                    old_state, new_state = self._subscribe(sock, timeout)
 
                     for key in select_keys(old_state, new_state):
                         try:
@@ -355,9 +361,9 @@ class State:
 
         else:
 
-            @_create_state_watcher_decorator(self, live, timeout)
+            @_create_state_watcher_decorator(self, live)
             def _get_state(sock):
-                return self._subscribe(sock)[1]
+                return self._subscribe(sock, timeout)[1]
 
         new_state = _get_state()
 
@@ -392,7 +398,7 @@ class State:
         :rtype: ``dict``
         """
 
-        @_create_state_watcher_decorator(self, live, timeout)
+        @_create_state_watcher_decorator(self, live)
         def mainloop(sock):
             latest_state = self.copy()
 
@@ -400,7 +406,7 @@ class State:
                 if test_fn(latest_state):
                     return latest_state
 
-                latest_state = self._subscribe(sock)[-1]
+                latest_state = self._subscribe(sock, timeout)[-1]
 
         return mainloop()
 
@@ -424,7 +430,7 @@ class State:
         :return: ``state.get(key)``
         """
 
-        @_create_state_watcher_decorator(self, live, timeout)
+        @_create_state_watcher_decorator(self, live)
         def mainloop(sock):
             latest_key = self.get(key)
 
@@ -432,7 +438,7 @@ class State:
                 if latest_key == value:
                     return latest_key
 
-                latest_key = self._subscribe(sock)[-1].get(key)
+                latest_key = self._subscribe(sock, timeout)[-1].get(key)
 
         return mainloop()
 
@@ -456,7 +462,7 @@ class State:
         :return: ``state.get(key)``
         """
 
-        @_create_state_watcher_decorator(self, live, timeout)
+        @_create_state_watcher_decorator(self, live)
         def mainloop(sock):
             latest_key = self.get(key)
 
@@ -464,7 +470,7 @@ class State:
                 if latest_key != value:
                     return latest_key
 
-                latest_key = self._subscribe(sock)[-1].get(key)
+                latest_key = self._subscribe(sock, timeout)[-1].get(key)
 
         return mainloop()
 
@@ -707,9 +713,12 @@ class Process:
             self.child.start()
 
     def __repr__(self):
-        return "<{} pid: {} target: {}>".format(
-            Process.__qualname__, self.pid, self.target
-        )
+        try:
+            pid = self.pid
+        except AttributeError:
+            pid = "{} (Main Process)".format(os.getpid())
+
+        return "<{} pid: {} target: {}>".format(Process.__qualname__, pid, self.target)
 
     def start(self):
         """
@@ -721,7 +730,7 @@ class Process:
         """
 
         self.child.start()
-        return self.child.pid
+        return self.pid
 
     def stop(self):
         """
