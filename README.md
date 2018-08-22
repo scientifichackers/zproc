@@ -1,5 +1,4 @@
-# ZProc - Process on steroids
-
+# ZProc - Multi Processing on steroids
 
 <img src="https://i.imgur.com/N0X6zl8.png" height="300" />
 
@@ -67,7 +66,7 @@ nom nom nom
 License: MIT License (MIT)<br>
 Requires: Python >=3.5
 
-## Documentation ( [![Documentation Status](https://readthedocs.org/projects/zproc/badge/?version=latest)](https://zproc.readthedocs.io/en/latest/?badge=latest) )
+## Documentation ( [![Documentation Status](https://readthedocs.org/projects/zproc/badge/?version=latest)](https://zproc.readthedocs.io/) )
 
 #### [Read the docs](http://zproc.readthedocs.io/en/latest/)
 
@@ -75,11 +74,12 @@ Requires: Python >=3.5
 
 ## Why use ZProc?
 
-At the surface, it's just a better API for Message passsing parallelism (using ZMQ).
+At the surface, it's just a better API for Message passing parallelism (using ZMQ).
 
 Message passing can be tedious because of all the manual wiring involved.
 
-ZProc lets you do message passing parallelism with a more pythonic interface.
+ZProc lets you do message passing parallelism with a more pythonic, 
+safe, easy-to-use interface.
 
 It does that by providing a global `dict` called `state`.<br>
 The `state` is **not** a shared object.<br>
@@ -92,6 +92,8 @@ Behind the covers, it uses the [Actor Model](https://en.wikipedia.org/wiki/Actor
 
 It also borrows the `autoretry` feature of Celery, but unlike
 Celery it doesn't need a broker.
+
+Bottom line, you'll have a lot more fun doing parallel/concurrent programming using ZProc, than anything else.
 
 ## Features
 
@@ -120,7 +122,9 @@ Celery it doesn't need a broker.
 -   The state only gets updated if you do it directly.<br>
     This means that if you mutate objects inside the state,
     they wont get reflected in the global state.
--   The state should be pickle-able
+
+-   The state should be pickle-able.
+
 -   It runs an extra Process for managing the state.<br>
     Its fairly lightweight though, and shouldn't add too
     much weight to your application.
@@ -202,7 +206,7 @@ pipenv run ./build.sh
     Plus lot of documentation is blatantly copied
     from his documentation on requests
 
-P.S. ZProc is short for _Zero_ Process
+ZProc is short for [Zero](http://zguide.zeromq.org/page:all#The-Zen-of-Zero) Process.
 
 ---
 

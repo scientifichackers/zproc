@@ -65,11 +65,9 @@ if __name__ == "__main__":
     sleep(1)
 
     ctx.state["flag1"] = True
-    print("main: I set flag1")
+    print("\nmain: I set flag1:")
 
     sleep(1)
 
     ctx.state["flag2"] = True
-    print("main: I set flag2")
-
-    print("main: I exit")
+    print("\nmain: I set flag2:")

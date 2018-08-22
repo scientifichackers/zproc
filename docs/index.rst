@@ -1,19 +1,22 @@
 ZProc: Process on steroids
 =================================
 
-
-
-.. image:: https://img.shields.io/badge/pip-0.9.0-blue.svg?longCache=true&style=for-the-badge
+.. image:: https://img.shields.io/pypi/v/zproc.svg?style=for-the-badge
     :alt: PyPI
     :target: https://pypi.org/project/zproc/
 
-.. image:: https://img.shields.io/badge/python-3.5%2C%203.6-blue.svg?style=for-the-badge
+.. image:: https://img.shields.io/pypi/pyversions/zproc.svg?style=for-the-badge
     :alt: PyPI - Python Version
     :target: https://pypi.org/project/zproc/
 
 .. image:: https://img.shields.io/github/license/mashape/apistatus.svg?style=for-the-badge
     :alt: license
     :target: https://github.com/pycampers/zproc/blob/master/LICENSE
+
+.. image:: https://img.shields.io/github/stars/pycampers/zproc.svg?style=for-the-badge&label=Stars
+    :alt: GitHub stars
+    :target: https://github.com/pycampers/zproc
+
 
 
 The User Guide
