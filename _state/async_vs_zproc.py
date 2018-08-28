@@ -38,7 +38,7 @@ sites = {
     "https://open.spotify.com/",
     "https://keep.google.com/",
     "https://jsonformatter.curiousconcept.com/",
-    "https://api.github.com/",
+    "https://tools.py.github.com/",
     "https://www.reddit.com/",
     "https://www.youtube.com/",
     "https://bitbucket.org/",

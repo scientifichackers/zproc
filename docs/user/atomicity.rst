@@ -23,7 +23,7 @@ Just think in terms of ``dict`` methods.
 Example
 -------
 
-::
+.. code-block:: python
 
     def increment(state, step):
         state['count'] += step
@@ -47,9 +47,9 @@ zproc makes it dead simple to avoid such race conditions.
 
 Let's make some changes to our example..
 
-::
+.. code-block:: python
 
-    @zproc.atomic
+    \@zproc.atomic
     def increment(state, step):
         state['count'] += step
 
@@ -60,8 +60,7 @@ an atomic operation on the state.
 
 ---
 
-This is different from traditional locks.
-[Locks are just flags](https://www.youtube.com/watch?v=9zinZmE3Ogk).
+This is different from traditional locks. Locks are just flags.
 This on the other hand, is a hard restriction on the state.
 
 Keep in mind,
@@ -72,7 +71,7 @@ However,
 this fundamental difference between locks and :py:func:`~.atomic()`
 makes it easier to write safe and correct parallel code.
 
-For the record, If an error shall occur while the function is running, the state will remain *unaffected*.
+For what it's worth, If an error shall occur while the function is running, the state will remain *unaffected*.
 
 .. note ::
 

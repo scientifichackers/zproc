@@ -95,7 +95,7 @@ setup(
     author_email=EMAIL,
     python_requires=REQUIRES_PYTHON,
     url=URL,
-    packages=find_packages(exclude=("tests", "docs", "examples")),
+    packages=find_packages(exclude=("tests", "docs", "_state")),
     install_requires=REQUIRED,
     extra_require=EXTRA,
     include_package_data=True,

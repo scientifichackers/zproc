@@ -25,7 +25,7 @@ By default, zproc produces random connection endpoints for communication.
 However, zproc does expose the necessary API,
 shall you want to manually provide the connection endpoints through which zproc will communicate.
 
-*Look for the ``server_address`` argument, which allows you provide a custom address.*
+*Look for the* ``server_address`` *argument, which allows you provide a custom address.*
 
 It is simply, a 2-length tuple containing 2 connection endpoints.
 
@@ -44,7 +44,7 @@ The following transports can be used:
     unicast transport using TCP, see `zmq_tcp <http://api.zeromq.org/2-1:zmq_tcp>`_
 
 
-.. code-block:: py
+.. code-block:: python
     :caption: Example
 
     server_address=('tcp://127.0.0.1:5000', 'tcp://127.0.0.1:5001')
@@ -83,7 +83,7 @@ You can also do the same with :py:class:`.State`.
 
 Both :py:class:`.State` and :py:class:`.Context` take ``server_address`` as their first argument.
 
-::
+.. code-block:: python
 
     import zproc
 

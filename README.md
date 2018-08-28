@@ -1,5 +1,7 @@
 # ZProc - Multi Processing on steroids
 
+*P.S.A.: Not suitable for use in production. In beta stage right now. Thanks.*
+
 <img src="https://i.imgur.com/N0X6zl8.png" height="300" />
 
 **Behold, the power of ZProc:**
@@ -7,9 +9,9 @@
 ```python
 import zproc
 
+
 ctx = zproc.Context(wait=True)  # wait for processes in this context
 ctx.state["cookies"] = 0
-
 
 @zproc.atomic
 def eat_cookie(state):
@@ -70,7 +72,7 @@ Requires: Python >=3.5
 
 #### [Read the docs](http://zproc.readthedocs.io/en/latest/)
 
-#### [Examples](examples)
+#### [Examples](_state)
 
 ## Why use ZProc?
 
@@ -150,7 +152,7 @@ Bottom line, you'll have a lot more fun doing parallel/concurrent programming us
 
 ## Inner Workings
 
--   Zproc uses a Server, which is responsible for storing and communicating the state.
+-   ZProc uses a Server, which is responsible for storing and communicating the state.
 
     -   This isolates our resource (state), and makes it safer to do atomic operations.
 
