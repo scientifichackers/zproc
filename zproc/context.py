@@ -180,12 +180,12 @@ class Context:
         :return: The :py:class:`Process` instance produced.
         """
 
-        if not callable(target):
+        if target is None:
 
-            def decorator(fn, **kwargs):
-                return self.process(fn, **kwargs)
+            def decorator(fn):
+                return self.process(fn, **process_kwargs)
 
-            return functools.partial(decorator, **process_kwargs)
+            return decorator
 
         process = Process(
             self.server_address, target, **{**self._kwargs, **process_kwargs}
