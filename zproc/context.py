@@ -292,6 +292,7 @@ class Context:
             *Where:*
 
                 - ``state`` is a :py:class:`State` instance.
+                  (Disabled by default. Use the ``stateful`` Keyword Argument to enable)
 
                 - ``i`` is the index of n\ :sup:`th` element of the Iterable(s) provided in the ``map_*`` arguments.
 
@@ -318,11 +319,17 @@ class Context:
 
             By default, it is an empty ``dict``.
 
-        :param count:
-            The number of worker :py:class:`.Process` (s) to use.
+        :param stateful:
+            Weather this process needs to access the state.
 
-            By default, it is set to ``multiprocessing.cpu_count()``
-            (The number of CPU cores on your system)
+            If this is set to ``False``,
+            then the ``state`` argument won't be provided to the ``target``.
+
+            If this is set to ``True``,
+            then a :py:class:`State` object is provided as the first Argument to the ``target``.
+
+            Unlike :py:class:`Process` it is set to ``False`` by default.
+            (To retain a similar API to in-built ``map()``)
 
         :param new:
             Weather to spawn new workers.
@@ -332,8 +339,15 @@ class Context:
 
             If it is set to ``False``,
             then ``size - len(Context.worker_list)`` will be spawned.
-            
+
             Un-used workers are thrashed automatically.
+
+        :param count:
+            The number of worker :py:class:`.Process` (s) to use.
+
+            By default, it is set to ``multiprocessing.cpu_count()``
+            (The number of CPU cores on your system)
+
 
         :return:
             The result is quite similar to ``map()`` in-built function.
@@ -349,7 +363,7 @@ class Context:
             - If ``len(map_iter) != len(maps_args) != len(map_kwargs)``,
               then the results will be cut-off at the shortest Sequence.
 
-        See :ref:`process_map` for _state.
+        See :ref:`process_map` for Examples.
         """
 
         if count is None:

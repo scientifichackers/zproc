@@ -132,7 +132,7 @@ That's why ZProc provides a more powerful construct for mapping iterables to pro
 
 
 .. code-block:: python
-    :caption: Powerful when you need it to be.
+    :caption: Common Arguments.
 
     def power(num, exp):
         return num ** exp
@@ -147,7 +147,11 @@ That's why ZProc provides a more powerful construct for mapping iterables to pro
          )
     )
 
-    # Positional Args work
+.. code-block:: python
+    :caption: Mapped Positional Arguments.
+
+    def power(num, exp):
+        return num ** exp
 
     # [4, 9, 36, 256]
     list(
@@ -157,7 +161,8 @@ That's why ZProc provides a more powerful construct for mapping iterables to pro
         )
     )
 
-    # Keyword arguments are supported too
+.. code-block:: python
+    :caption: Mapped Keyword Arguments.
 
     def my_thingy(seed, num, exp):
         return seed + num ** exp
@@ -216,7 +221,6 @@ and arranging them in order.
 >>> next(res)  # might block
 16
 ...
-
 
 It is noteworthy, that computation continues in the background while the main process is running.
 
