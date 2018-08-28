@@ -72,7 +72,7 @@ Requires: Python >=3.5
 
 #### [Read the docs](http://zproc.readthedocs.io/en/latest/)
 
-#### [Examples](_state)
+#### [Examples](examples)
 
 ## Why use ZProc?
 
