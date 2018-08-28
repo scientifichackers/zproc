@@ -18,7 +18,7 @@ URL = "https://github.com/devxpy/zproc"
 EMAIL = "devxpy@gmail.com"
 AUTHOR = "Dev Aggarwal"
 REQUIRES_PYTHON = ">=3.5"
-VERSION = "0.9.1"
+VERSION = "0.9.2"
 
 # What packages are required for this module to be executed?
 REQUIRED = ["pyzmq", "tblib", "psutil"]

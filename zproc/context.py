@@ -120,8 +120,20 @@ class Context:
         self._pull_sock = self.state._zmq_ctx.socket(zmq.PULL)
         self._pull_address = util.bind_to_random_address(self._pull_sock)
 
-        self._task_counter = 0
+        self._worker_kwargs = {
+            **self._kwargs,
+            # must be in reverse order for this to work
+            # i.e. first pull addr, then push addr.
+            "args": (
+                self._pull_address,
+                self._push_address,
+                *self._kwargs.get("args", ()),
+            ),
+            # worker can't work without the state!
+            "stateful": True,
+        }
 
+        self._task_counter = 0
         # Dict[_TaskDetail, Dict[_ChunkDetail, Any]]
         self._task_chunk_results = collections.defaultdict(dict)
 
@@ -175,9 +187,9 @@ class Context:
 
             return functools.partial(decorator, **process_kwargs)
 
-        process_kwargs.update(self._kwargs)
-
-        process = Process(self.server_address, target, **process_kwargs)
+        process = Process(
+            self.server_address, target, **{**self._kwargs, **process_kwargs}
+        )
         self.process_list.append(process)
         return process
 
@@ -211,12 +223,7 @@ class Context:
         if size > 0:
             for _ in range(size):
                 self.worker_list.append(
-                    self.process(
-                        processdef.process_map_worker,
-                        # must be in reverse order for this to work
-                        # i.e. first pull addr, then push addr.
-                        args=(self._pull_address, self._push_address),
-                    )
+                    self.process(processdef.process_map_worker, **self._worker_kwargs)
                 )
         elif size < 0:
             # Notify "size" no. of workers to finish up, and close shop.
@@ -272,7 +279,7 @@ class Context:
             *Steps 3-5 are done lazily, on the fly with the help of a* ``generator``
 
         .. note::
-            This function will NOT spawn new worker :py:class:`Process`\ (s), each time it is called.
+            This function won't spawn new worker :py:class:`Process`\ (s), each time it is called.
 
             Existing workers will be used if a sufficient amount is available.
             If the workers are busy, then this will wait for them to finish up their current work.
@@ -281,6 +288,13 @@ class Context:
 
             You need not worry about shutting down workers.
             ZProc will take care of that automatically.
+
+        .. note::
+            This method doesn't have a way to pass Keyword Arguments to :py:class:`Process`.
+
+            This was done, to prevent weird behavior due to the re-use of workers done by ZProc.
+
+            Use the :py:class:`Context`\ 's constructor to workaround this problem.
 
         :param target:
             The ``Callable`` to be invoked inside a :py:class:`Process`.

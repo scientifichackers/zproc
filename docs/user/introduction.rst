@@ -118,7 +118,7 @@ Python's inbuilt ``multiprocessing.Pool`` let's you use the in-built `map()` fun
 
 However, it gets quite finicky to use for anything serious.
 
-That's why ZProc provides a more powerful construct for mapping iterables to processes.
+That's why ZProc provides a more powerful construct, :py:meth:`~.Context.process_map` for mapping iterables to processes.
 
 
 .. code-block:: python
