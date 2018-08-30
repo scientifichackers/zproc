@@ -29,11 +29,13 @@ def bake_cookie(state):
     print("Here's a cookie!")
 
 
-@ctx.call_when_change("cookies")
+@ctx.process
 def cookie_eater(state):
     """Eat cookies as they're baked."""
-
-    eat_cookie(state)
+    
+    while True:
+        state.get_when_change('cookies')
+        eat_cookie(state)
 
 
 @ctx.process

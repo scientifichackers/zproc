@@ -150,7 +150,7 @@ class Process:
             args=(
                 server_address,
                 target,
-                self.__repr__(),
+                self.__repr__,
                 stateful,
                 args,
                 kwargs,
@@ -180,13 +180,13 @@ class Process:
         except AttributeError:
             is_alive = False
 
-        return "<{} pid: {} ppid: {} is_alive: {} exitcode: {} target: {}>".format(
+        return "<%s pid: %r target: %r ppid: %r is_alive: %r exitcode: %r>" % (
             Process.__qualname__,
             pid,
+            self.target.__module__ + "." + self.target.__qualname__,
             os.getpid(),
-            repr(is_alive),
-            repr(exitcode),
-            repr(self.target.__qualname__),
+            is_alive,
+            exitcode,
         )
 
     def start(self):

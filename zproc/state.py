@@ -130,7 +130,7 @@ class State:
         timeout: Union[None, float, int] = None
     ):
         """
-        | Block until a change is observed.
+        Block until a change is observed.
 
         :param \*keys:
             Observe for changes in these ``dict`` key(s).

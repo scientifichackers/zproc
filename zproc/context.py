@@ -131,10 +131,11 @@ class Context:
             ),
             # worker can't work without the state!
             "stateful": True,
+            "start": True,
         }
 
         self._task_counter = 0
-        # Dict[_TaskDetail, Dict[_ChunkDetail, Any]]
+        # Dict[TaskDetail, Dict[ChunkDetail, Any]]
         self._task_chunk_results = collections.defaultdict(dict)
 
         if cleanup:
@@ -191,6 +192,7 @@ class Context:
             self.server_address, target, **{**self._kwargs, **process_kwargs}
         )
         self.process_list.append(process)
+
         return process
 
     def process_factory(self, *targets: Callable, count: int = 1, **process_kwargs):
@@ -230,6 +232,11 @@ class Context:
             for _ in range(-size):
                 self._push_sock.send_pyobj(0)
 
+    def _pull_results(self):
+        response = self._pull_sock.recv_pyobj()
+        task_detail, list_index, chunk_result = util.handle_remote_response(response)
+        self._task_chunk_results[task_detail][list_index] = chunk_result
+
     def _pull_results_for_task(
         self, task_detail: TaskDetail
     ) -> Generator[Any, None, None]:
@@ -238,16 +245,13 @@ class Context:
         Also arranges the results in-order.
         """
 
-        task_chunks = self._task_chunk_results[task_detail]
+        task_chunk_results = self._task_chunk_results[task_detail]
 
-        while len(task_chunks) < task_detail.chunk_count:
-            this, list_index, chunk_result = util.handle_remote_response(
-                self._pull_sock.recv_pyobj()
-            )
-            self._task_chunk_results[this][list_index] = chunk_result
+        for list_index in range(task_detail.chunk_count):
+            while list_index not in task_chunk_results:
+                self._pull_results()
 
-        for i in sorted(task_chunks.keys()):
-            yield from task_chunks[i]
+            yield from task_chunk_results[list_index]
 
     def process_map(
         self,
@@ -425,29 +429,44 @@ class Context:
 
         return self._pull_results_for_task(task_detail)
 
-    def _create_watcher_decorator(
-        self, state_watcher_fn_name: str, process_kwargs: dict, *args, **kwargs
+    def _create_call_when_xxx_decorator(
+        self,
+        get_when_xxx_fn_name: str,
+        process_kwargs: dict,
+        *state_watcher_args,
+        **state_watcher_kwargs
     ):
+
+        # can't work without the state!
         stateful = process_kwargs.pop("stateful", True)
 
         def decorator(wrapped_fn):
             if stateful:
 
-                def watcher_process(state, *wrapped_fn_args, **wrapped_fn_kwargs):
-                    state_watcher_fn = getattr(state, state_watcher_fn_name)
-
+                def watcher_process(state, *args, **kwargs):
+                    get_when_xxx_fn = getattr(state, get_when_xxx_fn_name)
                     while True:
-                        state_watcher_fn(*args, **kwargs)
-                        wrapped_fn(state, *wrapped_fn_args, **wrapped_fn_kwargs)
+                        wrapped_fn(
+                            get_when_xxx_fn(
+                                *state_watcher_args, **state_watcher_kwargs
+                            ),
+                            state,
+                            *args,
+                            **kwargs
+                        )
 
             else:
 
-                def watcher_process(state, *wrapped_fn_args, **wrapped_fn_kwargs):
-                    state_watcher_fn = getattr(state, state_watcher_fn_name)
-
+                def watcher_process(state, *args, **kwargs):
+                    get_when_xxx_fn = getattr(state, get_when_xxx_fn_name)
                     while True:
-                        state_watcher_fn(*args, **kwargs)
-                        wrapped_fn(*wrapped_fn_args, **wrapped_fn_kwargs)
+                        wrapped_fn(
+                            get_when_xxx_fn(
+                                *state_watcher_args, **state_watcher_kwargs
+                            ),
+                            *args,
+                            **kwargs
+                        )
 
             watcher_process = self.process(watcher_process, **process_kwargs)
             functools.update_wrapper(watcher_process.target, wrapped_fn)
@@ -466,15 +485,29 @@ class Context:
         """
         Decorator version of :py:meth:`~State.get_when_change()`.
 
-        Spawns a new Process that watches the state and calls the wrapped function forever.
+        Spawns a new :py:class:`Process` that calls the wrapped function in that Process.
 
-        :param \*\*process_kwargs: Keyword arguments that :py:class:`Process` takes, except ``server_address``.
+        :param \*\*process_kwargs:
+            Keyword arguments that :py:class:`~Process` takes,
+            except ``server_address`` and ``target``.
 
-        All other parameters have same meaning as :py:meth:`~State.get_when_change()`
+        All other parameters have same meaning as in :py:meth:`~State.get_when_change()`
 
-        :return: A decorator function
+        :return:
+            A decorator function
 
-                The decorator function will return the :py:class:`Process` instance created
+            The decorator function will return the :py:class:`Process` instance created,
+            using the wrapped function as the ``target``.
+
+        *The wrapped function is run with the following signature:*
+
+        ``target(value, state, *args, **kwargs)``
+
+        *Where:*
+
+        - ``value`` is the return value from :py:meth:`~State.get_when_change()`.
+        - ``state`` is a :py:class:`State` instance.
+        - ``*args`` and ``**kwargs`` are passed on from ``**process_kwargs``.
 
         .. code-block:: python
             :caption: Example
@@ -483,29 +516,42 @@ class Context:
 
             ctx = zproc.Context()
 
-            @ctx.call_when_change()
-            def test(state):
-                print(state)
+            @ctx.call_when_change('gold')
+            def test(gold, state):
+                print(gold, state)
         """
 
-        return self._create_watcher_decorator(
-            "get_when_change", process_kwargs, *keys, exclude, live=live
+        return self._create_call_when_xxx_decorator(
+            "get_when_change", process_kwargs, *keys, exclude=exclude, live=live
         )
 
     def call_when(self, test_fn: Callable, *, live: bool = True, **process_kwargs):
         """
         Decorator version of :py:meth:`~State.get_when()`.
 
-        Spawns a new Process that watches the state and calls the wrapped function forever.
+        Spawns a new :py:class:`Process` that calls the wrapped function in that Process.
 
-        :param \*\*process_kwargs: Keyword arguments that :py:class:`Process` takes, except ``server_address``.
+        :param \*\*process_kwargs:
+            Keyword arguments that :py:class:`~Process` takes,
+            except ``server_address`` and ``target``.
 
-        All other parameters have same meaning as :py:meth:`~State.get_when()`
+        All other parameters have same meaning as in :py:meth:`~State.get_when()`
 
-        :return: A decorator function
+        :return:
+            A decorator function
 
-                The decorator function will return the :py:class:`Process` instance created
+            The decorator function will return the :py:class:`Process` instance created,
+            using the wrapped function as the ``target``.
 
+        *The wrapped function is run with the following signature:*
+
+        ``target(value, state, *args, **kwargs)``
+
+        *Where:*
+
+        - ``value`` is the return value from :py:meth:`~State.get_when()`.
+        - ``state`` is a :py:class:`State` instance.
+        - ``*args`` and ``**kwargs`` are passed on from ``**process_kwargs``.
 
         .. code-block:: python
             :caption: Example
@@ -514,12 +560,12 @@ class Context:
 
             ctx = zproc.Context()
 
-            @ctx.get_state_when(lambda state: state['foo'] == 5)
-            def test(state):
-                print(state)
+            @ctx.get_state_when(lambda state: state['trees'] == 5)
+            def test(state_value, state):
+                print(state_value, state)
         """
 
-        return self._create_watcher_decorator(
+        return self._create_call_when_xxx_decorator(
             "get_when", process_kwargs, test_fn, live=live
         )
 
@@ -529,16 +575,29 @@ class Context:
         """
         Decorator version of :py:meth:`~State.get_when_equal()`.
 
-        Spawns a new Process that watches the state and calls the wrapped function forever.
+        Spawns a new :py:class:`Process` that calls the wrapped function in that Process.
 
-        :param \*\*process_kwargs: Keyword arguments that :py:class:`Process` takes, except ``server_address``.
+        :param \*\*process_kwargs:
+            Keyword arguments that :py:class:`~Process` takes,
+            except ``server_address`` and ``target``.
 
-        All other parameters have same meaning as :py:meth:`~State.get_when_equal()`
+        All other parameters have same meaning as in :py:meth:`~State.get_when_equal()`
 
-        :return: A decorator function
+        :return:
+            A decorator function
 
-                The decorator function will return the :py:class:`Process` instance created
+            The decorator function will return the :py:class:`Process` instance created,
+            using the wrapped function as the ``target``.
 
+        *The wrapped function is run with the following signature:*
+
+        ``target(value, state, *args, **kwargs)``
+
+        *Where:*
+
+        - ``value`` is the return value from :py:meth:`~State.get_when_equal()`.
+        - ``state`` is a :py:class:`State` instance.
+        - ``*args`` and ``**kwargs`` are passed on from ``**process_kwargs``.
 
         .. code-block:: python
             :caption: Example
@@ -547,12 +606,12 @@ class Context:
 
             ctx = zproc.Context()
 
-            @ctx.call_when_equal('foo', 5)
-            def test(state):
-                print(state)
+            @ctx.call_when_equal('oranges', 5)
+            def test(oranges, state):
+                print(oranges, state)
         """
 
-        return self._create_watcher_decorator(
+        return self._create_call_when_xxx_decorator(
             "get_when_equal", process_kwargs, key, value, live=live
         )
 
@@ -562,17 +621,29 @@ class Context:
         """
         Decorator version of :py:meth:`~State.get_when_not_equal()`.
 
-        Spawns a new Process that watches the state and calls the wrapped function forever.
+        Spawns a new :py:class:`Process` that calls the wrapped function in that Process.
 
-        :param \*\*process_kwargs: Keyword arguments that :py:class:`Process` takes, except ``server_address``.
+        :param \*\*process_kwargs:
+            Keyword arguments that :py:class:`~Process` takes,
+            except ``server_address`` and ``target``.
 
-        All other parameters have same meaning as :py:meth:`~State.get_when_not_equal()`
+        All other parameters have same meaning as in :py:meth:`~State.get_when_not_equal()`
 
         :return:
             A decorator function
 
-            The decorator function will return the :py:class:`Process` instance created
+            The decorator function will return the :py:class:`Process` instance created,
+            using the wrapped function as the ``target``.
 
+        *The wrapped function is run with the following signature:*
+
+        ``target(value, state, *args, **kwargs)``
+
+        *Where:*
+
+        - ``value`` is the return value from :py:meth:`~State.get_when_not_equal()`.
+        - ``state`` is a :py:class:`State` instance.
+        - ``*args`` and ``**kwargs`` are passed on from ``**process_kwargs``.
 
         .. code-block:: python
             :caption: Example
@@ -581,12 +652,12 @@ class Context:
 
             ctx = zproc.Context()
 
-            @ctx.call_when_not_equal('foo', 5)
-            def test(state):
-                print(state)
+            @ctx.call_when_not_equal('apples', 5)
+            def test(apples, state):
+                print(apples, state)
         """
 
-        return self._create_watcher_decorator(
+        return self._create_call_when_xxx_decorator(
             "get_when_not_equal", process_kwargs, key, value, live=live
         )
 
