@@ -2,7 +2,7 @@
 
 *P.S.A.: Not suitable for use in production. In beta stage right now. Thanks.*
 
-<img src="https://i.imgur.com/N0X6zl8.png" height="300" />
+<img src="https://i.imgur.com/sJARxXD.png" height="300" />
 
 **Behold, the power of ZProc:**
 
