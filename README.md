@@ -195,6 +195,7 @@ pipenv run ./build.sh
 
 ## Thanks
 
+-   Thanks to [open logos](https://github.com/arasatasaygin/openlogos) for providing the wonderful ZProc logo, and 
 -   Thanks to [pieter hintjens](http://hintjens.com/),
     for his work on the [ZeroMQ](http://zeromq.org/) library
     and for his [amazing book](http://zguide.zeromq.org/).
