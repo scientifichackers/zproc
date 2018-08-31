@@ -1,6 +1,6 @@
 <img src="https://i.imgur.com/sJARxXD.png" height="300" />
 
-**P.S.A.: Not suitable for use in production. In a beta stage right now.**
+*P.S.A.: Not suitable for use in production. In a beta stage right now.*
 
 
 **Behold, the power of ZProc:**
