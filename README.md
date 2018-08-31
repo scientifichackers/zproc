@@ -1,8 +1,7 @@
-# ZProc - Multi Processing on steroids
-
-*P.S.A.: Not suitable for use in production. In beta stage right now. Thanks.*
-
 <img src="https://i.imgur.com/sJARxXD.png" height="300" />
+
+**P.S.A.: Not suitable for use in production. In a beta stage right now.**
+
 
 **Behold, the power of ZProc:**
 
