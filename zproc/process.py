@@ -150,7 +150,7 @@ class Process:
             args=(
                 server_address,
                 target,
-                self.__repr__,
+                self.__repr__(),
                 stateful,
                 args,
                 kwargs,
