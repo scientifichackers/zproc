@@ -1,8 +1,7 @@
-# ZProc - Multi Processing on steroids
+<img src="https://i.imgur.com/sJARxXD.png" height="300" />
 
-*P.S.A.: Not suitable for use in production. In beta stage right now. Thanks.*
+*P.S.A.: Not suitable for use in production. In a beta stage right now.*
 
-<img src="https://i.imgur.com/N0X6zl8.png" height="300" />
 
 **Behold, the power of ZProc:**
 
@@ -198,6 +197,7 @@ pipenv run ./build.sh
 
 ## Thanks
 
+-   Thanks to [open logos](https://github.com/arasatasaygin/openlogos) for providing the wonderful ZProc logo.
 -   Thanks to [pieter hintjens](http://hintjens.com/),
     for his work on the [ZeroMQ](http://zeromq.org/) library
     and for his [amazing book](http://zguide.zeromq.org/).
