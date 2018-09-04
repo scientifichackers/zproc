@@ -4,8 +4,8 @@ class ProcessWaitError(Exception):
     """
 
     def __init__(self, *args: object, **kwargs: object) -> None:
-        super().__init__(*args, **kwargs)
         try:
-            self.exitcode = kwargs["exitcode"]
+            self.exitcode = kwargs.pop("exitcode")
         except KeyError:
             pass
+        super().__init__(*args, **kwargs)
