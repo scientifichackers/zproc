@@ -135,12 +135,15 @@ class Context:
         }
 
         self._task_counter = 0
+
         # Dict[TaskDetail, Dict[ChunkDetail, Any]]
         self._task_chunk_results = collections.defaultdict(dict)
 
+        # register cleanup before wait, so that wait runs before cleanup.
+        # (Order of execution is reversed)
         if cleanup:
-            signal.signal(signal.SIGTERM, util.clean_process_tree)
             atexit.register(util.clean_process_tree)
+            signal.signal(signal.SIGTERM, util.clean_process_tree)
         if wait:
             atexit.register(self.wait_all)
 
@@ -517,8 +520,8 @@ class Context:
             ctx = zproc.Context()
 
             @ctx.call_when_change('gold')
-            def test(gold, state):
-                print(gold, state)
+            def test(current, state):
+                print(current['gold'], state)
         """
 
         return self._create_call_when_xxx_decorator(
@@ -561,8 +564,8 @@ class Context:
             ctx = zproc.Context()
 
             @ctx.get_state_when(lambda state: state['trees'] == 5)
-            def test(state_value, state):
-                print(state_value, state)
+            def test(current, state):
+                print(current['trees'], state)
         """
 
         return self._create_call_when_xxx_decorator(
@@ -607,8 +610,8 @@ class Context:
             ctx = zproc.Context()
 
             @ctx.call_when_equal('oranges', 5)
-            def test(oranges, state):
-                print(oranges, state)
+            def test(current, state):
+                print(current['oranges'], state)
         """
 
         return self._create_call_when_xxx_decorator(
@@ -653,12 +656,100 @@ class Context:
             ctx = zproc.Context()
 
             @ctx.call_when_not_equal('apples', 5)
-            def test(apples, state):
-                print(apples, state)
+            def test(current, state):
+                print(current['apples'], state)
         """
 
         return self._create_call_when_xxx_decorator(
             "get_when_not_equal", process_kwargs, key, value, live=live
+        )
+
+    def call_when_none(self, key: Hashable, *, live: bool = True, **process_kwargs):
+        """
+        Decorator version of :py:meth:`~State.get_when_not_none()`.
+
+        Spawns a new :py:class:`Process` that calls the wrapped function in that Process.
+
+        :param \*\*process_kwargs:
+            Keyword arguments that :py:class:`~Process` takes,
+            except ``server_address`` and ``target``.
+
+        All other parameters have same meaning as in :py:meth:`~State.get_when_not_equal()`
+
+        :return:
+            A decorator function
+
+            The decorator function will return the :py:class:`Process` instance created,
+            using the wrapped function as the ``target``.
+
+        *The wrapped function is run with the following signature:*
+
+        ``target(value, state, *args, **kwargs)``
+
+        *Where:*
+
+        - ``value`` is the return value from :py:meth:`~State.get_when_not_equal()`.
+        - ``state`` is a :py:class:`State` instance.
+        - ``*args`` and ``**kwargs`` are passed on from ``**process_kwargs``.
+
+        .. code-block:: python
+            :caption: Example
+
+            import zproc
+
+            ctx = zproc.Context()
+
+            @ctx.call_when_not_equal('apples', 5)
+            def test(current, state):
+                print(current['apples'], state)
+        """
+
+        return self._create_call_when_xxx_decorator(
+            "get_when_none", process_kwargs, key, live=live
+        )
+
+    def call_when_not_none(self, key: Hashable, *, live: bool = True, **process_kwargs):
+        """
+        Decorator version of :py:meth:`~State.get_when_not_none()`.
+
+        Spawns a new :py:class:`Process` that calls the wrapped function in that Process.
+
+        :param \*\*process_kwargs:
+            Keyword arguments that :py:class:`~Process` takes,
+            except ``server_address`` and ``target``.
+
+        All other parameters have same meaning as in :py:meth:`~State.get_when_not_equal()`
+
+        :return:
+            A decorator function
+
+            The decorator function will return the :py:class:`Process` instance created,
+            using the wrapped function as the ``target``.
+
+        *The wrapped function is run with the following signature:*
+
+        ``target(value, state, *args, **kwargs)``
+
+        *Where:*
+
+        - ``value`` is the return value from :py:meth:`~State.get_when_not_equal()`.
+        - ``state`` is a :py:class:`State` instance.
+        - ``*args`` and ``**kwargs`` are passed on from ``**process_kwargs``.
+
+        .. code-block:: python
+            :caption: Example
+
+            import zproc
+
+            ctx = zproc.Context()
+
+            @ctx.call_when_not_equal('apples', 5)
+            def test(current, state):
+                print(current['apples'], state)
+        """
+
+        return self._create_call_when_xxx_decorator(
+            "get_when_not_none", process_kwargs, key, live=live
         )
 
     def wait_all(self) -> List[Tuple[Process, Any]]:

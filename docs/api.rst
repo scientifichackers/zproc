@@ -9,6 +9,10 @@ Functions
 .. autofunction:: zproc.start_server
 
 
+Exceptions
+----------
+
+.. autoexception:: zproc.ProcessWaitError
 
 
 Context
@@ -16,7 +20,6 @@ Context
 
 .. autoclass:: zproc.Context
     :inherited-members:
-
 
 Process
 ---------

@@ -39,8 +39,8 @@ For example, the function ``want_pizza()`` will be called every-time the ``"num_
 .. code-block:: python
 
     @ctx.call_when_change("num_pizza")
-    def want_pizza(state):
-        print("pizza be tasty!")
+    def want_pizza(num_pizza, state):
+        print("pizza be tasty!", num_pizza)
 
 
 .. _live-events:
@@ -223,10 +223,9 @@ Some assumptions:
 
     # calls handle_press() whenever button is pressed
     @ctx.call_when_equal('button', True, live=True)
-    def handle_press(state):
+    def handle_press(_, state):  # The first arg will be the value of "button". We don't need that.
 
         print("button pressed")
-
 
         try:
             # wait 0.5 sec for a button to be released

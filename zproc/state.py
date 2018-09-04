@@ -1,9 +1,8 @@
 import functools
-import itertools
 import os
 import pickle
 import time
-from typing import Union, Hashable
+from typing import Union, Hashable, Any
 
 import zmq
 
@@ -13,19 +12,26 @@ from zproc.server import ServerFn, Msg
 ZMQ_IDENTITY_LEN = 8
 
 
-def _state_watcher_decorator_gen(self: "State", live: bool):
+def _create_get_when_xxx_mainloop(
+    self: "State", live: bool, timeout: Union[int, float, None]
+):
     """Generates a template for a state watcher mainloop."""
 
     def decorator(wrapped_fn):
         @functools.wraps(wrapped_fn)
         def wrapper():
             if live:
-                subscribe_sock = self._subscribe_sock_gen()
+                subscribe_sock = self._create_subscribe_sock()
             else:
-                subscribe_sock = self._subscribe_sock
+                subscribe_sock = self._buffered_subscribe_sock
+
+            if timeout is None:
+                start_time = None
+            else:
+                start_time = time.time()
 
             try:
-                return wrapped_fn(subscribe_sock)
+                return wrapped_fn(subscribe_sock, start_time)
             finally:
                 if live:
                     subscribe_sock.close()
@@ -78,9 +84,9 @@ class State:
         self._dealer_sock.setsockopt(zmq.IDENTITY, self._identity)
         self._dealer_sock.connect(self._dealer_sock_address)
 
-        self._subscribe_sock = self._subscribe_sock_gen()
+        self._buffered_subscribe_sock = self._create_subscribe_sock()
 
-    def _subscribe_sock_gen(self):
+    def _create_subscribe_sock(self):
         sock = self._zmq_ctx.socket(zmq.SUB)
         sock.connect(self._subscribe_sock_address)
 
@@ -91,9 +97,11 @@ class State:
         return sock
 
     @staticmethod
-    def _subscribe(subscribe_sock, timeout, start_time=None):
-        old_timeout = subscribe_sock.getsockopt(zmq.RCVTIMEO)
-
+    def _recv_subscription(
+        subscribe_sock: zmq.Socket,
+        timeout: Union[None, float, int],
+        start_time: Union[float, int],
+    ):
         if timeout is not None:
             subscribe_sock.setsockopt(zmq.RCVTIMEO, int(timeout * 1000))
         else:
@@ -106,15 +114,12 @@ class State:
         except zmq.error.Again:
             raise TimeoutError("Timed-out while waiting for a state update.")
         else:
-            if (
-                timeout is not None
-                and start_time is not None
-                and time.time() - start_time > timeout
-            ):
+            if timeout is not None and time.time() - start_time > timeout:
                 raise TimeoutError("Timed-out while waiting for a state update.")
             return response
         finally:
-            subscribe_sock.setsockopt(zmq.RCVTIMEO, old_timeout)
+            if timeout is not None:
+                subscribe_sock.setsockopt(zmq.RCVTIMEO, -1)
 
     def _req_rep(self, request):
         self._dealer_sock.send_pyobj(request, protocol=pickle.HIGHEST_PROTOCOL)
@@ -155,58 +160,40 @@ class State:
             For all other values, it will wait for and update,
             for that amount of time before returning with a ``TimeoutError``.
 
-        :return: Roughly,
-
-        .. code-block:: python
-
-            if exclude:
-                return state.copy()
-
-            if len(keys) == 0:
-                return state.copy()
-
-            if len(keys) == 1:
-                return state.get(key)
-
-            if len(keys) > 1:
-                return [state.get(key) for key in keys]
+        :return: state
+        :rtype: ``dict``
         """
 
-        num_keys = len(keys)
-
-        if num_keys:
+        if len(keys):
             if exclude:
 
                 def select_keys(old_state, new_state):
                     return (
                         key
-                        for key in itertools.chain(old_state.keys(), new_state.keys())
+                        for key in (*old_state.keys(), *new_state.keys())
                         if key not in keys
                     )
 
             else:
 
-                def select_keys(old, new_state):
+                def select_keys(old_state, new_state):
                     return (
                         key
-                        for key in itertools.chain(old.keys(), new_state.keys())
+                        for key in (*old_state.keys(), *new_state.keys())
                         if key in keys
                     )
 
-            @_state_watcher_decorator_gen(self, live)
-            def _get_state(sock):
-                if timeout is None:
-                    start_time = None
-                else:
-                    start_time = time.time()
-
+            @_create_get_when_xxx_mainloop(self, live, timeout)
+            def mainloop(sock, start_time):
                 while True:
-                    old_state, new_state = self._subscribe(sock, timeout, start_time)
+                    old_state, new_state = self._recv_subscription(
+                        sock, timeout, start_time
+                    )
 
                     for key in select_keys(old_state, new_state):
                         try:
                             old_val, new_val = old_state[key], new_state[key]
-                        except KeyError:  # In a way, this implies something changed
+                        except KeyError:  # this indirectly implies that something changed
                             return new_state
                         else:
                             if new_val != old_val:
@@ -214,18 +201,11 @@ class State:
 
         else:
 
-            @_state_watcher_decorator_gen(self, live)
-            def _get_state(sock):
-                return self._subscribe(sock, timeout)[1]
+            @_create_get_when_xxx_mainloop(self, live, timeout)
+            def mainloop(sock, start_time):
+                return self._recv_subscription(sock, timeout, start_time)[-1]
 
-        current_state = _get_state()
-
-        if exclude or num_keys == 0:
-            return current_state
-        elif num_keys == 1:
-            return current_state.get(keys[0])
-        else:
-            return [current_state.get(key) for key in keys]
+        return mainloop()
 
     def get_when(self, test_fn, *, live=True, timeout=None):
         """
@@ -251,25 +231,28 @@ class State:
         :rtype: ``dict``
         """
 
-        @_state_watcher_decorator_gen(self, live)
-        def mainloop(sock):
-            if timeout is None:
-                start_time = None
-            else:
-                start_time = time.time()
-            latest_state = self.copy()
+        @_create_get_when_xxx_mainloop(self, live, timeout)
+        def mainloop(sock, start_time):
+            latest_copy = self.copy()
 
             while True:
-                if test_fn(latest_state):
-                    return latest_state
+                if test_fn(latest_copy):
+                    return latest_copy
 
-                latest_state = self._subscribe(sock, timeout, start_time)[-1]
+                latest_copy = self._recv_subscription(sock, timeout, start_time)[-1]
 
         return mainloop()
 
-    def get_when_equal(self, key, value, *, live=True, timeout=None):
+    def get_when_equal(
+        self,
+        key: Hashable,
+        value: Any,
+        *,
+        live: bool = True,
+        timeout: Union[float, int, None] = None
+    ):
         """
-        Block until ``state.get(key) == value``.
+        Block until ``state.get(key) == value for key in keys``.
 
         :param key: ``dict`` key
         :param value: ``dict`` value.
@@ -284,26 +267,22 @@ class State:
                         For all other values, it will wait for and update,
                         for that amount of time before returning with a ``TimeoutError``.
 
-        :return: ``state.get(key)``
+        :return: state
+        :rtype: ``dict``
         """
 
-        @_state_watcher_decorator_gen(self, live)
-        def mainloop(sock):
-            if timeout is None:
-                start_time = None
-            else:
-                start_time = time.time()
-            latest_key = self.get(key)
+        return self.get_when(
+            lambda state: state.get(key) == value, live=live, timeout=timeout
+        )
 
-            while True:
-                if latest_key == value:
-                    return latest_key
-
-                latest_key = self._subscribe(sock, timeout, start_time)[-1].get(key)
-
-        return mainloop()
-
-    def get_when_not_equal(self, key, value, *, live=True, timeout=None):
+    def get_when_not_equal(
+        self,
+        key: Hashable,
+        value: Any,
+        *,
+        live: bool = True,
+        timeout: Union[float, int, None] = None
+    ):
         """
         Block until ``state.get(key) != value``.
 
@@ -320,24 +299,75 @@ class State:
                         For all other values, it will wait for and update,
                         for that amount of time before returning with a ``TimeoutError``.
 
-        :return: ``state.get(key)``
+        :return: state
+        :rtype: ``dict``
         """
 
-        @_state_watcher_decorator_gen(self, live)
-        def mainloop(sock):
-            if timeout is None:
-                start_time = None
-            else:
-                start_time = time.time()
-            latest_key = self.get(key)
+        return self.get_when(
+            lambda state: state.get(key) != value, live=live, timeout=timeout
+        )
 
-            while True:
-                if latest_key != value:
-                    return latest_key
+    def get_when_none(
+        self,
+        key: Hashable,
+        *,
+        live: bool = True,
+        timeout: Union[float, int, None] = None
+    ):
+        """
+        Block until ``state.get(key) is not None``.
 
-                latest_key = self._subscribe(sock, timeout, start_time)[-1].get(key)
+        :param key: ``dict`` key.
+        :param value: ``dict`` value.
+        :param live: Whether to get "live" updates. (See :ref:`live-events`)
+        :param timeout: Sets the timeout in seconds. By default it is set to ``None``.
 
-        return mainloop()
+                        If the value is 0, it will return immediately, with a ``TimeoutError``,
+                        if no update is available.
+
+                        If the value is ``None``, it will block until an update is available.
+
+                        For all other values, it will wait for and update,
+                        for that amount of time before returning with a ``TimeoutError``.
+
+        :return: state
+        :rtype: ``dict``
+        """
+
+        return self.get_when(
+            lambda state: state.get(key) is None, live=live, timeout=timeout
+        )
+
+    def get_when_not_none(
+        self,
+        key: Hashable,
+        *,
+        live: bool = True,
+        timeout: Union[float, int, None] = None
+    ):
+        """
+        Block until ``state.get(key) is not None``.
+
+        :param key: ``dict`` key.
+        :param value: ``dict`` value.
+        :param live: Whether to get "live" updates. (See :ref:`live-events`)
+        :param timeout: Sets the timeout in seconds. By default it is set to ``None``.
+
+                        If the value is 0, it will return immediately, with a ``TimeoutError``,
+                        if no update is available.
+
+                        If the value is ``None``, it will block until an update is available.
+
+                        For all other values, it will wait for and update,
+                        for that amount of time before returning with a ``TimeoutError``.
+
+        :return: state
+        :rtype: ``dict``
+        """
+
+        return self.get_when(
+            lambda state: state.get(key) is not None, live=live, timeout=timeout
+        )
 
     def go_live(self):
         """
@@ -346,8 +376,8 @@ class State:
         (See :ref:`live-events`)
         """
 
-        self._subscribe_sock.close()
-        self._subscribe_sock = self._subscribe_sock_gen()
+        self._buffered_subscribe_sock.close()
+        self._buffered_subscribe_sock = self._create_subscribe_sock()
 
     def ping(self, **kwargs):
         """
@@ -365,7 +395,7 @@ class State:
         """
 
         self._dealer_sock.close()
-        self._subscribe_sock.close()
+        self._buffered_subscribe_sock.close()
         util.close_zmq_ctx(self._zmq_ctx)
 
     def copy(self):

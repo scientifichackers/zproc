@@ -9,8 +9,8 @@ import time
 
 import zproc
 
-TIMEOUT = 10
-SLOW = False
+TIMEOUT = 10000
+SLOW = True
 
 ctx = zproc.Context()
 ctx.state["foobar"] = 0
@@ -34,9 +34,9 @@ def inc(state):
 def generator(state):
     while True:
         inc(state)
+        if SLOW:
+            time.sleep(random.random())
 
-
-# Here are the tests.
 
 print("LIVE:")
 

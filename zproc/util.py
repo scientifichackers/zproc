@@ -35,8 +35,8 @@ class SignalException(Exception):
         self.frame = frame
 
 
-def signal_to_exception(sig):
-    """Convert a signal to :py:exc:`SignalException`"""
+def signal_to_exception(sig: signal.Signals):
+    """Convert a signal.Signals to a `SignalException`"""
 
     def handler(sig, frame):
         raise SignalException(sig, frame)

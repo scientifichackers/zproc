@@ -34,7 +34,7 @@ def bake_cookie(state):
 
 
 @ctx.call_when_change("cookies")
-def cookie_eater(state):
+def cookie_eater(_, state):
     eat_cookie(state)
 
 

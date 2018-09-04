@@ -112,7 +112,7 @@ def ping(
         raise TimeoutError("Timed-out waiting while for the ZProc server to respond.")
     else:
         if response[Msg.payload] == payload:
-            return response["pid"]
+            return response[Msg.pid]
         else:
             return None
     finally:

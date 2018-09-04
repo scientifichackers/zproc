@@ -1,13 +1,12 @@
 import multiprocessing
 import os
 import signal
-import time
 import uuid
 from typing import Callable, Union, Sequence
 
 import zmq
 
-from zproc import processdef, util
+from zproc import processdef, util, exceptions
 
 
 class Process:
@@ -137,6 +136,9 @@ class Process:
         self._zmq_ctx = zmq.Context()
         self._zmq_ctx.setsockopt(zmq.LINGER, 0)
         self._result_sock = self._zmq_ctx.socket(zmq.PULL)
+        # The result socket is meant to be used only after the process completes (after join()).
+        # So technically, we shouldn't need to wait for the result message.
+        self._result_sock.setsockopt(zmq.RCVTIMEO, 0)
 
         if os.system == "posix":
             result_address = "ipc://" + str(util.ipc_base_dir) + str(uuid.uuid1())
@@ -229,38 +231,43 @@ class Process:
 
             For all other values, it will wait for a reply,
             for that amount of time before returning with a ``TimeoutError``.
+
         :return:
             The value returned by the ``target`` function.
+
+            If the child finishes with a non-zero exitcode,
+            or there is some error in retrieving the value returned by the ``target``,
+            a :py:exc:`.ProcessWaitError` is raised.
         """
 
-        start_time = time.time()
-        if timeout is not None:
-            self._result_sock.setsockopt(zmq.RCVTIMEO, int(timeout * 1000))
-        else:
-            self._result_sock.setsockopt(zmq.RCVTIMEO, -1)
-
         try:
-            return self._return_value
+            return self._return_value  # try to fetch the cached result.
         except AttributeError:
+            self.child.join(timeout)
+
+            if self.is_alive:
+                raise TimeoutError("Timed-out while waiting for Process to finish.")
+
+            exitcode = self.exitcode
+            if exitcode != 0:
+                raise exceptions.ProcessWaitError(
+                    "Process returned with a non-zero exitcode (%d)" % exitcode,
+                    exitcode=exitcode,
+                )
+
             try:
                 self._return_value = self._result_sock.recv_pyobj()
             except zmq.error.Again:
-                raise TimeoutError("Timed-out while waiting for Process to finish.")
-            else:
-                self._result_sock.close()
-                self._zmq_ctx.destroy()
-                self._zmq_ctx.term()
+                raise exceptions.ProcessWaitError(
+                    "The Process died before sending its return value. "
+                    "It probably crashed, got killed, or exited without warning."
+                )
 
-                elapsed = time.time() - start_time
-                if timeout is None:
-                    self.child.join()
-                elif elapsed < timeout:
-                    self.child.join(timeout - elapsed)
+            self._result_sock.close()
+            self._zmq_ctx.destroy()
+            self._zmq_ctx.term()
 
-                if self.is_alive:
-                    raise TimeoutError("Timed-out while waiting for Process to finish.")
-
-                return self._return_value
+            return self._return_value
 
     @property
     def is_alive(self):
