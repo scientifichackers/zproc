@@ -1,6 +1,6 @@
 <img src="https://i.imgur.com/sJARxXD.png" height="300" />
 
-*P.S.A.: Not suitable for use in production. In a beta stage right now.*
+*P.S.A.: New releases are being deffered until 1.x.x release. Please use the [next](https://github.com/pycampers/zproc/tree/next) branch if you want to test it out.*
 
 
 **Behold, the power of ZProc:**
