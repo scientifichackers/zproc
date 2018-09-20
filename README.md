@@ -65,11 +65,15 @@ nom nom nom
 ## Install
 
 **from the "master" branch**
-`pip install zproc`
+```
+$ pip install zproc
+``` 
 
 **from the "next" branch**
 
-`pip install git+https://github.com/pycampers/zproc.git@next#egg=zproc`
+```
+$ pip install git+https://github.com/pycampers/zproc.git@next#egg=zproc
+```
 
 License: MIT License (MIT)<br>
 Requires: Python >=3.5
