@@ -3,7 +3,6 @@ import os
 import signal
 from collections import defaultdict
 from copy import deepcopy
-from multiprocessing.connection import Connection
 from typing import Any, Dict
 
 import itsdangerous

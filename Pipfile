@@ -15,8 +15,6 @@ ipython = "*"
 sphinx = "*"
 twine = "*"
 pytest = "*"
-mypy = "*"
-grequests = "*"
 
 [requires]
 python_version = "3.5.2"
