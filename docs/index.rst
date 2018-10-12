@@ -41,7 +41,7 @@ this part of the documentation is for you.
 
 .. toctree::
 
-    api
+    api.rst
 
 Indicies
 --------

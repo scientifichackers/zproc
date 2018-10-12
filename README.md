@@ -1,6 +1,6 @@
 <img src="https://i.imgur.com/sJARxXD.png" height="300" />
 
-*P.S.A.: Not suitable for use in production. In a beta stage right now.*
+**ZProc let's you do shared-state parallelism without the perils of having shared-memory.**
 
 
 **Behold, the power of ZProc:**
@@ -8,9 +8,13 @@
 ```python
 import zproc
 
+# Some initialization
 
 ctx = zproc.Context(wait=True)  # wait for processes in this context
 ctx.state["cookies"] = 0
+
+
+# Define atomic operations
 
 @zproc.atomic
 def eat_cookie(state):
@@ -27,25 +31,20 @@ def bake_cookie(state):
     state["cookies"] += 1
     print("Here's a cookie!")
 
+# Fire up processes
 
-@ctx.process
-def cookie_eater(state):
+@ctx.call_when_change('cookies')
+def cookie_eater(_, state):
     """Eat cookies as they're baked."""
     
-    while True:
-        state.get_when_change('cookies')
-        eat_cookie(state)
+    eat_cookie(state)
 
 
-@ctx.process
-def cookie_baker(state):
-    """Bake some cookies."""
-
-    for i in range(5):
-        bake_cookie(state)
+for i in range(5):
+    bake_cookie(ctx.state)
 ```
 
-**output**
+**Result:**
 
 ```
 Here's a cookie!
@@ -60,7 +59,11 @@ nom nom nom
 nom nom nom
 ```
 
-(baker and eater run in different processes)
+(yes, baker and eater run in different processes)
+
+Oh, and you just did message passing, without realizing it! 
+
+*ZProc abstracts away all the details around network programming & sockets.*
 
 ## Install
 
@@ -90,33 +93,30 @@ At the surface, it's just a better API for Message passing parallelism (using ZM
 
 Message passing can be tedious because of all the manual wiring involved.
 
-ZProc lets you do message passing parallelism with a more pythonic, 
-safe, easy-to-use interface.
+ZProc lets you do shared state, message passing parallelism with a more pythonic, 
+safe and, easy-to-use interface.
 
-It does that by providing a global `dict` called `state`.<br>
-The `state` is **not** a shared object.<br>
-It works _purely_ on message passing.
+It does that by providing a global `dict`-like object; `State`.
+`State` works _purely_ on message passing.
 
 It also supports a fair bit of reactive programming, 
 using [state watchers](http://zproc.readthedocs.io/en/latest/user/state_watching.html).
 
-Behind the covers, it uses the [Actor Model](https://en.wikipedia.org/wiki/Actor_model).
+Behind the covers, it uses the [Actor Model](https://en.wikipedia.org/wiki/Actor_model),
+a well-established pattern for parallelism.
 
-It also borrows the `autoretry` feature of Celery, but unlike
-Celery it doesn't need a broker.
+It also boasts workers and auto-retrying features witnessed in Celery, 
+but unlike Celery it doesn't need a broker.
+
+There are also numerous thin-wrappers over the python standard library that aid you in doing chores related to Processes.
+
+It aims to provide a complete, coherent, humane interface for doing Multi Tasking.
 
 Bottom line, you'll have a lot more fun doing parallel/concurrent programming using ZProc, than anything else.
 
 ## Features
 
--   🌠 &nbsp; Asynchronous paradigms without `async def`
-
-    -   Build a combination of synchronous and asynchronous systems, with ease.
-    -   By _watching_ for changes in state, without
-        [Busy Waiting](https://en.wikipedia.org/wiki/Busy_waiting).
-    -   [🔖](https://zproc.readthedocs.io/en/latest/api.html#state)
-
--   🌠 &nbsp; Process management
+- 🌠 &nbsp; Process management
 
     -   [Process Factory](https://zproc.readthedocs.io/en/latest/api.html#zproc.Context.process_factory)
     -   Remembers to kill processes when exiting, for general peace.
@@ -124,7 +124,22 @@ Bottom line, you'll have a lot more fun doing parallel/concurrent programming us
     -   Keeps a record of processes created using ZProc.
     -   [🔖](https://zproc.readthedocs.io/en/latest/api.html#context)
 
--   🌠 &nbsp; Atomic Operations
+- 🌠 &nbsp; Process Maps
+    
+    - Automatically manages worker processes, and delegates tasks to them.
+    -   [🔖](https://zproc.readthedocs.io/en/latest/api.html#context)    
+
+- 🌠 &nbsp; Asynchronous paradigms without `async def`
+
+    -   Build a combination of synchronous and asynchronous systems, with ease.
+    -   By _watching_ for changes in state, without
+        [Busy Waiting](https://en.wikipedia.org/wiki/Busy_waiting).
+    -   [🔖](https://zproc.readthedocs.io/en/latest/api.html#state)
+
+- 🌠 &nbsp; 
+
+    
+- 🌠 &nbsp; Atomic Operations
     -   Perform an arbitrary number of operations on state as a single,
         atomic operation.
     -   [🔖](https://zproc.readthedocs.io/en/latest/user/atomicity.html)
@@ -158,6 +173,7 @@ Bottom line, you'll have a lot more fun doing parallel/concurrent programming us
     -   Please don't use it in production right now.
 
 -   Windows compatible?
+
     -   Probably?
 
 ## Inner Workings
@@ -194,8 +210,11 @@ pipenv install
 Assuming you have sphinx installed (Linux)
 
 ```
+pipenv shell
 cd docs
-pipenv run ./build.sh
+./build.sh 
+
+./build.sh loop  # start a build loop.
 ```
 
 ## ZProc in the wild
@@ -218,6 +237,8 @@ pipenv run ./build.sh
     His setup.py was used to host this project on pypi.
     Plus lot of documentation is blatantly copied
     from his documentation on requests
+
+---
 
 ZProc is short for [Zero](http://zguide.zeromq.org/page:all#The-Zen-of-Zero) Process.
 

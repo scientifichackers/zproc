@@ -1,96 +1,120 @@
-import marshal
 import os
 import pathlib
+import pickle
 import signal
-import sys
+import threading
 import time
 import traceback
-import types
-import typing
 import uuid
 
+import itsdangerous
 import psutil
 import zmq
+
+from . import exceptions
 
 ipc_base_dir = pathlib.Path.home() / ".tmp" / "zproc"
 if not ipc_base_dir.exists():
     ipc_base_dir.mkdir(parents=True)
 
 
-class RemoteException:
-    def __init__(self):
-        self.exc = sys.exc_info()
+class Serializer:
+    @staticmethod
+    def dumps(obj):
+        return pickle.dumps(obj, protocol=pickle.HIGHEST_PROTOCOL)
 
-    def reraise(self):
-        raise self.exc[0].with_traceback(self.exc[1], self.exc[2])
-
-    def __str__(self):
-        return str(self.exc)
-
-
-class SignalException(Exception):
-    def __init__(self, sig, frame):
-        super().__init__("")
-        self.sig = sig
-        self.frame = frame
+    @staticmethod
+    def loads(bytes_obj):
+        return pickle.loads(bytes_obj)
 
 
-def signal_to_exception(sig: signal.Signals):
-    """Convert a signal.Signals to a `SignalException`"""
+def get_signed_serializer(secret_key, *args, **kwargs):
+    return itsdangerous.Serializer(secret_key, *args, **kwargs, serializer=Serializer)
 
-    def handler(sig, frame):
-        raise SignalException(sig, frame)
 
-    signal.signal(sig, handler)
+def get_serializer(secret_key=None, *args, **kwargs):
+    if secret_key is None:
+        return Serializer()
+
+    return get_signed_serializer(secret_key, *args, **kwargs)
+
+
+def handle_remote_exc(response):
+    # if the reply is a remote Exception, re-raise it!
+    if isinstance(response, exceptions.RemoteException):
+        response.reraise()
+    else:
+        return response
+
+
+def send(sock: zmq.Socket, serializer, obj):
+    return sock.send(serializer.dumps(obj))
+
+
+def recv(sock: zmq.Socket, serializer):
+    while True:
+        try:
+            return handle_remote_exc(serializer.loads(sock.recv()))
+        except itsdangerous.BadSignature:
+            pass
+
+
+class SecretKeyHolder:
+    def __init__(self, secret_key: str) -> None:
+        self._secret_key, self._serializer = None, None
+        self.secret_key = secret_key
+
+    @property
+    def secret_key(self):
+        return self._secret_key
+
+    @secret_key.setter
+    def secret_key(self, secret_key: str):
+        self._secret_key = secret_key
+        self._serializer = get_serializer(self._secret_key)
 
 
 def convert_to_exceptions(retry_for):
-    yield SignalException  # catches all signals converted using `signal_to_exception()`
+    if retry_for is not None:
+        yield exceptions.SignalException  # catches all signals converted using `signal_to_exception()`
 
-    for i in retry_for:
-        if type(i) == signal.Signals:
-            signal_to_exception(i)
-        elif issubclass(i, BaseException):
-            yield i
-        else:
-            raise ValueError(
-                'The items of "retry_for" MUST be a subclass of `BaseException` or of type `signal.Signals`, not `{}`.'.format(
-                    repr(i)
+        for i in retry_for:
+            if type(i) == signal.Signals:
+                exceptions.signal_to_exception(i)
+            elif issubclass(i, BaseException):
+                yield i
+            else:
+                raise ValueError(
+                    'The items of "retry_for" MUST be a subclass of `BaseException` or of type `signal.Signals`, not `{}`.'.format(
+                        repr(i)
+                    )
                 )
-            )
 
 
 def restore_signal_exception_behavior(e):
-    if isinstance(e, SignalException):
+    if isinstance(e, exceptions.SignalException):
         signal.signal(e.sig, signal.SIG_DFL)
+
+
+def bind_to_random_ipc(sock: zmq.Socket) -> str:
+    address = "ipc://" + str(ipc_base_dir / str(uuid.uuid1()))
+    sock.bind(address)
+
+    return address
+
+
+def bind_to_random_tcp(sock: zmq.Socket) -> str:
+    port = sock.bind_to_random_port("tcp://*")
+    address = "tcp://0.0.0.0:{}".format(port)
+
+    return address
 
 
 def bind_to_random_address(sock: zmq.Socket) -> str:
     try:
-        address = "ipc://" + str(ipc_base_dir / str(uuid.uuid1()))
-        sock.bind(address)
+        return bind_to_random_ipc(sock)
     except zmq.error.ZMQError:
-        port = sock.bind_to_random_port("tcp://*")
-        address = "tcp://127.0.0.1:{}".format(port)
-    return address
-
-
-def serialize_fn(fn: types.FunctionType) -> typing.Tuple[bytes, str]:
-    return marshal.dumps(fn.__code__), fn.__name__
-
-
-def deserialize_fn(serialized_fn: typing.Tuple[bytes, str]) -> types.FunctionType:
-    return types.FunctionType(
-        marshal.loads(serialized_fn[0]), globals(), serialized_fn[1]
-    )
-
-
-def handle_remote_response(response):
-    # if the reply is a remote Exception, re-raise it!
-    if isinstance(response, RemoteException):
-        response.reraise()
-    else:
-        return response
+        return bind_to_random_tcp(sock)
 
 
 def close_zmq_ctx(ctx: zmq.Context):
@@ -99,20 +123,20 @@ def close_zmq_ctx(ctx: zmq.Context):
 
 
 def clean_process_tree(*signal_handler_args):
+    """Kill all Processes in the current Process tree, recursively."""
+
     for process in psutil.Process().children(recursive=True):
+        print(process)
         os.kill(process.pid, signal.SIGTERM)
 
     if len(signal_handler_args):
-        exitcode = signal_handler_args[0]
-    else:
-        exitcode = 0
-    os._exit(exitcode)
+        os._exit(signal_handler_args[0])
 
 
 def handle_crash(exc, retry_delay, tries, max_tries, process_repr):
     msg = "\nZProc crash report:\n"
 
-    if isinstance(exc, SignalException):
+    if isinstance(exc, exceptions.SignalException):
         msg += "\tSignal - {}\n".format(repr(exc.sig))
     else:
         traceback.print_exc()
@@ -135,3 +159,7 @@ def chunk_gen(it, size, count):
         return None
     else:
         return [it[i * size : (i + 1) * size] for i in range(count)]
+
+
+def is_main_thread():
+    return threading.current_thread() == threading.main_thread()

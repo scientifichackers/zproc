@@ -3,12 +3,18 @@ Introduction to ZProc
 
 The whole architecture of zproc is built around a :py:class:`.State` object.
 
+The main idea that differentiates :py:class:`.State`
+from traditional mutable shared state is the fact that it's not dumb.
+
+This state is protected by logic and reason.
+A Process can't just barge-in and mutate the state whenever they feel like!
+
 :py:class:`.Context` is provided as a convenient wrapper over :py:class:`.Process` and :py:class:`.State`.
 
 It's is the most obvious way to launch processes with zproc.
 
-Each :py:class:`.Context` object is associated with its own isolated state
-that is accessible by that its processes.
+Each :py:class:`.Context` object is associated with its state;
+accessible by its processes.
 
 
 Here's how you create a :py:class:`.Context`.
@@ -45,12 +51,16 @@ If you like to be cool, then you can use it as a decorator.
         pass
 
 
-The ``state`` is a *dict-like* object that you can use to represent your application's state.
+The ``state`` is a *dict-like* object.
+
+*dict-like*, because it's not exactly a dict.
+It provides a ``dict`` interface, but is actually just passing messages.
+
+You *cannot* mutate the underlying ``dict`` directly.
+It's protected by a Process whose sole job is to manage it.
 
 You can also access it from the :py:class:`.Context` itself using ``ctx.state``.
 
-*dict-like*, because it's not exactly a dict.
-It implements the ``dict`` methods, to provide that sweet syntactical sugar.
 
 .. code-block:: python
 
@@ -62,7 +72,6 @@ It implements the ``dict`` methods, to provide that sweet syntactical sugar.
 
     ...
 
-Behind the scenes, it's literally just passing messages using ZMQ sockets.
 
 Providing arguments to a Process
 --------------------------------
@@ -74,15 +83,8 @@ To provide some initial values to a Process, you can use use \*args and \*\*kwar
     def my_process(state, num, exp):
         print(num ** exp)
 
-    ctx.process(my_process, args=(2,), kwargs={'exp': 4})
+    ctx.process(my_process, args=[2], kwargs={'exp': 4})
 
-.. note::
-    ``args`` MUST be an ``Iterable``.
-
-    Since ``(2)`` evaluates to just ``2`` in Python,
-    it becomes necessary to have a ``,`` in there,
-    so that Python evaluates ``(2,)`` as a ``tuple`` of length ``1``,
-    containing ``2`` as the first element.
 
 Waiting for a Process
 ---------------------
@@ -142,7 +144,7 @@ That's why ZProc provides a more powerful construct, :py:meth:`~.Context.process
          ctx.process_map(
             power,
             range(100),
-            args=(3,),
+            args=[3],
             count=10  # distribute among 10 workers.
          )
     )
@@ -171,7 +173,7 @@ That's why ZProc provides a more powerful construct, :py:meth:`~.Context.process
     list(
         ctx.process_map(
             my_thingy,
-            args=(7,),
+            args=[7],
             map_kwargs=[
                 {'num': 10, 'exp': 3},
                 {'num': 5, 'exp': 5},
@@ -229,7 +231,9 @@ As a result, the amount of time it takes for ``next(res)`` to return changes ove
 Reactive programming with zproc
 -------------------------------
 
-Now, let us uncover "reactive" part of zproc.
+This is the part where you really start to see the benefits of a smart state.
+
+The state knows when it's updates, and does the job of notifying everyone.
 
 I like to call it :ref:`state-watching`.
 
@@ -284,7 +288,7 @@ If you want, you can even provide a function:
 The function you provide will get called on each state update,
 to check whether the return value is ``True``-like.
 
-You obviously can't do things like this:
+You do things like this:
 
 .. code-block:: python
 
@@ -293,7 +297,7 @@ You obviously can't do things like this:
     t = time()
     state.get_when(lambda state: time() > t + 5)  # wrong!
 
-The function gets called on state updates.
+The function gets called on *state* changes.
 
 Changing time doesn't signify a state update.
 

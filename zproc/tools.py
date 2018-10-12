@@ -1,29 +1,29 @@
-import functools
 import multiprocessing
 import os
-import pickle
-import types
-from typing import Tuple, Union, Callable
+from typing import Union, Callable
 
 import zmq
 
-from zproc import processdef, util
-from zproc.server import ServerFn, Msg
+from zproc import util
+from zproc.server import ServerFn, Msg, Server
 
 
 def start_server(
-    server_address: Union[None, Tuple[str, str]] = None,
+    server_address: str = None,
     *,
-    backend: Callable = multiprocessing.Process
+    backend: Callable = multiprocessing.Process,
+    secret_key: str = None
 ):
     """
     Start a new zproc server.
 
     :param server_address:
         The zproc server's address.
-        (See :ref:`zproc-server-address-spec`)
 
-        If set to ``None``, then a random address will be used.
+        If it is set to ``None``, then a random address will be generated.
+
+        Please read :ref:`zproc-server-address-spec` for a detailed explanation.
+
 
     :param backend:
         The backend to use for launching the server process.
@@ -37,37 +37,47 @@ def start_server(
     :return: ``tuple``, containing a ``multiprocessing.Process`` object for server and the server address.
     """
 
-    if server_address is None:
-        recvconn, sendconn = multiprocessing.Pipe()
+    ctx = zmq.Context()
+    ctx.setsockopt(zmq.LINGER, 0)
+    sock = ctx.socket(zmq.PULL)
+    pull_address = util.bind_to_random_address(sock)
 
-        server_process = backend(
-            target=processdef.server_process, args=(server_address, sendconn)
-        )
-        server_process.start()
+    serializer = util.get_serializer(secret_key)
 
-        server_address = recvconn.recv()
-        recvconn.close()
-    else:
-        server_process = backend(
-            target=processdef.server_process, args=(server_address,)
+    server_process = backend(
+        target=lambda *args, **kwargs: Server(*args, **kwargs).main(),
+        args=[server_address, pull_address, secret_key],
+        daemon=True,
+    )
+    server_process.start()
+
+    try:
+        server_address = util.recv(sock, serializer)
+    except zmq.ZMQError as e:
+        raise ConnectionError(
+            "Encountered - %s. Perhaps the server is already running?" % repr(e)
         )
-        server_process.start()
+    finally:
+        sock.close()
+        util.close_zmq_ctx(ctx)
 
     return server_process, server_address
 
 
 def ping(
-    server_address: Tuple[str, str],
+    server_address: str,
     *,
     timeout: Union[None, float, int] = None,
-    payload: Union[None, bytes] = None
+    payload: Union[None, bytes] = None,
+    secret_key: str = None
 ) -> Union[int, None]:
     """
     Ping the zproc server
 
     :param server_address:
         The zproc server's address.
-        (See :ref:`zproc-server-address-spec`)
+
+        Please read :ref:`zproc-server-address-spec` for a detailed explanation.
 
     :param timeout:
         The timeout in seconds.
@@ -88,26 +98,29 @@ def ping(
 
     :return:
         The zproc server's **PID** if the ping was successful, else ``None``
+
+        If this returns ``None``,
+        then it probably means there is some fault in communication with the server.
     """
 
     if payload is None:
         payload = os.urandom(56)
 
+    serializer = util.get_serializer(secret_key)
+
     ctx = zmq.Context()
     ctx.setsockopt(zmq.LINGER, 0)
 
     sock = ctx.socket(zmq.DEALER)
-    sock.connect(server_address[0])
+    sock.connect(server_address)
 
     if timeout is not None:
         sock.setsockopt(zmq.RCVTIMEO, int(timeout * 1000))
 
-    ping_msg = {Msg.server_fn: ServerFn.ping, Msg.payload: payload}
-
-    sock.send_pyobj(ping_msg, protocol=pickle.HIGHEST_PROTOCOL)
+    sock.send(serializer.dumps({Msg.server_fn: ServerFn.ping, Msg.payload: payload}))
 
     try:
-        response = sock.recv_pyobj()
+        response = util.handle_remote_exc(serializer.loads(sock.recv()))
     except zmq.error.Again:
         raise TimeoutError("Timed-out waiting while for the ZProc server to respond.")
     else:
@@ -117,61 +130,3 @@ def ping(
             return None
     finally:
         sock.close()
-
-
-def atomic(fn: types.FunctionType):
-    """
-    Wraps a function, to create an atomic operation out of it.
-
-    No Process shall access the state while ``fn`` is running.
-
-    .. note::
-        - The first argument to the wrapped function must be a :py:class:`State` object.
-
-        - You might not be able to use global variables inside the atomic function.
-
-          This happens because the atomic wrapped function is serialized.
-          To work around this problem, you MUST pass any global variables through the `*args` and `**kwargs`.
-
-
-    Read :ref:`atomicity`.
-
-    :param fn:
-        The ``function`` to be wrapped, as an atomic function.
-
-    :returns:
-        A wrapper ``function``.
-
-        The "wrapper" ``function`` returns the value returned by the "wrapped" ``function``.
-
-
-    .. code-block:: python
-        :caption: Example
-
-        import zproc
-
-        @zproc.atomic
-        def increment(state):
-            return state['count'] += 1
-
-        ctx = zproc.Context()
-        ctx.state['count'] = 0
-
-        print(increment(ctx.state))  # 1
-
-    """
-
-    serialized_fn = util.serialize_fn(fn)
-
-    @functools.wraps(fn)
-    def wrapper(state, *args, **kwargs):
-        return state._req_rep(
-            {
-                Msg.server_fn: ServerFn.exec_atomic_fn,
-                Msg.fn: serialized_fn,
-                Msg.args: args,
-                Msg.kwargs: kwargs,
-            }
-        )
-
-    return wrapper

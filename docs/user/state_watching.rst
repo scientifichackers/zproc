@@ -5,23 +5,26 @@ The magic of state watching
 **Watch the state for events, as-if you were watching a youtube video!**
 
 
-zproc allows you to "watch" the state using these methods, using the :py:class:`.State` API.
+zproc allows you to *watch* the state using these methods, @ the :py:class:`.State` API.
 
 - :py:meth:`~.State.get_when_change`
 - :py:meth:`~.State.get_when`
 - :py:meth:`~.State.get_when_equal`
 - :py:meth:`~.State.get_when_not_equal`
-
-Essentially, they allow you to wait for updates in the state.
+- :py:meth:`~.State.get_when_none`
+- :py:meth:`~.State.get_when_not_none`
 
 For example, the following code will watch the state,
-and print out a message when the price of gold is below 40$.
+and print out a message when the price of gold is below 40.
 
 .. code-block:: python
 
-    price = state.get_when(lamba state: state['gold_price'] < 40)
+    while True:
+        snapshot = state.get_when(lambda state: state['gold_price'] < 40)
 
-    print('"gold_price" is below 40$ !:', price)
+        print('"gold_price" is below 40!!:', snapshot['gold_price'])
+
+---
 
 There also these utility methods in :py:class:`.Context` that are just a wrapper
 over their counterparts in :py:class:`.State`.
@@ -30,6 +33,8 @@ over their counterparts in :py:class:`.State`.
 - :py:meth:`~.Context.call_when`
 - :py:meth:`~.Context.call_when_equal`
 - :py:meth:`~.Context.call_when_not_equal`
+- :py:meth:`~.Context.call_when_none`
+- :py:meth:`~.Context.call_when_not_none`
 
 
 These help you avoid writing the extra 5 lines of code.
@@ -39,12 +44,22 @@ For example, the function ``want_pizza()`` will be called every-time the ``"num_
 .. code-block:: python
 
     @ctx.call_when_change("num_pizza")
-    def want_pizza(num_pizza, state):
-        print("pizza be tasty!", num_pizza)
+    def want_pizza(snapshot, state):
+        print("pizza be tasty!", snapshot['num_pizza'])
+
+
+Snapshots
+---------
+
+All watchers provide return with a *snapshot* of the state,
+corresponding to the state-change for which the state watcher was triggered.
+
+In practice, this helps avoid race conditions.
+
+For instance, if we want the state watcher to be triggered at the
 
 
 .. _live-events:
-
 
 Live-ness of events
 -------------------
@@ -171,6 +186,11 @@ Its easy to decide whether you need live updates or not.
 Live mode is obviously faster (potentially), since it can miss an update or two,
 which eventually trickles down to less computation.
 
+.. _duplicate-events:
+
+Duplicate-ness of events
+------------------------
+
 
 Timeouts
 --------
@@ -185,7 +205,6 @@ If an update doesn't occur within the timeout, a ``TimeoutError`` is raised.
         print(state.get_when_change(timeout=5))  # wait 5 seconds for an update
     except TimeoutError:
         print('Waited too long!)
-
 
 
 

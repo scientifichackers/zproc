@@ -9,7 +9,7 @@ import time
 
 import zproc
 
-TIMEOUT = 10000
+TIMEOUT = 10
 SLOW = True
 
 ctx = zproc.Context()
