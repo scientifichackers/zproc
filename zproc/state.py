@@ -168,12 +168,12 @@ class State(util.SecretKeyHolder):
 
         return util.handle_remote_exc(response)
 
-    def _atomic(self, fn, *args, **kwargs):
+    def _run_fn_atomically(self, fn, *args, **kwargs):
         snapshot = self._req_rep({Msg.server_fn: ServerFn.exec_atomic_fn})
 
         try:
             result = fn(snapshot, *args, **kwargs)
-        except:
+        except Exception:
             util.send(self._push_sock, self._serializer, None)
             raise
         else:
@@ -447,10 +447,10 @@ class State(util.SecretKeyHolder):
     def popitem(self):
         pass
 
-    def setdefault(self, k, default=None):
+    def setdefault(self, k, d=None):
         pass
 
-    def update(self, __m, **kwargs) -> None:
+    def update(self, E=None, **F) -> None:
         pass
 
 
@@ -533,7 +533,7 @@ def atomic(fn: Callable) -> Callable:
     """
 
     @functools.wraps(fn)
-    def wrapper(state, *args, **kwargs):
-        return state._atomic(fn, *args, **kwargs)
+    def wrapper(state: State, *args, **kwargs):
+        return state._run_fn_atomically(fn, *args, **kwargs)
 
     return wrapper

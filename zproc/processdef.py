@@ -150,6 +150,6 @@ def process_map_worker(
             pull_sock.close()
             push_sock.close()
             return
-        except:
+        except Exception:
             # proxy the exception back to parent.
             util.send(push_sock, serializer, exceptions.RemoteException())

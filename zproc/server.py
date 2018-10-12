@@ -70,7 +70,7 @@ class Server(util.SecretKeyHolder):
                 self.req_rep_address = util.bind_to_random_address(self.router_sock)
                 self.pub_sub_address = util.bind_to_random_address(self.pub_sock)
                 self.push_pull_address = util.bind_to_random_address(self.pull_sock)
-        except:
+        except Exception:
             push_sock.send(self._serializer.dumps(exceptions.RemoteException()))
             self.close()
         else:
@@ -204,6 +204,6 @@ class Server(util.SecretKeyHolder):
             except KeyboardInterrupt:
                 self.close()
                 raise
-            except:
+            except Exception:
                 # proxy the exception back to parent.
                 self.reply(exceptions.RemoteException())
