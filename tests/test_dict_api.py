@@ -79,10 +79,6 @@ def test_copy(state, pydict):
     assert state.copy() == pydict.copy()
 
 
-def test_fromkeys(state, pydict):
-    assert state.fromkeys([1, 2, 3], "foo") == pydict.fromkeys([1, 2, 3], "foo")
-
-
 def test_get(state, pydict):
     assert state.get("xxx", []) == pydict.get("xxx", [])
     assert state.get("foo") == pydict.get("foo")

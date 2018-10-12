@@ -1,19 +1,7 @@
 import functools
 import os
 import time
-from typing import (
-    Union,
-    Hashable,
-    Any,
-    Iterator,
-    Iterable,
-    Dict,
-    Optional,
-    Tuple,
-    Mapping,
-    TypeVar,
-    Callable,
-)
+from typing import Union, Hashable, Any, Callable
 
 import itsdangerous
 import zmq
@@ -23,13 +11,6 @@ from zproc.server import ServerFn, Msg
 
 ZMQ_IDENTITY_SIZE = 8
 DEFAULT_ZMQ_RECVTIMEO = -1
-
-
-T = TypeVar("T")
-KT = TypeVar("KT")  # Key type.
-VT = TypeVar("VT")  # Value type.
-VT_co = TypeVar("VT_co", covariant=True)  # Value type covariant containers.
-RT = TypeVar("RT")  # return type
 
 
 def _create_get_when_xxx_mainloop(self: "State", live: bool):
@@ -79,7 +60,7 @@ class State(util.SecretKeyHolder):
             ``__len__()``, ``__ne__()``, ``__setitem__()``
 
         - Methods:
-            ``clear()``, ``copy()``, ``fromkeys()``, ``get()``,
+            ``clear()``, ``copy()``, ``get()``,
             ``items()``,  ``keys()``, ``pop()``, ``popitem()``,
             ``setdefault()``, ``update()``, ``values()``
 
@@ -310,8 +291,8 @@ class State(util.SecretKeyHolder):
 
     def get_when_not_equal(
         self,
-        key: KT,
-        value: VT,
+        key: Hashable,
+        value: Any,
         *,
         live: bool = True,
         timeout: Union[float, int, None] = None,
@@ -433,16 +414,16 @@ class State(util.SecretKeyHolder):
     def __contains__(self, o: object) -> bool:
         pass
 
-    def __delitem__(self, v: KT) -> None:
+    def __delitem__(self, v) -> None:
         pass
 
     def __eq__(self, o: object) -> bool:
         pass
 
-    def __getitem__(self, k: KT) -> VT:
+    def __getitem__(self, k):
         pass
 
-    def __iter__(self) -> Iterator[KT]:
+    def __iter__(self):
         pass
 
     def __len__(self) -> int:
@@ -451,29 +432,25 @@ class State(util.SecretKeyHolder):
     def __ne__(self, o: object) -> bool:
         pass
 
-    def __setitem__(self, k: KT, v: VT) -> None:
+    def __setitem__(self, k, v) -> None:
         pass
 
     def clear(self) -> None:
         pass
 
-    @staticmethod
-    def fromkeys(seq: Iterable[T]) -> Dict[T, Any]:
+    def get(self, k):
         pass
 
-    def get(self, k: KT) -> Optional[VT_co]:
+    def pop(self, k):
         pass
 
-    def pop(self, k: KT) -> VT:
+    def popitem(self):
         pass
 
-    def popitem(self) -> Tuple[KT, VT]:
+    def setdefault(self, k, default=None):
         pass
 
-    def setdefault(self, k: KT, default: Optional[VT] = None) -> VT:
-        pass
-
-    def update(self, __m: Mapping[KT, VT], **kwargs: VT) -> None:
+    def update(self, __m, **kwargs) -> None:
         pass
 
 
@@ -510,7 +487,6 @@ for name in {
     "__ne__",
     "__setitem__",
     "clear",
-    "fromkeys",
     "get",
     "pop",
     "popitem",
@@ -520,7 +496,7 @@ for name in {
     setattr(State, name, _create_remote_dict_method(name))
 
 
-def atomic(fn: Callable[[dict], RT]) -> Callable[[State], RT]:
+def atomic(fn: Callable) -> Callable:
     """
     Wraps a function, to create an atomic operation out of it.
 
@@ -545,8 +521,8 @@ def atomic(fn: Callable[[dict], RT]) -> Callable[[State], RT]:
     >>> import zproc
     >>>
     >>> @zproc.atomic
-    ... def increment(frozen):
-    ...     return frozen['count'] + 1
+    ... def increment(snapshot):
+    ...     return snapshot['count'] + 1
     ...
     >>>
     >>> ctx = zproc.Context()
