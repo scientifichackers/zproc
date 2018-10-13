@@ -54,9 +54,20 @@ def start_server(
     try:
         server_address = util.recv(sock, serializer)
     except zmq.ZMQError as e:
-        raise ConnectionError(
-            "Encountered - %s. Perhaps the server is already running?" % repr(e)
-        )
+        if e.errno == 98:
+            to_raise = ConnectionError(
+                "Encountered - %s. Perhaps the server is already running?" % repr(e)
+            )
+            to_raise.zmq_error = e
+            raise to_raise
+        if e.errno == 22:
+            to_raise = ValueError(
+                "Encountered - %s. `server_address` must be a string containing a valid endpoint."
+                % repr(e)
+            )
+            to_raise.zmq_error = e
+            raise to_raise
+        raise
     finally:
         sock.close()
         util.close_zmq_ctx(ctx)

@@ -184,6 +184,7 @@ class Server(util.SecretKeyHolder):
         self.router_sock.close()
         self.pub_sock.close()
         util.close_zmq_ctx(self.zmq_ctx)
+        os._exit(1)
 
     def dispatch(self, request):
         # print("dispatch:", request)
@@ -192,7 +193,6 @@ class Server(util.SecretKeyHolder):
     def main(self):
         def signal_handler(*args):
             self.close()
-            util.clean_process_tree(*args)
 
         signal.signal(signal.SIGTERM, signal_handler)
 

@@ -48,6 +48,10 @@ For example, the function ``want_pizza()`` will be called every-time the ``"num_
         print("pizza be tasty!", snapshot['num_pizza'])
 
 
+.. note::
+    All state-watchers are ``KeyError`` safe.
+    That means, if the dict key you requested for isn't present, a ``KeyError`` won't be thrown.
+
 Snapshots
 ---------
 

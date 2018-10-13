@@ -27,6 +27,15 @@ Here's how you create a :py:class:`.Context`.
 
 
 
+.. warning::
+    Absolutely none of the the classes in ZProc are Process/Thread safe. You must never attempt to share a Context/State from multiple processes. Create a new one for each Process/Thread.
+
+    Communicate and synchronize using the State at all times.
+
+    This is also, in-general *very* good practice.
+
+    Never share python objects between Processes, and the framework will reward you :).
+
 Launching a Process
 -------------------
 
