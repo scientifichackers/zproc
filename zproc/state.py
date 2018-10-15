@@ -232,6 +232,14 @@ class State(util.SecretKeyHolder):
         timeout: Union[float, int, None] = None,
         duplicate_okay: bool = False,
     ):
+        """
+        A low-level hook
+        :param live:
+        :param timeout:
+        :param duplicate_okay:
+        :return:
+        """
+
         @_create_get_when_xxx_mainloop(self, live)
         def mainloop(sock, start_time):
             return self._recv_sub(sock, start_time, timeout, duplicate_okay)
