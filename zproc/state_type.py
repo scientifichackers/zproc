@@ -1,8 +1,5 @@
 from zproc.server import ServerFn, Msg
 
-ZMQ_IDENTITY_SIZE = 8
-DEFAULT_ZMQ_RECVTIMEO = -1
-
 STATE_DICT_METHODS = {
     "__contains__",
     "__delitem__",
