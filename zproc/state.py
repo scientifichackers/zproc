@@ -1,7 +1,7 @@
 import functools
 import os
 import time
-from typing import Union, Hashable, Any, Callable, Optional
+from typing import Union, Hashable, Any, Callable, Optional, Tuple
 
 import itsdangerous
 import zmq
@@ -233,7 +233,7 @@ class State(
         exclude: bool = False,
         live: bool = False,
         timeout: Optional[Union[float, int]] = None
-    ):
+    ) -> dict:
         """
         Block until a change is observed, and then return a copy of the state.
 
@@ -266,7 +266,7 @@ class State(
         live: bool = False,
         timeout: Optional[Union[float, int]] = None,
         duplicate_okay: bool = False,
-    ):
+    ) -> Tuple[dict, dict, bool]:
         """
         A low-level hook that emits each and every state update.
 
@@ -286,7 +286,7 @@ class State(
         live: bool = False,
         timeout: Optional[Union[float, int]] = None,
         duplicate_okay: bool = False
-    ):
+    ) -> dict:
         """
         Block until ``test_fn(state)`` returns a "truthy" value,
         and then return a copy of the state.
@@ -316,7 +316,7 @@ class State(
         live: bool = False,
         timeout: Optional[Union[float, int]] = None,
         duplicate_okay: bool = False
-    ):
+    ) -> dict:
         """
         Block until ``state.get(key) == value``, and then return a copy of the state.
 
@@ -338,7 +338,7 @@ class State(
         live: bool = False,
         timeout: Optional[Union[float, int]] = None,
         duplicate_okay: bool = False
-    ):
+    ) -> dict:
         """
         Block until ``state.get(key) != value``, and then return a copy of the state.
 
@@ -359,7 +359,7 @@ class State(
         live: bool = False,
         timeout: Optional[Union[float, int]] = None,
         duplicate_okay: bool = False
-    ):
+    ) -> dict:
         """
         Block until ``state.get(key) is None``, and then return a copy of the state.
 
@@ -380,7 +380,7 @@ class State(
         live: bool = False,
         timeout: Optional[Union[float, int]] = None,
         duplicate_okay: bool = False
-    ):
+    ) -> dict:
         """
         Block until ``state.get(key) is not None``, and then return a copy of the state.
 
