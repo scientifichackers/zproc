@@ -4,6 +4,9 @@ T = TypeVar("T")
 KT = TypeVar("KT")
 VT = TypeVar("VT")
 
+class StateType(type):
+    pass
+
 class StateDictMethodStub:
     def __contains__(self, o: object) -> bool: ...
     def __delitem__(self, v: KT) -> None: ...

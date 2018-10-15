@@ -43,7 +43,7 @@ class ServerFn(enum.Enum):
 class Server(util.SecretKeyHolder):
     _active_identity = b""
     _active_namespace = b""
-    _active_state = {}
+    _active_state = {}  # type:dict
 
     def __init__(
         self, server_address: str, push_address: str, secret_key: str = None
