@@ -1,4 +1,4 @@
-from zproc.server import ServerFn, Msg
+from zproc.constants import Msgs, Commands
 
 STATE_DICT_METHODS = {
     "__contains__",
@@ -18,7 +18,7 @@ STATE_DICT_METHODS = {
 }
 
 
-def _create_remote_dict_method(state_method_name: str):
+def _create_remote_dict_method(dict_method_name: str):
     """
     Generates a method for the State class,
     that will call the "method_name" on the state (a ``dict``) stored on the server,
@@ -30,14 +30,14 @@ def _create_remote_dict_method(state_method_name: str):
     def remote_method(self, *args, **kwargs):
         return self._req_rep(
             {
-                Msg.server_fn: ServerFn.exec_state_method,
-                Msg.state_method: state_method_name,
-                Msg.args: args,
-                Msg.kwargs: kwargs,
+                Msgs.cmd: Commands.exec_dict_method,
+                Msgs.info: dict_method_name,
+                Msgs.args: args,
+                Msgs.kwargs: kwargs,
             }
         )
 
-    remote_method.__name__ = state_method_name
+    remote_method.__name__ = dict_method_name
     return remote_method
 
 

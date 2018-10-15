@@ -163,3 +163,10 @@ def chunk_gen(it, size, count):
 
 def is_main_thread():
     return threading.current_thread() == threading.main_thread()
+
+
+def create_zmq_context() -> zmq.Context:
+    ctx = zmq.Context()
+    ctx.setsockopt(zmq.LINGER, 0)
+
+    return ctx

@@ -20,5 +20,5 @@ def test2():
 
 
 def test3():
-    state.namespace = ""
+    state.namespace = "test3"
     assert state == {}

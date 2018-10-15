@@ -7,7 +7,8 @@ import itsdangerous
 import zmq
 
 from zproc import tools, util, state_type
-from zproc.server import ServerFn, Msg
+from zproc.constants import Msgs, Commands
+
 
 ZMQ_IDENTITY_SIZE = 8
 DEFAULT_ZMQ_RECVTIMEO = -1
@@ -83,8 +84,7 @@ class State(
 
         self._identity = os.urandom(ZMQ_IDENTITY_SIZE)
 
-        self._zmq_ctx = zmq.Context()
-        self._zmq_ctx.setsockopt(zmq.LINGER, 0)
+        self._zmq_ctx = util.create_zmq_context()
 
         self.server_address = server_address
 
@@ -119,7 +119,7 @@ class State(
         self._namespace_len = len(self._namespace_bytes)
 
     def _head(self):
-        return self._req_rep({Msg.server_fn: ServerFn.head})
+        return self._req_rep({Msgs.cmd: Commands.head})
 
     def _create_subscribe_sock(self):
         sock = self._zmq_ctx.socket(zmq.SUB)
@@ -170,16 +170,16 @@ class State(
             subscribe_sock.setsockopt(zmq.RCVTIMEO, DEFAULT_ZMQ_RECVTIMEO)
 
     def _req_rep(self, request):
-        request[Msg.namespace] = self._namespace_bytes
-        # print("send:", request)
+        request[Msgs.namespace] = self._namespace_bytes
+        # print("sent:", request)
         util.send(self._dealer_sock, self._serializer, request)
         response = util.recv(self._dealer_sock, self._serializer)
-        # print('res:', response)
+        # print("recvd:", response)
 
         return util.handle_remote_exc(response)
 
     def _run_fn_atomically(self, fn, *args, **kwargs):
-        snapshot = self._req_rep({Msg.server_fn: ServerFn.exec_atomic_fn})
+        snapshot = self._req_rep({Msgs.cmd: Commands.exec_atomic_fn})
 
         try:
             result = fn(snapshot, *args, **kwargs)
@@ -196,7 +196,7 @@ class State(
         Set the state, completely over-writing the previous value.
         """
 
-        return self._req_rep({Msg.server_fn: ServerFn.set_state, Msg.value: value})
+        return self._req_rep({Msgs.cmd: Commands.set_state, Msgs.info: value})
 
     def copy(self):
         """
@@ -205,7 +205,7 @@ class State(
         Unlike the shallow-copy returned by :py:meth:`dict.copy`.
         """
 
-        return self._req_rep({Msg.server_fn: ServerFn.state_reply})
+        return self._req_rep({Msgs.cmd: Commands.get_state})
 
     def keys(self):
         return self.copy().keys()

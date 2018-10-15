@@ -5,7 +5,8 @@ from typing import Union, Callable, Optional
 import zmq
 
 from zproc import util
-from zproc.server import ServerFn, Msg, Server
+from zproc.server import Server
+from zproc.constants import Msgs, Commands
 
 
 def start_server(
@@ -37,9 +38,8 @@ def start_server(
     :return: ``tuple``, containing a ``multiprocessing.Process`` object for server and the server address.
     """
 
-    ctx = zmq.Context()
-    ctx.setsockopt(zmq.LINGER, 0)
-    sock = ctx.socket(zmq.PULL)
+    zmq_ctx = util.create_zmq_context()
+    sock = zmq_ctx.socket(zmq.PULL)
     pull_address = util.bind_to_random_address(sock)
 
     serializer = util.get_serializer(secret_key)
@@ -66,7 +66,7 @@ def start_server(
         raise
     finally:
         sock.close()
-        util.close_zmq_ctx(ctx)
+        util.close_zmq_ctx(zmq_ctx)
 
     return server_process, server_address
 
@@ -75,7 +75,7 @@ def ping(
     server_address: str,
     *,
     timeout: Optional[Union[float, int]] = None,
-    payload: Optional[Union[bytes]] = None,
+    sent_payload: Optional[Union[bytes]] = None,
     secret_key: str = None
 ) -> Optional[int]:
     """
@@ -96,7 +96,7 @@ def ping(
 
         By default it is set to ``None``.
 
-    :param payload:
+    :param sent_payload:
         payload that will be sent to the server.
 
         If it is set to None, then ``os.urandom(56)`` (56 random bytes) will be used.
@@ -110,29 +110,29 @@ def ping(
         then it probably means there is some fault in communication with the server.
     """
 
-    if payload is None:
-        payload = os.urandom(56)
+    if sent_payload is None:
+        sent_payload = os.urandom(56)
 
     serializer = util.get_serializer(secret_key)
 
-    ctx = zmq.Context()
-    ctx.setsockopt(zmq.LINGER, 0)
+    zmq_ctx = util.create_zmq_context()
 
-    sock = ctx.socket(zmq.DEALER)
+    sock = zmq_ctx.socket(zmq.DEALER)
     sock.connect(server_address)
 
     if timeout is not None:
         sock.setsockopt(zmq.RCVTIMEO, int(timeout * 1000))
 
-    sock.send(serializer.dumps({Msg.server_fn: ServerFn.ping, Msg.payload: payload}))
+    sock.send(serializer.dumps({Msgs.cmd: Commands.ping, Msgs.info: sent_payload}))
 
     try:
         response = util.handle_remote_exc(serializer.loads(sock.recv()))
     except zmq.error.Again:
         raise TimeoutError("Timed-out waiting while for the ZProc server to respond.")
     else:
-        if response[Msg.payload] == payload:
-            return response[Msg.pid]
+        recv_payload, pid = response[Msgs.info]
+        if recv_payload == sent_payload:
+            return pid
         else:
             return None
     finally:

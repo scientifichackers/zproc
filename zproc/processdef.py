@@ -42,7 +42,7 @@ def child_process(
         state = None
 
     if state is None:
-        zmq_ctx = zmq.Context()
+        zmq_ctx = util.create_zmq_context()
     else:
         zmq_ctx = state._zmq_ctx
     result_sock = zmq_ctx.socket(zmq.PUSH)

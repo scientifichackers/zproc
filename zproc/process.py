@@ -170,19 +170,13 @@ class Process(util.SecretKeyHolder):
         self.server_address = server_address
         self.target = target
 
-        self._zmq_ctx = zmq.Context()
-        self._zmq_ctx.setsockopt(zmq.LINGER, 0)
+        self._zmq_ctx = util.create_zmq_context()
         self._result_sock = self._zmq_ctx.socket(zmq.PULL)
         # The result socket is meant to be used only after the process completes (after join()).
         # That implies -- we shouldn't need to wait for the result message.
         self._result_sock.setsockopt(zmq.RCVTIMEO, 0)
 
-        if os.system == "posix":
-            result_address = "ipc://" + str(util.ipc_base_dir) + str(uuid.uuid1())
-            self._result_sock.bind(result_address)
-        else:
-            port = self._result_sock.bind_to_random_port("tcp://*")
-            result_address = "tcp://127.0.0.1:{}".format(port)
+        result_address = util.bind_to_random_address(self._result_sock)
 
         self.child = backend(
             target=child_process,

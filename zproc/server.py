@@ -1,4 +1,3 @@
-import enum
 import os
 import signal
 from collections import defaultdict
@@ -10,34 +9,9 @@ import zmq
 from tblib import pickling_support
 
 from zproc import util, exceptions
+from zproc.constants import Msgs, Commands
 
 pickling_support.install()
-
-
-@enum.unique
-class Msg(enum.Enum):
-    server_fn = 1
-    state_method = 2
-    args = 3
-    kwargs = 4
-    fn = 5
-    key = 6
-    keys = 7
-    value = 8
-    payload = 9
-    pid = 10
-    namespace = 11
-    address = 12
-
-
-@enum.unique
-class ServerFn(enum.Enum):
-    ping = 1
-    head = 2
-    state_reply = 3
-    exec_atomic_fn = 4
-    exec_state_method = 5
-    set_state = 6
 
 
 class Server(util.SecretKeyHolder):
@@ -50,8 +24,7 @@ class Server(util.SecretKeyHolder):
     ) -> None:
         super().__init__(secret_key)
 
-        self.zmq_ctx = zmq.Context()
-        self.zmq_ctx.setsockopt(zmq.LINGER, 0)
+        self.zmq_ctx = util.create_zmq_context()
 
         self.router_sock = self.zmq_ctx.socket(zmq.ROUTER)
         self.pub_sock = self.zmq_ctx.socket(zmq.PUB)
@@ -63,6 +36,7 @@ class Server(util.SecretKeyHolder):
         try:
             if server_address:
                 self.req_rep_address = server_address
+
                 self.router_sock.bind(self.req_rep_address)
                 if "ipc" in server_address:
                     self.pub_sub_address = util.bind_to_random_ipc(self.pub_sock)
@@ -85,18 +59,26 @@ class Server(util.SecretKeyHolder):
         # see State._get_subscribe_sock() for more
         self.pub_sock.setsockopt(zmq.INVERT_MATCHING, 1)
 
-        self.state_namespace = defaultdict(dict)  # type:Dict[bytes, Dict[Any, Any]]
-        self.dispatch_dict = {i: getattr(self, i.name) for i in ServerFn}
+        self.state_store = defaultdict(dict)  # type:Dict[bytes, Dict[Any, Any]]
 
-    def recv(self) -> Dict[Msg, Any]:
+        self.dispatch_dict = {
+            Commands.exec_atomic_fn: self.exec_atomic_fn,
+            Commands.exec_dict_method: self.exec_dict_method,
+            Commands.get_state: self.send_state,
+            Commands.set_state: self.set_state,
+            Commands.head: self.head,
+            Commands.ping: self.ping,
+        }
+
+    def recv(self) -> Dict[Msgs, Any]:
         self._active_identity, msg = self.router_sock.recv_multipart()
 
         request = self._serializer.loads(msg)
         try:
-            self._active_namespace = request[Msg.namespace]
+            self._active_namespace = request[Msgs.namespace]
         except KeyError:
             pass
-        self._active_state = self.state_namespace[self._active_namespace]
+        self._active_state = self.state_store[self._active_namespace]
 
         # print(
         #     self._active_identity,
@@ -118,7 +100,7 @@ class Server(util.SecretKeyHolder):
 
     def dispatch(self, request):
         # print("dispatch:", request)
-        self.dispatch_dict[request[Msg.server_fn]](request)
+        self.dispatch_dict[request[Msgs.cmd]](request)
 
     def pub_state(self, old_state: dict):
         """Publish the state to everyone"""
@@ -138,39 +120,33 @@ class Server(util.SecretKeyHolder):
 
         Publishes the state if the function executes successfully.
         """
-
         old_state = deepcopy(self._active_state)
-        # print(fn, args, kwargs)
-
-        result = fn()
-
-        self.send(result)
+        self.send(fn())
         self.pub_state(old_state)
 
     def head(self, _):
         self.send((self.pub_sub_address, self.push_pull_address))
 
     def ping(self, request):
-        self.send({Msg.pid: os.getpid(), Msg.payload: request[Msg.payload]})
+        self.send({Msgs.info: [request[Msgs.info], os.getpid()]})
 
     def set_state(self, request):
         def _set_state():
-            self.state_namespace[self._active_namespace] = request[Msg.value]
+            self.state_store[self._active_namespace] = request[Msgs.info]
 
         self.fn_executor(_set_state)
 
-    def state_reply(self, _=None):
+    def send_state(self, _=None):
         """reply with state to the current client"""
 
         self.send(self._active_state)
 
-    def exec_state_method(self, request):
+    def exec_dict_method(self, request):
         """Execute a method on the state ``dict`` and reply with the result."""
-
         state_method_name, args, kwargs = (
-            request[Msg.state_method],
-            request[Msg.args],
-            request[Msg.kwargs],
+            request[Msgs.info],
+            request[Msgs.args],
+            request[Msgs.kwargs],
         )
         # print(method_name, args, kwargs)
         self.fn_executor(
@@ -186,9 +162,7 @@ class Server(util.SecretKeyHolder):
         new_state = self._serializer.loads(self.pull_sock.recv())
 
         if new_state is not None:
-            self.state_namespace[
-                self._active_namespace
-            ] = self._active_state = new_state
+            self.state_store[self._active_namespace] = self._active_state = new_state
 
         self.pub_state(old_state)
 
@@ -199,8 +173,10 @@ class Server(util.SecretKeyHolder):
         os._exit(1)
 
     def main(self):
-        def signal_handler(*args):
+        def signal_handler(signum, _):
             self.close()
+            print("stopped server")
+            os._exit(signum)
 
         signal.signal(signal.SIGTERM, signal_handler)
 
