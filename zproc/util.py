@@ -6,6 +6,7 @@ import threading
 import time
 import traceback
 import uuid
+from typing import Optional
 
 import itsdangerous
 import psutil
@@ -32,11 +33,11 @@ def get_signed_serializer(secret_key, *args, **kwargs):
     return itsdangerous.Serializer(secret_key, *args, **kwargs, serializer=Serializer)
 
 
-def get_serializer(secret_key=None, *args, **kwargs):
+def get_serializer(secret_key: Optional[str] = None):
     if secret_key is None:
         return Serializer()
 
-    return get_signed_serializer(secret_key, *args, **kwargs)
+    return get_signed_serializer(secret_key)
 
 
 def handle_remote_exc(response):
@@ -60,8 +61,7 @@ def recv(sock: zmq.Socket, serializer):
 
 
 class SecretKeyHolder:
-    def __init__(self, secret_key: str) -> None:
-        self._secret_key, self._serializer = None, None
+    def __init__(self, secret_key: Optional[str]) -> None:
         self.secret_key = secret_key
 
     @property
@@ -69,7 +69,7 @@ class SecretKeyHolder:
         return self._secret_key
 
     @secret_key.setter
-    def secret_key(self, secret_key: str):
+    def secret_key(self, secret_key: Optional[str]):
         self._secret_key = secret_key
         self._serializer = get_serializer(self._secret_key)
 
