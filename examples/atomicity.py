@@ -30,7 +30,6 @@ def increment(state: zproc.State):
     count = state["count"]
     sleep(random())  # this ensures that this operation is non-atomic
     state["count"] = count + 1
-
     print(state["count"])
 
 

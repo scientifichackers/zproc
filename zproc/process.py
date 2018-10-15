@@ -27,7 +27,7 @@ class Process(util.SecretKeyHolder):
         retry_kwargs: Optional[dict] = None,
         start: bool = True,
         backend: Callable = multiprocessing.Process,
-        namespace: str = "",
+        namespace: str = "default",
         secret_key: Optional[str] = None
     ) -> None:
         """

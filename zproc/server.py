@@ -41,6 +41,10 @@ class ServerFn(enum.Enum):
 
 
 class Server(util.SecretKeyHolder):
+    _active_identity = b""
+    _active_namespace = b""
+    _active_state = {}
+
     def __init__(
         self, server_address: str, push_address: str, secret_key: str = None
     ) -> None:
@@ -84,39 +88,47 @@ class Server(util.SecretKeyHolder):
         self.state_namespace = defaultdict(dict)  # type:Dict[bytes, Dict[Any, Any]]
         self.dispatch_dict = {i: getattr(self, i.name) for i in ServerFn}
 
-    def wait_for_req(self) -> Dict[Msg, Any]:
-        """wait for a client to send a request"""
-
-        identity, msg = self.router_sock.recv_multipart()
-        # print("server:", identity, request)
-
-        self.identity_for_req = identity
+    def recv(self) -> Dict[Msg, Any]:
+        self._active_identity, msg = self.router_sock.recv_multipart()
 
         request = self._serializer.loads(msg)
-        if request[Msg.server_fn] not in (ServerFn.ping, ServerFn.head):
-            self.namespace_for_req = request[Msg.namespace]
-            self.state_for_req = self.state_namespace[self.namespace_for_req]
+        try:
+            self._active_namespace = request[Msg.namespace]
+        except KeyError:
+            pass
+        self._active_state = self.state_namespace[self._active_namespace]
 
+        # print(
+        #     self._active_identity,
+        #     msg,
+        #     request,
+        #     self._active_namespace,
+        #     self._active_state,
+        # )
         return request
 
-    def pub_state(self, old_state: dict):
-        """Publish the state to everyone"""
-
-        self.pub_sock.send(
-            self.identity_for_req
-            + self.namespace_for_req
-            + self._serializer.dumps(
-                [old_state, self.state_for_req, old_state == self.state_for_req]
-            )
-        )
-
-    def reply(self, response):
+    def send(self, response):
         """reply with ``response`` to a client (with said ``identity``)"""
 
         # print("server rep:", self.identity_for_req, response)
 
         self.router_sock.send_multipart(
-            [self.identity_for_req, self._serializer.dumps(response)]
+            [self._active_identity, self._serializer.dumps(response)]
+        )
+
+    def dispatch(self, request):
+        # print("dispatch:", request)
+        self.dispatch_dict[request[Msg.server_fn]](request)
+
+    def pub_state(self, old_state: dict):
+        """Publish the state to everyone"""
+
+        self.pub_sock.send(
+            self._active_identity
+            + self._active_namespace
+            + self._serializer.dumps(
+                [old_state, self._active_state, old_state == self._active_state]
+            )
         )
 
     def fn_executor(self, fn):
@@ -127,30 +139,30 @@ class Server(util.SecretKeyHolder):
         Publishes the state if the function executes successfully.
         """
 
-        old_state = deepcopy(self.state_for_req)
+        old_state = deepcopy(self._active_state)
         # print(fn, args, kwargs)
 
         result = fn()
 
-        self.reply(result)
+        self.send(result)
         self.pub_state(old_state)
 
     def head(self, _):
-        self.reply((self.pub_sub_address, self.push_pull_address))
+        self.send((self.pub_sub_address, self.push_pull_address))
 
     def ping(self, request):
-        self.reply({Msg.pid: os.getpid(), Msg.payload: request[Msg.payload]})
+        self.send({Msg.pid: os.getpid(), Msg.payload: request[Msg.payload]})
 
     def set_state(self, request):
         def _set_state():
-            self.state_namespace[self.namespace_for_req] = request[Msg.value]
+            self.state_namespace[self._active_namespace] = request[Msg.value]
 
         self.fn_executor(_set_state)
 
     def state_reply(self, _=None):
         """reply with state to the current client"""
 
-        self.reply(self.state_for_req)
+        self.send(self._active_state)
 
     def exec_state_method(self, request):
         """Execute a method on the state ``dict`` and reply with the result."""
@@ -162,21 +174,21 @@ class Server(util.SecretKeyHolder):
         )
         # print(method_name, args, kwargs)
         self.fn_executor(
-            lambda: getattr(self.state_for_req, state_method_name)(*args, **kwargs)
+            lambda: getattr(self._active_state, state_method_name)(*args, **kwargs)
         )
 
     def exec_atomic_fn(self, _):
         """Execute a function, atomically and reply with the result."""
 
-        self.reply(self.state_for_req)
+        self.send(self._active_state)
 
-        old_state = deepcopy(self.state_for_req)
+        old_state = deepcopy(self._active_state)
         new_state = self._serializer.loads(self.pull_sock.recv())
 
         if new_state is not None:
             self.state_namespace[
-                self.namespace_for_req
-            ] = self.state_for_req = new_state
+                self._active_namespace
+            ] = self._active_state = new_state
 
         self.pub_state(old_state)
 
@@ -186,10 +198,6 @@ class Server(util.SecretKeyHolder):
         util.close_zmq_ctx(self.zmq_ctx)
         os._exit(1)
 
-    def dispatch(self, request):
-        # print("dispatch:", request)
-        self.dispatch_dict[request[Msg.server_fn]](request)
-
     def main(self):
         def signal_handler(*args):
             self.close()
@@ -198,7 +206,7 @@ class Server(util.SecretKeyHolder):
 
         while True:
             try:
-                self.dispatch(self.wait_for_req())
+                self.dispatch(self.recv())
             except itsdangerous.BadSignature:
                 pass
             except KeyboardInterrupt:
@@ -206,4 +214,4 @@ class Server(util.SecretKeyHolder):
                 raise
             except Exception:
                 # proxy the exception back to parent.
-                self.reply(exceptions.RemoteException())
+                self.send(exceptions.RemoteException())

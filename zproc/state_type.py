@@ -49,3 +49,8 @@ class StateType(type):
             setattr(cls, name, _create_remote_dict_method(name))
 
         return cls
+
+
+# See "state_type.pyi" for more
+class StateDictMethodStub:
+    pass

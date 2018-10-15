@@ -36,12 +36,14 @@ def _create_get_when_xxx_mainloop(self: "State", live: bool):
     return decorator
 
 
-class State(util.SecretKeyHolder, metaclass=state_type.StateType):
+class State(
+    util.SecretKeyHolder, state_type.StateDictMethodStub, metaclass=state_type.StateType
+):
     def __init__(
         self,
         server_address: str,
         *,
-        namespace: str = "",
+        namespace: str = "default",
         secret_key: Optional[str] = None
     ) -> None:
         """
@@ -111,6 +113,8 @@ class State(util.SecretKeyHolder, metaclass=state_type.StateType):
 
     @namespace.setter
     def namespace(self, namespace: str):
+        assert len(namespace) > 0, "'namespace' cannot be empty!"
+
         self._namespace_bytes = namespace.encode()
         self._namespace_len = len(self._namespace_bytes)
 
@@ -139,8 +143,15 @@ class State(util.SecretKeyHolder, metaclass=state_type.StateType):
 
         try:
             while True:
-                msg = subscribe_sock.recv()[ZMQ_IDENTITY_SIZE:]
-
+                msg = subscribe_sock.recv()
+                # print(
+                #     msg,
+                #     ZMQ_IDENTITY_SIZE,
+                #     self._identity,
+                #     self._namespace_bytes,
+                #     self._namespace_len,
+                # )
+                msg = msg[ZMQ_IDENTITY_SIZE:]
                 if msg.startswith(self._namespace_bytes):
                     msg = msg[self._namespace_len :]
                     try:
@@ -151,7 +162,6 @@ class State(util.SecretKeyHolder, metaclass=state_type.StateType):
                         before, after, identical = msg
                         if not identical or duplicate_okay:
                             return before, after
-
                 if timeout is not None and time.time() - start_time > timeout:
                     raise TimeoutError("Timed-out while waiting for a state update.")
         except zmq.error.Again:
@@ -221,7 +231,7 @@ class State(util.SecretKeyHolder, metaclass=state_type.StateType):
         self,
         *keys: Hashable,
         exclude: bool = False,
-        live: bool = True,
+        live: bool = False,
         timeout: Optional[Union[float, int]] = None
     ):
         """
@@ -253,7 +263,7 @@ class State(util.SecretKeyHolder, metaclass=state_type.StateType):
 
     def get_raw_update(
         self,
-        live: bool = True,
+        live: bool = False,
         timeout: Optional[Union[float, int]] = None,
         duplicate_okay: bool = False,
     ):
@@ -273,7 +283,7 @@ class State(util.SecretKeyHolder, metaclass=state_type.StateType):
         self,
         test_fn,
         *,
-        live: bool = True,
+        live: bool = False,
         timeout: Optional[Union[float, int]] = None,
         duplicate_okay: bool = False
     ):
@@ -303,7 +313,7 @@ class State(util.SecretKeyHolder, metaclass=state_type.StateType):
         key: Hashable,
         value: Any,
         *,
-        live: bool = True,
+        live: bool = False,
         timeout: Optional[Union[float, int]] = None,
         duplicate_okay: bool = False
     ):
@@ -325,7 +335,7 @@ class State(util.SecretKeyHolder, metaclass=state_type.StateType):
         key: Hashable,
         value: Any,
         *,
-        live: bool = True,
+        live: bool = False,
         timeout: Optional[Union[float, int]] = None,
         duplicate_okay: bool = False
     ):
@@ -346,7 +356,7 @@ class State(util.SecretKeyHolder, metaclass=state_type.StateType):
         self,
         key: Hashable,
         *,
-        live: bool = True,
+        live: bool = False,
         timeout: Optional[Union[float, int]] = None,
         duplicate_okay: bool = False
     ):
@@ -367,7 +377,7 @@ class State(util.SecretKeyHolder, metaclass=state_type.StateType):
         self,
         key: Hashable,
         *,
-        live: bool = True,
+        live: bool = False,
         timeout: Optional[Union[float, int]] = None,
         duplicate_okay: bool = False
     ):

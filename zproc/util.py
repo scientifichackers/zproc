@@ -126,8 +126,8 @@ def clean_process_tree(*signal_handler_args):
     """Kill all Processes in the current Process tree, recursively."""
 
     for process in psutil.Process().children(recursive=True):
-        print(process)
         os.kill(process.pid, signal.SIGTERM)
+        print("Stopped:", process)
 
     if len(signal_handler_args):
         os._exit(signal_handler_args[0])

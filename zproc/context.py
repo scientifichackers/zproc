@@ -35,7 +35,7 @@ class Context(util.SecretKeyHolder):
         wait: bool = False,
         cleanup: bool = True,
         server_backend: Callable = multiprocessing.Process,
-        namespace: str = "",
+        namespace: str = "default",
         secret_key: str = None,
         **process_kwargs
     ) -> None:
@@ -509,7 +509,7 @@ class Context(util.SecretKeyHolder):
         self,
         *keys: Hashable,
         exclude: bool = False,
-        live: bool = True,
+        live: bool = False,
         **process_kwargs
     ):
         """
@@ -533,7 +533,7 @@ class Context(util.SecretKeyHolder):
             "get_when_change", process_kwargs, *keys, exclude=exclude, live=live
         )
 
-    def call_when(self, test_fn: Callable, *, live: bool = True, **process_kwargs):
+    def call_when(self, test_fn: Callable, *, live: bool = False, **process_kwargs):
         """
         Decorator version of :py:meth:`~State.get_when()`.
 
@@ -556,7 +556,7 @@ class Context(util.SecretKeyHolder):
         )
 
     def call_when_equal(
-        self, key: Hashable, value: Any, *, live: bool = True, **process_kwargs
+        self, key: Hashable, value: Any, *, live: bool = False, **process_kwargs
     ):
         """
         Decorator version of :py:meth:`~State.get_when_equal()`.
@@ -580,7 +580,7 @@ class Context(util.SecretKeyHolder):
         )
 
     def call_when_not_equal(
-        self, key: Hashable, value: Any, *, live: bool = True, **process_kwargs
+        self, key: Hashable, value: Any, *, live: bool = False, **process_kwargs
     ):
         """
         Decorator version of :py:meth:`~State.get_when_not_equal()`.
@@ -603,7 +603,7 @@ class Context(util.SecretKeyHolder):
             "get_when_not_equal", process_kwargs, key, value, live=live
         )
 
-    def call_when_none(self, key: Hashable, *, live: bool = True, **process_kwargs):
+    def call_when_none(self, key: Hashable, *, live: bool = False, **process_kwargs):
         """
         Decorator version of :py:meth:`~State.get_when_none()`.
 
@@ -614,7 +614,7 @@ class Context(util.SecretKeyHolder):
             "get_when_none", process_kwargs, key, live=live
         )
 
-    def call_when_not_none(self, key: Hashable, *, live: bool = True, **process_kwargs):
+    def call_when_not_none(self, key: Hashable, *, live: bool = False, **process_kwargs):
         """
         Decorator version of :py:meth:`~State.get_when_not_none()`.
 

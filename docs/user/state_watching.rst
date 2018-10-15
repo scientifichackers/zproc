@@ -72,7 +72,7 @@ Live-ness of events
 
 zproc provides 2 different "modes" for watching the state.
 
-By default, all state watchers will provide **live updates**.
+By default, all state watchers will provide **buffered updates**.
 
 Let us see what that exactly means, in detail.
 
