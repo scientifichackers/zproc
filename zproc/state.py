@@ -53,7 +53,40 @@ def _create_get_when_xxx_mainloop(self: "State", live: bool):
     return decorator
 
 
-class State(util.SecretKeyHolder):
+def _create_remote_dict_method(state_method_name: str):
+    """
+    Generates a method for the State class,
+    that will call the "method_name" on the state (a ``dict``) stored on the server,
+    and return the result.
+
+    Glorified RPC.
+    """
+
+    def remote_method(self, *args, **kwargs):
+        return self._req_rep(
+            {
+                Msg.server_fn: ServerFn.exec_state_method,
+                Msg.state_method: state_method_name,
+                Msg.args: args,
+                Msg.kwargs: kwargs,
+            }
+        )
+
+    remote_method.__name__ = state_method_name
+    return remote_method
+
+
+class StateType(type):
+    def __new__(mcs, *args, **kwargs):
+        cls = super().__new__(mcs, *args, **kwargs)
+
+        for name in STATE_DICT_METHODS:
+            setattr(cls, name, _create_remote_dict_method(name))
+
+        return cls
+
+
+class State(util.SecretKeyHolder, metaclass=StateType):
     def __init__(
         self,
         server_address: str,
@@ -275,11 +308,9 @@ class State(util.SecretKeyHolder):
         duplicate_okay: bool = False,
     ):
         """
-        A low-level hook
-        :param live:
-        :param timeout:
-        :param duplicate_okay:
-        :return:
+        A low-level hook that emits each and every state update.
+
+        .. include:: /api/state/get_raw_update.rst
         """
 
         @_create_get_when_xxx_mainloop(self, live)
@@ -432,33 +463,6 @@ class State(util.SecretKeyHolder):
         self._push_sock.close()
         self._buffered_sub_sock.close()
         util.close_zmq_ctx(self._zmq_ctx)
-
-
-def _create_remote_dict_method(state_method_name: str):
-    """
-    Generates a method for the State class,
-    that will call the "method_name" on the state (a ``dict``) stored on the server,
-    and return the result.
-
-    Glorified RPC.
-    """
-
-    def remote_method(self: State, *args, **kwargs):
-        return self._req_rep(
-            {
-                Msg.server_fn: ServerFn.exec_state_method,
-                Msg.state_method: state_method_name,
-                Msg.args: args,
-                Msg.kwargs: kwargs,
-            }
-        )
-
-    remote_method.__name__ = state_method_name
-    return remote_method
-
-
-for name in STATE_DICT_METHODS:
-    setattr(State, name, _create_remote_dict_method(name))
 
 
 def atomic(fn: Callable) -> Callable:
