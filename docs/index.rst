@@ -32,6 +32,7 @@ instructions for getting the most out of ZProc.
     user/atomicity
     user/state_watching
     user/communication.rst
+    user/security.rst
 
 The API Documentation / Guide
 -----------------------------

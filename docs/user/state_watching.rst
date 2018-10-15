@@ -58,7 +58,12 @@ corresponding to the state-change for which the state watcher was triggered.
 
 The *snapshot* is just a regular ``dict`` object.
 
-In practice, this helps avoid race conditions.
+In practice, this helps avoid race conditions -- especially in cases where state keys are inter-dependent.
+
+.. _duplicate-events:
+
+Duplicate-ness of events
+------------------------
 
 .. _live-events:
 

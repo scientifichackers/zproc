@@ -12,6 +12,23 @@ from zproc.server import ServerFn, Msg
 ZMQ_IDENTITY_SIZE = 8
 DEFAULT_ZMQ_RECVTIMEO = -1
 
+STATE_DICT_METHODS = {
+    "__contains__",
+    "__delitem__",
+    "__eq__",
+    "__getitem__",
+    "__iter__",
+    "__len__",
+    "__ne__",
+    "__setitem__",
+    "clear",
+    "get",
+    "pop",
+    "popitem",
+    "setdefault",
+    "update",
+}
+
 
 def _create_get_when_xxx_mainloop(self: "State", live: bool):
     """Generates a template for a state watcher mainloop."""
@@ -180,6 +197,31 @@ class State(util.SecretKeyHolder):
             util.send(self._push_sock, self._serializer, snapshot)
 
         return result
+
+    def set(self, value: dict):
+        """
+        Set the state, completely over-writing the previous value.
+        """
+
+        return self._req_rep({Msg.server_fn: ServerFn.set_state, Msg.value: value})
+
+    def copy(self):
+        """
+        Return a deep-copy of the state.
+
+        Unlike the shallow-copy returned by :py:meth:`dict.copy`.
+        """
+
+        return self._req_rep({Msg.server_fn: ServerFn.state_reply})
+
+    def keys(self):
+        return self.copy().keys()
+
+    def values(self):
+        return self.copy().values()
+
+    def items(self):
+        return self.copy().items()
 
     @staticmethod
     def _create_dictkey_selector(keys, exclude):
@@ -391,76 +433,6 @@ class State(util.SecretKeyHolder):
         self._buffered_sub_sock.close()
         util.close_zmq_ctx(self._zmq_ctx)
 
-    def set(self, value: dict):
-        """
-        Set the state, completely over-writing the previous value.
-        """
-
-        return self._req_rep({Msg.server_fn: ServerFn.set_state, Msg.value: value})
-
-    def copy(self):
-        """
-        Return a deep-copy of the state.
-
-        Unlike the shallow-copy returned by :py:meth:`dict.copy`.
-        """
-
-        return self._req_rep({Msg.server_fn: ServerFn.state_reply})
-
-    def keys(self):
-        return self.copy().keys()
-
-    def items(self):
-        return self.copy().items()
-
-    def values(self):
-        return self.copy().values()
-
-    # These are here to enable proper typing in IDEs.
-    # Their contents are populated at runtime. (see below)
-
-    def __contains__(self, o: object) -> bool:
-        pass
-
-    def __delitem__(self, v) -> None:
-        pass
-
-    def __eq__(self, o: object) -> bool:
-        pass
-
-    def __getitem__(self, k):
-        pass
-
-    def __iter__(self):
-        pass
-
-    def __len__(self) -> int:
-        pass
-
-    def __ne__(self, o: object) -> bool:
-        pass
-
-    def __setitem__(self, k, v) -> None:
-        pass
-
-    def clear(self) -> None:
-        pass
-
-    def get(self, k):
-        pass
-
-    def pop(self, k):
-        pass
-
-    def popitem(self):
-        pass
-
-    def setdefault(self, k, d=None):
-        pass
-
-    def update(self, E=None, **F) -> None:
-        pass
-
 
 def _create_remote_dict_method(state_method_name: str):
     """
@@ -485,22 +457,7 @@ def _create_remote_dict_method(state_method_name: str):
     return remote_method
 
 
-for name in {
-    "__contains__",
-    "__delitem__",
-    "__eq__",
-    "__getitem__",
-    "__iter__",
-    "__len__",
-    "__ne__",
-    "__setitem__",
-    "clear",
-    "get",
-    "pop",
-    "popitem",
-    "setdefault",
-    "update",
-}:
+for name in STATE_DICT_METHODS:
     setattr(State, name, _create_remote_dict_method(name))
 
 
