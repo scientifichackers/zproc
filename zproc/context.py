@@ -14,6 +14,7 @@ from typing import (
     Generator,
     Sequence,
     Dict,
+    Optional,
 )
 
 import zmq
@@ -162,7 +163,7 @@ class Context(util.SecretKeyHolder):
         return "{} for {}".format(Context.__qualname__, self.state)
 
     def process(
-        self, target: Union[None, Callable] = None, **process_kwargs
+        self, target: Optional[Callable] = None, **process_kwargs
     ) -> Union[Process, Callable]:
         """
         Produce a child process bound to this context.

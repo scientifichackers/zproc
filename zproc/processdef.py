@@ -1,4 +1,4 @@
-from typing import Union, Callable
+from typing import Union, Callable, Optional
 
 import zmq
 from tblib import pickling_support
@@ -14,16 +14,16 @@ def child_process(
     target: Callable,
     process_repr: str,
     namespace: str,
-    secret_key: Union[None, str],
+    secret_key: Optional[str],
     stateful: bool,
     pass_context: bool,
     args: tuple,
     kwargs: dict,
     retry_for: tuple,
     retry_delay: Union[int, float],
-    max_retries: Union[None, bool],
-    retry_args: Union[None, tuple],
-    retry_kwargs: Union[None, dict],
+    max_retries: Optional[bool],
+    retry_args: Optional[tuple],
+    retry_kwargs: Optional[dict],
     result_address: str,
 ):
     if args is None:

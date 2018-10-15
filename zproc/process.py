@@ -2,7 +2,7 @@ import multiprocessing
 import os
 import signal
 import uuid
-from typing import Callable, Union, Sequence, Mapping, Any
+from typing import Callable, Union, Sequence, Mapping, Any, Optional
 
 import zmq
 
@@ -22,13 +22,13 @@ class Process(util.SecretKeyHolder):
         kwargs: Mapping = None,
         retry_for: Sequence[Union[signal.Signals, Exception]] = (),
         retry_delay: Union[int, float] = 5,
-        max_retries: Union[None, bool] = None,
-        retry_args: Union[None, tuple] = None,
-        retry_kwargs: Union[None, dict] = None,
+        max_retries: Optional[bool] = None,
+        retry_args: Optional[tuple] = None,
+        retry_kwargs: Optional[dict] = None,
         start: bool = True,
         backend: Callable = multiprocessing.Process,
         namespace: str = "",
-        secret_key: Union[str, None] = None
+        secret_key: Optional[str] = None
     ) -> None:
         """
         Provides a higher level interface to ``multiprocessing.Process``.
@@ -259,7 +259,7 @@ class Process(util.SecretKeyHolder):
 
         return self.child.exitcode
 
-    def wait(self, timeout: Union[None, int, float] = None):
+    def wait(self, timeout: Optional[Union[int, float]] = None):
         """
         Wait until this process finishes execution,
         then return the value returned by the ``target``.

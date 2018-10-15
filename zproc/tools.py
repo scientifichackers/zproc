@@ -1,6 +1,6 @@
 import multiprocessing
 import os
-from typing import Union, Callable
+from typing import Union, Callable, Optional
 
 import zmq
 
@@ -78,10 +78,10 @@ def start_server(
 def ping(
     server_address: str,
     *,
-    timeout: Union[None, float, int] = None,
-    payload: Union[None, bytes] = None,
+    timeout: Optional[Union[float, int]] = None,
+    payload: Optional[Union[bytes]] = None,
     secret_key: str = None
-) -> Union[int, None]:
+) -> Optional[int]:
     """
     Ping the zproc server
 
