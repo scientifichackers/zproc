@@ -15,23 +15,16 @@ This is the benefit of message passing parallelism.
 Your whole stack is built on communication, and hence,
 becomes extremely scalable and flexible when you need it to be.
 
-.. _zproc-server-address-spec:
+.. _server-address-spec:
 
-The zproc server address spec
-------------------------------
-
-By default, zproc produces random a connection endpoint for communication.
-
-However, zproc does expose the necessary API,
-shall you want to manually provide the connection endpoint through which zproc will communicate.
-
-*Look for the* ``server_address`` *argument, which allows you manually provide aforementioned address.*
+The server address spec
+-----------------------
 
 An endpoint is a string consisting of two parts as follows: ``<transport>://<address>``.
 The transport part specifies the underlying transport protocol to use.
 The meaning of the address part is specific to the underlying transport protocol selected.
 
-The following transports can be used:
+The following transports may be used:
 
 - ipc
     local inter-process communication transport, see `zmq_ipc <http://api.zeromq.org/2-1:zmq_ipc>`_
@@ -50,6 +43,7 @@ The following transports can be used:
 
     server_address='ipc:///home/username/my_endpoint'
 
+
 IPC or TCP?
 -----------
 
@@ -65,18 +59,20 @@ By default, zproc will use IPC if it is available, else TCP.
 Starting the server manually
 ----------------------------
 
-By default, zproc will start the server when you create a :py:class:`.Context` object.
+When you create a :py:class:`.Context` object, ZProc will produce random a ``server_address``,
+and start a server.
 
-You can however, start the server manually,
-and provide the :py:class:`.Context` with the address of the server.
+For advanced use-cases,
+you might want to use a well-known static address that all the services in your application are aware of.
 
-In this scenario, :py:class:`.Context` won't start the
-server itself, and you have to do it manually, using :py:func:`.start_server`.
+**This is quite useful when you want to access the same state across multiple nodes on a network,
+or in a different context on the same machine; anywhere communicating a "random" address would become an issue.**
 
-This is useful when you want to access the same state across multiple nodes on the network,
-or in a different context on the same machine.
+However, if you use a static address, :py:class:`.Context` won't start that
+server itself, and you have to do it manually, using :py:func:`.start_server`
+(This behavior enables us to spawn multiple :py:class:`.Context` objects with the same address).
 
-Both :py:class:`.State` and :py:class:`.Context` take ``server_address`` as their first argument.
+*All the classes in ZProc take* ``server_address`` *as their first argument.*
 
 
     >>> import zproc
@@ -93,7 +89,6 @@ The above example uses tcp, but ipc works just as well. (except across multiple 
 
 .. caution::
 
-    - Start the server exactly once, per address.
-    - Start the server before you access the :py:class:`.State` in *any* way; it solely depends on the server.
+    Start the server *before* you access the :py:class:`.State` in *any* way; it solely depends on the server.
 
 TLDR; You can start the server from anywhere you wish, and then access it though the address.

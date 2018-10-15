@@ -8,10 +8,10 @@ Why?
 ++++
 
 Since un-pickling from an external source is considered dangerous,
-it is necessary to verify whether the other end is also a ZProc node,
+it becomes necessary to verify whether the other end is also a ZProc node,
 and not some attacker trying to exploit our application.
 
-That's why ZProc provides cryptographic signing support using `itsdangerous <https://pythonhosted.org/itsdangerous/>`_.
+Hence, ZProc provides cryptographic signing support using `itsdangerous <https://pythonhosted.org/itsdangerous/>`_.
 
 Just provide the `secret_key` parameter to :py:class:`.Context`, and you should be good to go!
 

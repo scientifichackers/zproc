@@ -69,7 +69,7 @@ class State(util.SecretKeyHolder):
 
             If you are using a :py:class:`Context`, then this is automatically provided.
 
-            Please read :ref:`zproc-server-address-spec` for a detailed explanation.
+            Please read :ref:`server-address-spec` for a detailed explanation.
 
         :ivar server_address: Passed on from constructor.
         """

@@ -15,7 +15,7 @@ zproc allows you to *watch* the state using these methods, @ the :py:class:`.Sta
 - :py:meth:`~.State.get_when_not_none`
 
 For example, the following code will watch the state,
-and print out a message when the price of gold is below 40.
+and print out a message whenever the price of gold is below 40.
 
 .. code-block:: python
 
@@ -37,8 +37,6 @@ over their counterparts in :py:class:`.State`.
 - :py:meth:`~.Context.call_when_not_none`
 
 
-These help you avoid writing the extra 5 lines of code.
-
 For example, the function ``want_pizza()`` will be called every-time the ``"num_pizza"`` key in the state changes.
 
 .. code-block:: python
@@ -58,10 +56,9 @@ Snapshots
 All watchers provide return with a *snapshot* of the state,
 corresponding to the state-change for which the state watcher was triggered.
 
+The *snapshot* is just a regular ``dict`` object.
+
 In practice, this helps avoid race conditions.
-
-For instance, if we want the state watcher to be triggered at the
-
 
 .. _live-events:
 
@@ -89,13 +86,13 @@ First, let us create a :py:class:`~Process` that will generate some peanuts, per
 
     ctx = zproc.Context()
     state = ctx.state
-
     state["peanuts"] = 0
 
 
     @zproc.atomic
     def inc_peanuts(state):
         state['peanuts'] += 1
+
 
     @ctx.process
     def peanut_gen(state):
@@ -116,7 +113,7 @@ Live consumer
 
         sleep(2)
 
-The above code will miss any updates that happen while it is sleeping (``sleep(5)``).
+The above code will miss any updates that happen while it is sleeping (``sleep(2)``).
 
 When consuming live updates, your code **can miss events**, if it's not paying attention.
 
@@ -135,7 +132,7 @@ To modify this behaviour, you need to pass ``live=False``.
 
         sleep(2)
 
-This way, the events are stored in a *buffer*,
+This way, the events are stored in a *queue*,
 so that your code **doesn't miss any events**.
 
 *like a normal youtube video, where you won't miss anything, since it's buffering.*
@@ -147,7 +144,7 @@ Hybrid consumer
 
 Hence the need for a :py:meth:`~.State.go_live` method.
 
-It *clears* the buffer, ignoring any previous events.
+It *clears* the outlying queue -- deleting all previous events.
 
 *That's somewhat like the "LIVE" button on a live stream, that skips ahead to the live broadcast.*
 
@@ -171,10 +168,6 @@ It *clears* the buffer, ignoring any previous events.
     A **live** state watcher is strictly **LIVE**.
 
 
-Using these methods,
-alongside the ``live`` parameter and :py:meth:`~.State.go_live` method,
-one can create extremely simple looking, yet powerful applications.
-
 *A Full Example is available* `here. <https://github.com/pycampers/zproc/blob/master/examples/peanut_processor.py>`_
 
 
@@ -190,18 +183,13 @@ Its easy to decide whether you need live updates or not.
 Live mode is obviously faster (potentially), since it can miss an update or two,
 which eventually trickles down to less computation.
 
-.. _duplicate-events:
-
-Duplicate-ness of events
-------------------------
-
 
 Timeouts
 --------
 
 You can also provide timeouts while watching the state, using ``timeout`` parameter.
 
-If an update doesn't occur within the timeout, a ``TimeoutError`` is raised.
+If an update doesn't occur within the specified timeout, a ``TimeoutError`` is raised.
 
 .. code-block:: python
 
@@ -222,7 +210,9 @@ Here, we want to watch a button press, and determine whether it was a long or a 
 Some assumptions:
 
 - If the value of ``'button'`` is ``True``, the the button is pressed
+
 - If the value of ``'button'`` is ``False``, the button is not pressed.
+
 - The ``Reader`` is any arbitrary source of a value, e.g. a GPIO pin or a socket connection, receiving the value from an IOT button.
 
 .. code-block:: python

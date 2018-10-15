@@ -22,7 +22,7 @@ def start_server(
 
         If it is set to ``None``, then a random address will be generated.
 
-        Please read :ref:`zproc-server-address-spec` for a detailed explanation.
+        Please read :ref:`server-address-spec` for a detailed explanation.
 
 
     :param backend:
@@ -88,7 +88,7 @@ def ping(
     :param server_address:
         The zproc server's address.
 
-        Please read :ref:`zproc-server-address-spec` for a detailed explanation.
+        Please read :ref:`server-address-spec` for a detailed explanation.
 
     :param timeout:
         The timeout in seconds.
@@ -108,7 +108,7 @@ def ping(
         (No real reason for the ``56`` magic number.)
 
     :return:
-        The zproc server's **PID** if the ping was successful, else ``None``
+        The zproc server's **pid** if the ping was successful, else ``None``
 
         If this returns ``None``,
         then it probably means there is some fault in communication with the server.

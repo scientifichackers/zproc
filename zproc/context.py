@@ -61,7 +61,7 @@ class Context(util.SecretKeyHolder):
                 If you provide a "server_address", be sure to manually start the server,
                 as described here - :ref:`start-server`.
 
-            Please read :ref:`zproc-server-address-spec` for a detailed explanation.
+            Please read :ref:`server-address-spec` for a detailed explanation.
 
         :param wait:
             Wait for all running process to finish their work before exiting.

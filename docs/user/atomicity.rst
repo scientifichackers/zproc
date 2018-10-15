@@ -8,10 +8,10 @@ When writing parallel code, one has to think about atomicity.
 If an operation is atomic, then it means that the operation is indivisible, just like an atom.
 
 If an operation can be divided into pieces, then processes might jump
-in and out between the pieces and try to meddle with your work, confusing everyone.
+in and out between the pieces and try to meddle with each others' work, confusing everyone.
 
 While zproc does provide mechanisms to avoid these kind of race conditions,
-it is ultimately up-to you to figure out if an operation is atomic or not.
+it is ultimately up-to you to figure out whether an operation is atomic or not.
 
 zproc **guarantees™** that a single method call on a ``dict`` is atomic.
 
