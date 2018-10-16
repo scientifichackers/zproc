@@ -124,9 +124,6 @@ Requires: Python >=3.5
     -   By _watching_ for changes in state, without
         [Busy Waiting](https://en.wikipedia.org/wiki/Busy_waiting).
     -   [🔖](https://zproc.readthedocs.io/en/latest/api.html#state)
-
-- 🌠 &nbsp;  
-
     
 - 🌠 &nbsp; Atomic Operations
     -   Perform an arbitrary number of operations on state as a single,
@@ -169,8 +166,16 @@ Requires: Python >=3.5
 
 ```
 git clone https://github.com/pycampers/zproc.git
+
 cd zproc
 pipenv install
+pipenv install -d
+
+pipenv shell
+
+pip install -e .
+
+pytest 
 ```
 
 ## Build documentation
@@ -178,11 +183,10 @@ pipenv install
 Assuming you have sphinx installed (Linux)
 
 ```
-pipenv shell
 cd docs
 ./build.sh 
 
-./build.sh loop  # start a build loop.
+./build.sh loop  # starts a build loop.
 ```
 
 ## ZProc in the wild
