@@ -49,7 +49,7 @@ Let's make some changes to our example..
 
 .. code-block:: python
 
-    \@zproc.atomic
+    @zproc.atomic
     def increment(state, step):
         state['count'] += step
 
