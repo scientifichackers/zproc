@@ -293,9 +293,7 @@ to check whether the return value is *truthy*.
         t = time()
         state.get_when(lambda state: time() > t + 5)  # wrong!
 
-    The called on *state* changes.
-
-    Changing time doesn't signify a state update.
+    The State responds to *state* changes. Changing time doesn't signify a state update.
 
 
 Mutating objects inside state

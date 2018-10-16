@@ -20,7 +20,7 @@ Just provide the `secret_key` parameter to :py:class:`.Context`, and you should 
 >>> ctx.secret_key
 'muchsecret'
 
-Similarly, :py:class:`.State` also takes the `secret_key` parameter.
+Similarly, :py:class:`.State` also takes the ``secret_key`` parameter.
 
 By default, ``secret_key`` is set to ``None``, which implies that no cryptographic signing is performed.
 

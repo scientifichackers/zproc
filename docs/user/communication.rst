@@ -59,7 +59,7 @@ By default, zproc will use IPC if it is available, else TCP.
 Starting the server manually
 ----------------------------
 
-When you create a :py:class:`.Context` object, ZProc will produce random a ``server_address``,
+When you create a :py:class:`.Context` object, ZProc will produce a random ``server_address``,
 and start a server.
 
 For advanced use-cases,

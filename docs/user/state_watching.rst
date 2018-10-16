@@ -149,7 +149,7 @@ Hybrid consumer
 
 Hence the need for a :py:meth:`~.State.go_live` method.
 
-It *clears* the outlying queue -- deleting all previous events.
+It *clears* the outstanding queue (or buffer) -- deleting all previous events.
 
 *That's somewhat like the "LIVE" button on a live stream, that skips ahead to the live broadcast.*
 

@@ -1,7 +1,8 @@
 import functools
 import os
 import time
-from typing import Union, Hashable, Any, Callable, Optional, Tuple
+from contextlib import contextmanager
+from typing import Union, Hashable, Any, Callable, Optional, Tuple, Iterable, Generator
 
 import itsdangerous
 import zmq
@@ -9,32 +10,8 @@ import zmq
 from zproc import tools, util, state_type
 from zproc.constants import Msgs, Commands
 
-
 ZMQ_IDENTITY_SIZE = 8
 DEFAULT_ZMQ_RECVTIMEO = -1
-
-
-def _create_get_when_xxx_mainloop(self: "State", live: bool):
-    """Generates a template for a state watcher mainloop."""
-
-    def decorator(mainloop_fn):
-        @functools.wraps(mainloop_fn)
-        def wrapper():
-
-            if live:
-
-                sock = self._create_subscribe_sock()
-                try:
-                    return mainloop_fn(sock, time.time())
-                finally:
-                    sock.close()
-
-            else:
-                return mainloop_fn(self._buffered_sub_sock, time.time())
-
-        return wrapper
-
-    return decorator
 
 
 class State(
@@ -52,7 +29,7 @@ class State(
 
         Communicates to the zproc server using the ZMQ sockets.
 
-        Please don't share a State object between Processes / Threads.
+        Please don't share a State object between Processes/Threads.
         A State object is not thread-safe.
 
         Boasts the following ``dict``-like members, for accessing the state:
@@ -79,14 +56,11 @@ class State(
 
         super().__init__(secret_key)
 
-        self._namespace_bytes, self._namespace_len = b"", -1
+        self.server_address = server_address
         self.namespace = namespace
-
         self._identity = os.urandom(ZMQ_IDENTITY_SIZE)
 
-        self._zmq_ctx = util.create_zmq_context()
-
-        self.server_address = server_address
+        self._zmq_ctx = util.create_zmq_ctx()
 
         self._dealer_sock = self._zmq_ctx.socket(zmq.DEALER)
         self._dealer_sock.setsockopt(zmq.IDENTITY, self._identity)
@@ -97,7 +71,7 @@ class State(
         self._push_sock = self._zmq_ctx.socket(zmq.PUSH)
         self._push_sock.connect(self._push_address)
 
-        self._buffered_sub_sock = self._create_subscribe_sock()
+        self._active_sub_sock = self._create_sub_sock()
 
     def __str__(self):
         return "{}: {} to {} at {}".format(
@@ -106,6 +80,9 @@ class State(
 
     def __repr__(self):
         return "<{}>".format(self.__str__())
+
+    _namespace_bytes = b""
+    _namespace_len = 0
 
     @property
     def namespace(self):
@@ -118,78 +95,29 @@ class State(
         self._namespace_bytes = namespace.encode()
         self._namespace_len = len(self._namespace_bytes)
 
-    def _head(self):
-        return self._req_rep({Msgs.cmd: Commands.head})
-
-    def _create_subscribe_sock(self):
-        sock = self._zmq_ctx.socket(zmq.SUB)
-        sock.connect(self._sub_address)
-
-        # prevents consuming our own updates, resulting in an circular message
-        sock.setsockopt(zmq.SUBSCRIBE, self._identity)
-        sock.setsockopt(zmq.INVERT_MATCHING, 1)
-
-        return sock
-
-    def _recv_sub(
-        self,
-        subscribe_sock: zmq.Socket,
-        start_time: Union[float, int],
-        timeout: Optional[Union[float, int]] = None,
-        duplicate_okay: bool = False,
-    ):
-        if timeout is not None:
-            subscribe_sock.setsockopt(zmq.RCVTIMEO, int(timeout * 1000))
-
-        try:
-            while True:
-                msg = subscribe_sock.recv()
-                # print(
-                #     msg,
-                #     ZMQ_IDENTITY_SIZE,
-                #     self._identity,
-                #     self._namespace_bytes,
-                #     self._namespace_len,
-                # )
-                msg = msg[ZMQ_IDENTITY_SIZE:]
-                if msg.startswith(self._namespace_bytes):
-                    msg = msg[self._namespace_len :]
-                    try:
-                        msg = util.handle_remote_exc(self._serializer.loads(msg))
-                    except itsdangerous.BadSignature:
-                        pass
-                    else:
-                        before, after, identical = msg
-                        if not identical or duplicate_okay:
-                            return before, after
-                if timeout is not None and time.time() - start_time > timeout:
-                    raise TimeoutError("Timed-out while waiting for a state update.")
-        except zmq.error.Again:
-            raise TimeoutError("Timed-out while waiting for a state update.")
-        finally:
-            subscribe_sock.setsockopt(zmq.RCVTIMEO, DEFAULT_ZMQ_RECVTIMEO)
-
-    def _req_rep(self, request):
+    def _req_rep(self, request: dict):
         request[Msgs.namespace] = self._namespace_bytes
         # print("sent:", request)
-        util.send(self._dealer_sock, self._serializer, request)
+        util.send(request, self._dealer_sock, self._serializer)
         response = util.recv(self._dealer_sock, self._serializer)
         # print("recvd:", response)
+        return response
 
-        return util.handle_remote_exc(response)
-
-    def _run_fn_atomically(self, fn, *args, **kwargs):
+    def _run_fn_atomically(self, fn: Callable, *args, **kwargs):
         snapshot = self._req_rep({Msgs.cmd: Commands.exec_atomic_fn})
 
         try:
             result = fn(snapshot, *args, **kwargs)
         except Exception:
-            util.send(self._push_sock, self._serializer, None)
+            util.send(None, self._push_sock, self._serializer)
             raise
         else:
-            util.send(self._push_sock, self._serializer, snapshot)
+            util.send(snapshot, self._push_sock, self._serializer)
 
         return result
+
+    def _head(self):
+        return self._req_rep({Msgs.cmd: Commands.head})
 
     def set(self, value: dict):
         """
@@ -216,50 +144,95 @@ class State(
     def items(self):
         return self.copy().items()
 
+    def _create_sub_sock(self):
+        sock = self._zmq_ctx.socket(zmq.SUB)
+        sock.connect(self._sub_address)
+
+        # prevents consuming our own updates, resulting in an circular message
+        sock.setsockopt(zmq.SUBSCRIBE, self._identity)
+        sock.setsockopt(zmq.INVERT_MATCHING, 1)
+
+        return sock
+
+    def go_live(self):
+        """
+        Clear the outstanding queue (or buffer), thus clearing any past events that were stored.
+
+        Internally, this re-opens a socket, which in-turn clears the queue.
+
+        Please read :ref:`live-events` for a detailed explanation.
+        """
+
+        self._active_sub_sock.close()
+        self._active_sub_sock = self._create_sub_sock()
+
+    @contextmanager
+    def _setup_state_watch(
+        self, live: bool, timeout: Optional[Union[float, int]], duplicate_okay: bool
+    ):
+        if live:
+            sub_sock = self._create_sub_sock()
+        else:
+            sub_sock = self._active_sub_sock
+
+        if timeout is None:
+
+            def check_timeout():
+                pass
+
+        else:
+            sub_sock.setsockopt(zmq.RCVTIMEO, int(timeout * 1000))
+            epoch = time.time()
+
+            def check_timeout():
+                if time.time() - epoch > timeout:
+                    raise TimeoutError("Timed-out while waiting for a state update.")
+
+        try:
+            yield lambda: self._recv_sub(sub_sock, check_timeout, duplicate_okay)
+        except zmq.error.Again:
+            raise TimeoutError("Timed-out while waiting for a state update.")
+        finally:
+            sub_sock.setsockopt(zmq.RCVTIMEO, DEFAULT_ZMQ_RECVTIMEO)
+
+            if live:
+                sub_sock.close()
+
+    def _recv_sub(
+        self, sub_sock: zmq.Socket, check_timeout: Callable, duplicate_okay: bool
+    ):
+        while True:
+            msg = sub_sock.recv()[ZMQ_IDENTITY_SIZE:]
+            # print(msg)
+            if not msg.startswith(self._namespace_bytes):
+                check_timeout()
+                continue
+            msg = msg[self._namespace_len :]
+
+            try:
+                msg = self._serializer.loads(msg)
+            except itsdangerous.BadSignature:
+                check_timeout()
+                continue
+
+            before, after, identical = msg
+            if not identical or duplicate_okay:
+                return before, after, identical
+
+            check_timeout()
+
     @staticmethod
-    def _create_dictkey_selector(keys, exclude):
+    def _create_dictkey_selector(
+        keys: Iterable[Hashable], exclude: bool
+    ) -> Callable[[dict, dict], Generator[Hashable, None, None]]:
         if exclude:
             return lambda before, after: (
-                key for key in (*before.keys(), *after.keys()) if key not in keys
+                key for key in [*before.keys(), *after.keys()] if key not in keys
             )
 
         return lambda before, after: (
-            key for key in (*before.keys(), *after.keys()) if key in keys
+            key for key in [*before.keys(), *after.keys()] if key in keys
         )
-
-    def get_when_change(
-        self,
-        *keys: Hashable,
-        exclude: bool = False,
-        live: bool = False,
-        timeout: Optional[Union[float, int]] = None
-    ) -> dict:
-        """
-        Block until a change is observed, and then return a copy of the state.
-
-        .. include:: /api/state/get_when_change.rst
-        """
-
-        @_create_get_when_xxx_mainloop(self, live)
-        def mainloop(sock, start_time):
-            if len(keys):
-                select_keys = self._create_dictkey_selector(keys, exclude)
-
-                while True:
-                    before, after = self._recv_sub(sock, start_time, timeout)
-                    for key in select_keys(before, after):
-                        try:
-                            before_val, after_val = before[key], after[key]
-                        except KeyError:  # this indirectly implies that something changed
-                            return after
-                        else:
-                            if before_val != after_val:
-                                return after
-            else:
-                while True:
-                    return self._recv_sub(sock, start_time, timeout)[1]
-
-        return mainloop()
 
     def get_raw_update(
         self,
@@ -273,11 +246,41 @@ class State(
         .. include:: /api/state/get_raw_update.rst
         """
 
-        @_create_get_when_xxx_mainloop(self, live)
-        def mainloop(sock, start_time):
-            return self._recv_sub(sock, start_time, timeout, duplicate_okay)
+        with self._setup_state_watch(live, timeout, duplicate_okay) as recv_sub:
+            return recv_sub()
 
-        return mainloop()
+    def get_when_change(
+        self,
+        *keys: Hashable,
+        exclude: bool = False,
+        live: bool = False,
+        timeout: Optional[Union[float, int]] = None,
+        duplicate_okay: bool = False
+    ) -> dict:
+        """
+        Block until a change is observed, and then return a copy of the state.
+
+        .. include:: /api/state/get_when_change.rst
+        """
+
+        with self._setup_state_watch(live, timeout, duplicate_okay) as recv_sub:
+            if len(keys):
+                select_keys = self._create_dictkey_selector(keys, exclude)
+
+                while True:
+                    before, after, _ = recv_sub()
+
+                    for key in select_keys(before, after):
+                        try:
+                            before_val, after_val = before[key], after[key]
+                        except KeyError:  # this indirectly implies that something changed
+                            return after
+                        else:
+                            if before_val != after_val:
+                                return after
+            else:
+                while True:
+                    return recv_sub()[1]
 
     def get_when(
         self,
@@ -294,19 +297,14 @@ class State(
         .. include:: /api/state/get_when.rst
         """
 
-        @_create_get_when_xxx_mainloop(self, live)
-        def mainloop(sock, start_time):
-            latest_copy = self.copy()
+        with self._setup_state_watch(live, timeout, duplicate_okay) as recv_sub:
+            snapshot = self.copy()
 
             while True:
-                if test_fn(latest_copy):
-                    return latest_copy
+                if test_fn(snapshot):
+                    return snapshot
 
-                latest_copy = self._recv_sub(sock, start_time, timeout, duplicate_okay)[
-                    1
-                ]
-
-        return mainloop()
+                snapshot = recv_sub()[1]
 
     def get_when_equal(
         self,
@@ -324,7 +322,7 @@ class State(
         """
 
         return self.get_when(
-            lambda state: state.get(key) == value,
+            lambda snapshot: snapshot.get(key) == value,
             live=live,
             timeout=timeout,
             duplicate_okay=duplicate_okay,
@@ -346,7 +344,7 @@ class State(
         """
 
         return self.get_when(
-            lambda state: state.get(key) != value,
+            lambda snapshot: snapshot.get(key) != value,
             live=live,
             timeout=timeout,
             duplicate_okay=duplicate_okay,
@@ -367,7 +365,7 @@ class State(
         """
 
         return self.get_when(
-            lambda state: state.get(key) is None,
+            lambda snapshot: snapshot.get(key) is None,
             live=live,
             timeout=timeout,
             duplicate_okay=duplicate_okay,
@@ -388,21 +386,32 @@ class State(
         """
 
         return self.get_when(
-            lambda state: state.get(key) is not None,
+            lambda snapshot: snapshot.get(key) is not None,
             live=live,
             timeout=timeout,
             duplicate_okay=duplicate_okay,
         )
 
-    def go_live(self):
+    def get_when_available(
+        self,
+        key: Hashable,
+        *,
+        live: bool = False,
+        timeout: Optional[Union[float, int]] = None,
+        duplicate_okay: bool = False
+    ):
         """
-        Clear the events buffer, thus removing past events that were stored.
+        Block until ``key in state``, and then return a copy of the state.
 
-        Please read :ref:`live-events` for a detailed explanation.
+        .. include:: /api/state/get_when_available.rst
         """
 
-        self._buffered_sub_sock.close()
-        self._buffered_sub_sock = self._create_subscribe_sock()
+        return self.get_when(
+            lambda snapshot: key in snapshot,
+            live=live,
+            timeout=timeout,
+            duplicate_okay=duplicate_okay,
+        )
 
     def ping(self, **kwargs):
         """
@@ -421,7 +430,7 @@ class State(
 
         self._dealer_sock.close()
         self._push_sock.close()
-        self._buffered_sub_sock.close()
+        self._active_sub_sock.close()
         util.close_zmq_ctx(self._zmq_ctx)
 
 

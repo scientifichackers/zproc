@@ -42,7 +42,7 @@ def child_process(
         state = None
 
     if state is None:
-        zmq_ctx = util.create_zmq_context()
+        zmq_ctx = util.create_zmq_ctx()
     else:
         zmq_ctx = state._zmq_ctx
     result_sock = zmq_ctx.socket(zmq.PUSH)
@@ -74,7 +74,7 @@ def child_process(
                 if retry_kwargs is not None:
                     kwargs = retry_kwargs
         else:
-            util.send(result_sock, serialier, return_value)
+            util.send(return_value, result_sock, serialier)
             break
 
     result_sock.close()
@@ -145,11 +145,11 @@ def process_map_worker(
             else:
                 result = _stateless_worker(target, *params)
 
-            util.send(push_sock, serializer, [task_detail, chunk_id, result])
+            util.send([task_detail, chunk_id, result], push_sock, serializer)
         except KeyboardInterrupt:
             pull_sock.close()
             push_sock.close()
             return
         except Exception:
             # proxy the exception back to parent.
-            util.send(push_sock, serializer, exceptions.RemoteException())
+            util.send(exceptions.RemoteException(), push_sock, serializer)

@@ -38,7 +38,7 @@ def start_server(
     :return: ``tuple``, containing a ``multiprocessing.Process`` object for server and the server address.
     """
 
-    zmq_ctx = util.create_zmq_context()
+    zmq_ctx = util.create_zmq_ctx()
     sock = zmq_ctx.socket(zmq.PULL)
     pull_address = util.bind_to_random_address(sock)
 
@@ -115,7 +115,7 @@ def ping(
 
     serializer = util.get_serializer(secret_key)
 
-    zmq_ctx = util.create_zmq_context()
+    zmq_ctx = util.create_zmq_ctx()
 
     sock = zmq_ctx.socket(zmq.DEALER)
     sock.connect(server_address)
@@ -126,7 +126,7 @@ def ping(
     sock.send(serializer.dumps({Msgs.cmd: Commands.ping, Msgs.info: sent_payload}))
 
     try:
-        response = util.handle_remote_exc(serializer.loads(sock.recv()))
+        response = serializer.loads(sock.recv())
     except zmq.error.Again:
         raise TimeoutError("Timed-out waiting while for the ZProc server to respond.")
     else:

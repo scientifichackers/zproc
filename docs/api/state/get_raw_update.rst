@@ -6,5 +6,3 @@
 
 :param duplicate_okay:
     .. include:: /api/state/params/duplicate_okay.rst
-
-.. include:: /api/state/params/return.rst

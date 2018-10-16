@@ -6,7 +6,7 @@ import threading
 import time
 import traceback
 import uuid
-from typing import Optional
+from typing import Optional, Any
 
 import itsdangerous
 import psutil
@@ -26,7 +26,7 @@ class Serializer:
 
     @staticmethod
     def loads(bytes_obj):
-        return pickle.loads(bytes_obj)
+        return handle_remote_exc(pickle.loads(bytes_obj))
 
 
 def get_signed_serializer(secret_key, *args, **kwargs):
@@ -44,20 +44,23 @@ def handle_remote_exc(response):
     # if the reply is a remote Exception, re-raise it!
     if isinstance(response, exceptions.RemoteException):
         response.reraise()
-    else:
-        return response
+
+    return response
 
 
-def send(sock: zmq.Socket, serializer, obj):
+def send(obj: Any, sock: zmq.Socket, serializer):
     return sock.send(serializer.dumps(obj))
 
 
-def recv(sock: zmq.Socket, serializer):
-    while True:
-        try:
-            return handle_remote_exc(serializer.loads(sock.recv()))
-        except itsdangerous.BadSignature:
-            pass
+def recv(sock: zmq.Socket, serializer, *, silent=True):
+    if silent:
+        while True:
+            try:
+                return serializer.loads(sock.recv())
+            except itsdangerous.BadSignature:
+                continue
+    else:
+        return serializer.loads(sock.recv())
 
 
 class SecretKeyHolder:
@@ -165,7 +168,7 @@ def is_main_thread():
     return threading.current_thread() == threading.main_thread()
 
 
-def create_zmq_context() -> zmq.Context:
+def create_zmq_ctx() -> zmq.Context:
     ctx = zmq.Context()
     ctx.setsockopt(zmq.LINGER, 0)
 

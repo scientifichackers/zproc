@@ -248,12 +248,12 @@ class Context(util.SecretKeyHolder):
         elif size < 0:
             # Notify "size" no. of workers to finish up, and close shop.
             for _ in range(-size):
-                util.send(self._push_sock, self._serializer, None)
+                util.send(None, self._push_sock, self._serializer)
 
     def _pull_results(self):
         response = util.recv(self._pull_sock, self._serializer)
         # print(response)
-        task_detail, list_index, chunk_result = util.handle_remote_exc(response)
+        task_detail, list_index, chunk_result = response
         self._task_chunk_results[task_detail][list_index] = chunk_result
 
     def pull_results_for_task(
@@ -451,7 +451,7 @@ class Context(util.SecretKeyHolder):
             ]
             batch = [task_detail, chunk_id, stateful, target, params]
 
-            util.send(self._push_sock, self._serializer, batch)
+            util.send(batch, self._push_sock, self._serializer)
 
         if return_task:
             return task_detail
@@ -614,7 +614,9 @@ class Context(util.SecretKeyHolder):
             "get_when_none", process_kwargs, key, live=live
         )
 
-    def call_when_not_none(self, key: Hashable, *, live: bool = False, **process_kwargs):
+    def call_when_not_none(
+        self, key: Hashable, *, live: bool = False, **process_kwargs
+    ):
         """
         Decorator version of :py:meth:`~State.get_when_not_none()`.
 

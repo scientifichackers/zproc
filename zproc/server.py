@@ -24,7 +24,7 @@ class Server(util.SecretKeyHolder):
     ) -> None:
         super().__init__(secret_key)
 
-        self.zmq_ctx = util.create_zmq_context()
+        self.zmq_ctx = util.create_zmq_ctx()
 
         self.router_sock = self.zmq_ctx.socket(zmq.ROUTER)
         self.pub_sock = self.zmq_ctx.socket(zmq.PUB)
