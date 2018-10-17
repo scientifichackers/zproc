@@ -1,7 +1,6 @@
 """
 Tests the re-creation of object, using the UUID feature
 """
-
 import zproc
 
 

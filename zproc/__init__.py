@@ -3,6 +3,7 @@ from zproc.exceptions import (
     ProcessWaitError,
     RemoteException,
     SignalException,
+    ProcessExit,
     signal_to_exception,
 )
 from zproc.process import Process

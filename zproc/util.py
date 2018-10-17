@@ -127,7 +127,6 @@ def close_zmq_ctx(ctx: zmq.Context):
 
 def clean_process_tree(*signal_handler_args):
     """Kill all Processes in the current Process tree, recursively."""
-
     for process in psutil.Process().children(recursive=True):
         os.kill(process.pid, signal.SIGTERM)
         print("Stopped:", process)

@@ -157,16 +157,13 @@ class Process(util.SecretKeyHolder):
         :ivar child: A ``multiprocessing.Process`` instance for the child process.
         :ivar server_address: Passed on from the constructor.
         :ivar target: Passed on from the constructor.
-        :ivar namespace: Passed on from the constructor.
         """
-
         assert callable(target), '"target" must be a `Callable`, not `{}`'.format(
             type(target)
         )
 
         super().__init__(secret_key)
 
-        self.namespace = namespace
         self.server_address = server_address
         self.target = target
 
@@ -184,7 +181,7 @@ class Process(util.SecretKeyHolder):
                 self.server_address,
                 self.target,
                 self.__repr__(),
-                self.namespace,
+                namespace,
                 secret_key,
                 stateful,
                 pass_context,
@@ -233,7 +230,6 @@ class Process(util.SecretKeyHolder):
 
         :return: the process PID
         """
-
         self.child.start()
         return self.pid
 
@@ -245,7 +241,6 @@ class Process(util.SecretKeyHolder):
 
         :return: :py:attr:`~exitcode`.
         """
-
         self.child.terminate()
 
         self._result_sock.close()
@@ -273,7 +268,6 @@ class Process(util.SecretKeyHolder):
         or there is some error in retrieving the value returned by the ``target``,
         a :py:exc:`.ProcessWaitError` is raised.
         """
-
         # try to fetch the cached result.
         try:
             return self._return_value
@@ -319,7 +313,6 @@ class Process(util.SecretKeyHolder):
         from the moment the :py:meth:`start` method returns,
         until the child process is stopped manually (using :py:meth:`stop`) or naturally exits
         """
-
         return self.child.is_alive()
 
     @property
@@ -329,7 +322,6 @@ class Process(util.SecretKeyHolder):
 
         Before the process is started, this will be None.
         """
-
         return self.child.pid
 
     @property
@@ -340,5 +332,4 @@ class Process(util.SecretKeyHolder):
         This will be None if the process has not yet terminated.
         A negative value ``-N`` indicates that the child was terminated by signal ``N``.
         """
-
         return self.child.exitcode

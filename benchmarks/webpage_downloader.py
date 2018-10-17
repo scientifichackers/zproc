@@ -4,7 +4,6 @@ Downloads a couple of web-pages and compares their sizes.
 Prints out the time taken by different frameworks to complete the task
 (excluding warm-up/setup time)
 """
-
 import asyncio
 from time import time
 

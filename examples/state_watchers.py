@@ -15,7 +15,6 @@ main: I set flag2:
 .get_when_change("flag2") -> True
 
 """
-
 from time import sleep
 
 import zproc

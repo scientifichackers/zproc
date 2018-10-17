@@ -91,7 +91,6 @@ class Server(util.SecretKeyHolder):
 
     def send(self, response):
         """reply with ``response`` to a client (with said ``identity``)"""
-
         # print("server rep:", self.identity_for_req, response)
 
         self.router_sock.send_multipart(
@@ -104,7 +103,6 @@ class Server(util.SecretKeyHolder):
 
     def pub_state(self, old_state: dict):
         """Publish the state to everyone"""
-
         self.pub_sock.send(
             self._active_identity
             + self._active_namespace
@@ -138,7 +136,6 @@ class Server(util.SecretKeyHolder):
 
     def send_state(self, _=None):
         """reply with state to the current client"""
-
         self.send(self._active_state)
 
     def exec_dict_method(self, request):
@@ -155,7 +152,6 @@ class Server(util.SecretKeyHolder):
 
     def exec_atomic_fn(self, _):
         """Execute a function, atomically and reply with the result."""
-
         self.send(self._active_state)
 
         old_state = deepcopy(self._active_state)
@@ -175,7 +171,7 @@ class Server(util.SecretKeyHolder):
     def main(self):
         def signal_handler(signum, _):
             self.close()
-            print("stopped server")
+            print("Stopped server:", os.getpid())
             os._exit(signum)
 
         signal.signal(signal.SIGTERM, signal_handler)

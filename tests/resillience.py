@@ -3,7 +3,6 @@ This is meant to test resilience and stability of state watchers.
 
 Its hard to test automatically, so we must inspect it ourselves.
 """
-
 import random
 import time
 

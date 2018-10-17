@@ -27,7 +27,6 @@ def eat_cookie(state):
 @zproc.atomic
 def bake_cookie(state):
     """Bake a cookie."""
-
     state["cookies"] += 1
     print("Here's a cookie!")
 

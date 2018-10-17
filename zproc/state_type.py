@@ -26,7 +26,6 @@ def _create_remote_dict_method(dict_method_name: str):
 
     Glorified RPC.
     """
-
     def remote_method(self, *args, **kwargs):
         return self._req_rep(
             {

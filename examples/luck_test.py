@@ -15,7 +15,6 @@ num gen: STOP was set to True, so lets exit
 num gen: exit
 
 """
-
 import random
 
 import zproc

@@ -52,7 +52,6 @@ else:
 
 class UploadCommand(Command):
     """Support setup.py upload."""
-
     description = "Build and publish the package."
     user_options = []
 

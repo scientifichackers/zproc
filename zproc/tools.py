@@ -37,7 +37,6 @@ def start_server(
 
     :return: ``tuple``, containing a ``multiprocessing.Process`` object for server and the server address.
     """
-
     zmq_ctx = util.create_zmq_ctx()
     sock = zmq_ctx.socket(zmq.PULL)
     pull_address = util.bind_to_random_address(sock)
@@ -109,7 +108,6 @@ def ping(
         If this returns ``None``,
         then it probably means there is some fault in communication with the server.
     """
-
     if sent_payload is None:
         sent_payload = os.urandom(56)
 

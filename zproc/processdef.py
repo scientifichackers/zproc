@@ -1,3 +1,4 @@
+import os
 from typing import Union, Callable, Optional
 
 import zmq
@@ -63,6 +64,8 @@ def child_process(
                 return_value = target(state, *args, **kwargs)
             else:
                 return_value = target(*args, **kwargs)
+        except exceptions.ProcessExit as e:
+            os._exit(e.status)
         except to_catch as e:
             if (max_retries is not None) and (tries > max_retries):
                 raise e

@@ -1,7 +1,6 @@
 """
 Tests the "ping()" API
 """
-
 import pytest
 
 import zproc

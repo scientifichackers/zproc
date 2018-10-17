@@ -53,7 +53,6 @@ class State(
 
         :ivar server_address: Passed on from constructor.
         """
-
         super().__init__(secret_key)
 
         self.server_address = server_address
@@ -80,6 +79,38 @@ class State(
 
     def __repr__(self):
         return "<{}>".format(self.__str__())
+
+    def fork(
+        self,
+        server_address: Optional[str] = None,
+        *,
+        namespace: Optional[str] = None,
+        secret_key: Optional[str] = None
+    ) -> "State":
+        """
+        "Forks" this State object.
+
+        Takes the same args as the :py:class:`State` constructor,
+        except that they automatically default to the values provided during the creation of this State object.
+
+        If no args are provided to this function,
+        then it shall create a new :py:class:`State` object
+        that follows the exact same semantics as this one.
+
+        This is preferred over copying a :py:class:`State` object.
+
+        Useful when one needs to access 2 or more namespaces on the same server.
+        """
+        if server_address is None:
+            server_address = self.server_address
+        if namespace is None:
+            namespace = self.namespace
+        if secret_key is None:
+            secret_key = self.secret_key
+
+        return self.__class__(
+            server_address, namespace=namespace, secret_key=secret_key
+        )
 
     _namespace_bytes = b""
     _namespace_len = 0
@@ -123,7 +154,6 @@ class State(
         """
         Set the state, completely over-writing the previous value.
         """
-
         return self._req_rep({Msgs.cmd: Commands.set_state, Msgs.info: value})
 
     def copy(self):
@@ -132,7 +162,6 @@ class State(
 
         Unlike the shallow-copy returned by :py:meth:`dict.copy`.
         """
-
         return self._req_rep({Msgs.cmd: Commands.get_state})
 
     def keys(self):
@@ -162,7 +191,6 @@ class State(
 
         Please read :ref:`live-events` for a detailed explanation.
         """
-
         self._active_sub_sock.close()
         self._active_sub_sock = self._create_sub_sock()
 
@@ -203,7 +231,7 @@ class State(
     ):
         while True:
             msg = sub_sock.recv()[ZMQ_IDENTITY_SIZE:]
-            # print(msg)
+            print(msg)
             if not msg.startswith(self._namespace_bytes):
                 check_timeout()
                 continue
@@ -245,7 +273,6 @@ class State(
 
         .. include:: /api/state/get_raw_update.rst
         """
-
         with self._setup_state_watch(live, timeout, duplicate_okay) as recv_sub:
             return recv_sub()
 
@@ -262,7 +289,6 @@ class State(
 
         .. include:: /api/state/get_when_change.rst
         """
-
         with self._setup_state_watch(live, timeout, duplicate_okay) as recv_sub:
             if len(keys):
                 select_keys = self._create_dictkey_selector(keys, exclude)
@@ -296,7 +322,6 @@ class State(
 
         .. include:: /api/state/get_when.rst
         """
-
         with self._setup_state_watch(live, timeout, duplicate_okay) as recv_sub:
             snapshot = self.copy()
 
@@ -320,7 +345,6 @@ class State(
 
         .. include:: /api/state/get_when_equality.rst
         """
-
         return self.get_when(
             lambda snapshot: snapshot.get(key) == value,
             live=live,
@@ -342,7 +366,6 @@ class State(
 
         .. include:: /api/state/get_when_equality.rst
         """
-
         return self.get_when(
             lambda snapshot: snapshot.get(key) != value,
             live=live,
@@ -363,7 +386,6 @@ class State(
 
         .. include:: /api/state/get_when_equality.rst
         """
-
         return self.get_when(
             lambda snapshot: snapshot.get(key) is None,
             live=live,
@@ -384,7 +406,6 @@ class State(
 
         .. include:: /api/state/get_when_equality.rst
         """
-
         return self.get_when(
             lambda snapshot: snapshot.get(key) is not None,
             live=live,
@@ -403,9 +424,8 @@ class State(
         """
         Block until ``key in state``, and then return a copy of the state.
 
-        .. include:: /api/state/get_when_available.rst
+        .. include:: /api/state/get_when_equality.rst
         """
-
         return self.get_when(
             lambda snapshot: key in snapshot,
             live=live,
@@ -420,14 +440,12 @@ class State(
         :param kwargs: Keyword arguments that :py:func:`ping` takes, except ``server_address``.
         :return: Same as :py:func:`ping`
         """
-
         return tools.ping(self.server_address, **kwargs)
 
     def close(self):
         """
         Close this State and disconnect with the Server.
         """
-
         self._dealer_sock.close()
         self._push_sock.close()
         self._active_sub_sock.close()

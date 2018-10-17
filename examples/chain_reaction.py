@@ -12,7 +12,6 @@ child2: I exit
 
 main: I exit
 """
-
 from time import sleep
 
 import zproc

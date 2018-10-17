@@ -15,7 +15,6 @@ Expected Output:
 
 100
 """
-
 from random import random
 from time import sleep
 

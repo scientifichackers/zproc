@@ -99,11 +99,7 @@ class Context(util.SecretKeyHolder):
 
         :ivar server_address:
             The server's address as a 2 element ``tuple``.
-
-        :ivar namespace:
-            Passed from the constructor.
         """
-
         super().__init__(secret_key)
 
         if server_address is None:
@@ -113,9 +109,8 @@ class Context(util.SecretKeyHolder):
         else:
             self.server_process, self.server_address = None, server_address
 
-        self.namespace = namespace
         self.state = State(
-            self.server_address, namespace=self.namespace, secret_key=secret_key
+            self.server_address, namespace=namespace, secret_key=secret_key
         )
 
         self.process_list = []  # type:List[Process]
@@ -128,7 +123,7 @@ class Context(util.SecretKeyHolder):
         self._pull_address = util.bind_to_random_address(self._pull_sock)
 
         self._process_kwargs = process_kwargs
-        self._process_kwargs["namespace"] = self.namespace
+        self._process_kwargs["namespace"] = namespace
         self._process_kwargs["secret_key"] = self.secret_key
 
         self._worker_kwargs = {
@@ -198,7 +193,6 @@ class Context(util.SecretKeyHolder):
 
         :return: The :py:class:`Process` instance produced.
         """
-
         if target is None:
 
             def decorator(fn):
@@ -229,7 +223,6 @@ class Context(util.SecretKeyHolder):
         :return:
             A ``list`` of the :py:class:`Process` instance(s) produced.
         """
-
         return [
             self.process(target, **process_kwargs)
             for target in targets
@@ -263,7 +256,6 @@ class Context(util.SecretKeyHolder):
         PULL "count" results from the process pool.
         Also arranges the results in-order.
         """
-
         task_chunk_results = self._task_chunk_results[task_detail]
 
         for list_index in range(task_detail.chunk_count):
@@ -413,7 +405,6 @@ class Context(util.SecretKeyHolder):
 
         See :ref:`process_map` for Examples.
         """
-
         if count is None:
             count = multiprocessing.cpu_count()
         if args is None:
@@ -528,7 +519,6 @@ class Context(util.SecretKeyHolder):
             def test(snapshot, state):
                 print(snapshot['gold'], state)
         """
-
         return self._create_call_when_xxx_decorator(
             "get_when_change", process_kwargs, *keys, exclude=exclude, live=live
         )
@@ -550,7 +540,6 @@ class Context(util.SecretKeyHolder):
             def test(snapshot, state):
                 print(snapshot['trees'], state)
         """
-
         return self._create_call_when_xxx_decorator(
             "get_when", process_kwargs, test_fn, live=live
         )
@@ -574,7 +563,6 @@ class Context(util.SecretKeyHolder):
             def test(snapshot, state):
                 print(snapshot['oranges'], state)
         """
-
         return self._create_call_when_xxx_decorator(
             "get_when_equal", process_kwargs, key, value, live=live
         )
@@ -598,7 +586,6 @@ class Context(util.SecretKeyHolder):
             def test(snapshot, state):
                 print(snapshot['apples'], state)
         """
-
         return self._create_call_when_xxx_decorator(
             "get_when_not_equal", process_kwargs, key, value, live=live
         )
@@ -609,7 +596,6 @@ class Context(util.SecretKeyHolder):
 
         .. include:: /api/context/call_when_equality.rst
         """
-
         return self._create_call_when_xxx_decorator(
             "get_when_none", process_kwargs, key, live=live
         )
@@ -622,7 +608,6 @@ class Context(util.SecretKeyHolder):
 
         .. include:: /api/context/call_when_equality.rst
         """
-
         return self._create_call_when_xxx_decorator(
             "get_when_not_none", process_kwargs, key, live=live
         )
@@ -636,7 +621,6 @@ class Context(util.SecretKeyHolder):
             A ``list`` of 2-value ``tuple`` (s),
             containing a :py:class:`Process` object and the value returned by its ``target``.
         """
-
         return [(process, process.wait()) for process in self.process_list]
 
     def start_all(self):
@@ -646,7 +630,6 @@ class Context(util.SecretKeyHolder):
         Ignores if a Process is already started, unlike :py:meth:`~Process.start()`,
         which throws an ``AssertionError``.
         """
-
         for process in self.process_list:
             try:
                 process.start()
@@ -655,7 +638,6 @@ class Context(util.SecretKeyHolder):
 
     def stop_all(self):
         """Call :py:meth:`~Process.stop()` on all the child processes of this Context"""
-
         for proc in self.process_list:
             proc.stop()
 
@@ -674,7 +656,6 @@ class Context(util.SecretKeyHolder):
 
         Once closed, you shouldn't use this Context again.
         """
-
         self.stop_all()
 
         if self.server_process is not None:
