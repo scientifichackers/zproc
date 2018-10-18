@@ -43,7 +43,7 @@ print("LIVE:")
 @ctx.process
 def test_process(state):
     while True:
-        print(state.get_when_change("foobar"), end=",", flush=True)
+        print(state.get_when_change("foobar", live=True), end=",", flush=True)
         if SLOW:
             time.sleep(random.random())
 
@@ -64,7 +64,7 @@ wait_and_stop()
 print("LIVE:")
 
 
-@ctx.call_when_change("foobar", stateful=False)
+@ctx.call_when_change("foobar", stateful=False, live=True)
 def test_process(foobar):
     print(foobar, end=",", flush=True)
     if SLOW:
