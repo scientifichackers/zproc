@@ -612,6 +612,18 @@ class Context(util.SecretKeyHolder):
             "get_when_not_none", process_kwargs, key, live=live
         )
 
+    def call_when_available(
+        self, key: Hashable, *, live: bool = False, **process_kwargs
+    ):
+        """
+        Decorator version of :py:meth:`~State.get_when_available()`.
+
+        .. include:: /api/context/call_when_equality.rst
+        """
+        return self._create_call_when_xxx_decorator(
+            "get_when_available", process_kwargs, key, live=live
+        )
+
     def wait_all(self) -> List[Tuple[Process, Any]]:
         """
         Call :py:meth:`~Process.wait()` on all the child processes of this Context.

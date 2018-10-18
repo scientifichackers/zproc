@@ -10,9 +10,11 @@ def _setup_ctx():
 
     @ctx.process
     def updater(state):
+        state["avail"] = True
+        state["none"] = None
         time.sleep(1)
-        state["flag"] = True
-        print(state)
+        state["true"] = True
+        state["none"] = True
 
     return ctx
 
@@ -46,14 +48,14 @@ def test_call_when_change(ctx):
 
 
 def test_get_when(state):
-    snapshot = state.get_when(lambda s: s.get("flag") is True)
-    assert snapshot["flag"] is True
+    snapshot = state.get_when(lambda s: s.get("true") is True)
+    assert snapshot["true"] is True
 
 
 def test_call_when(ctx):
-    @ctx.call_when(lambda s: s.get("flag") is True)
+    @ctx.call_when(lambda s: s.get("true") is True)
     def child1_clone(snapshot, _):
-        assert snapshot["flag"] is True
+        assert snapshot["true"] is True
         raise zproc.ProcessExit()
 
 
@@ -61,14 +63,14 @@ def test_call_when(ctx):
 
 
 def test_get_when_equal(state):
-    snapshot = state.get_when_equal("flag", True)
-    assert snapshot["flag"]
+    snapshot = state.get_when_equal("true", True)
+    assert snapshot["true"]
 
 
 def test_call_when_equal(ctx):
-    @ctx.call_when_equal("flag", True)
+    @ctx.call_when_equal("true", True)
     def child2_clone(snapshot, _):
-        assert snapshot["flag"]
+        assert snapshot["true"]
         raise zproc.ProcessExit()
 
 
@@ -76,12 +78,57 @@ def test_call_when_equal(ctx):
 
 
 def test_get_when_not_equal(state):
-    snapshot = state.get_when_not_equal("flag", False)
-    assert not snapshot.get("flag")
+    snapshot = state.get_when_not_equal("true", False)
+    assert snapshot.get("true") is not False
 
 
 def test_call_when_not_equal(ctx):
-    @ctx.call_when_equal("flag", False)
+    @ctx.call_when_not_equal("true", False)
     def child3_clone(snapshot, _):
-        assert snapshot["flag"]
+        assert snapshot["true"] is not False
+        raise zproc.ProcessExit()
+
+
+###
+
+
+def test_get_when_none(state):
+    snapshot = state.get_when_none("none")
+    assert snapshot.get("none") is None
+
+
+def test_call_when_none(ctx):
+    @ctx.call_when_none("none")
+    def child3_clone(snapshot, _):
+        assert snapshot.get("none") is None
+        raise zproc.ProcessExit()
+
+
+###
+
+
+def test_get_when_not_none(state):
+    snapshot = state.get_when_not_none("none")
+    assert snapshot["none"] is not None
+
+
+def test_call_when_not_none(ctx):
+    @ctx.call_when_not_none("none")
+    def child3_clone(snapshot, _):
+        assert snapshot["none"] is not None
+        raise zproc.ProcessExit()
+
+
+###
+
+
+def test_get_when_avail(state):
+    snapshot = state.get_when_available("avail")
+    assert "avail" in snapshot
+
+
+def test_call_when_avail(ctx):
+    @ctx.call_when_available("avail")
+    def child3_clone(snapshot, _):
+        assert "avail" in snapshot
         raise zproc.ProcessExit()

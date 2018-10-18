@@ -231,7 +231,7 @@ class State(
     ):
         while True:
             msg = sub_sock.recv()[ZMQ_IDENTITY_SIZE:]
-            print(msg)
+            # print(msg)
             if not msg.startswith(self._namespace_bytes):
                 check_timeout()
                 continue
@@ -245,6 +245,7 @@ class State(
 
             before, after, identical = msg
             if not identical or duplicate_okay:
+                # print(before, after, identical)
                 return before, after, identical
 
             check_timeout()
@@ -317,19 +318,24 @@ class State(
         duplicate_okay: bool = False
     ) -> dict:
         """
-        Block until ``test_fn(state)`` returns a "truthy" value,
+        Block until ``test_fn(snapshot)`` returns a "truthy" value,
         and then return a copy of the state.
+
+        *Where-*
+
+        ``snapshot`` is a ``dict``, containing a copy of the state.
 
         .. include:: /api/state/get_when.rst
         """
-        with self._setup_state_watch(live, timeout, duplicate_okay) as recv_sub:
-            snapshot = self.copy()
+        snapshot = self.copy()
+        if test_fn(snapshot):
+            return snapshot
 
+        with self._setup_state_watch(live, timeout, duplicate_okay) as recv_sub:
             while True:
+                snapshot = recv_sub()[1]
                 if test_fn(snapshot):
                     return snapshot
-
-                snapshot = recv_sub()[1]
 
     def get_when_equal(
         self,
@@ -341,15 +347,19 @@ class State(
         duplicate_okay: bool = False
     ) -> dict:
         """
-        Block until ``state.get(key) == value``, and then return a copy of the state.
+        Block until ``state[key] == value``, and then return a copy of the state.
 
         .. include:: /api/state/get_when_equality.rst
         """
+
+        def _(snapshot):
+            try:
+                return snapshot[key] == value
+            except KeyError:
+                return False
+
         return self.get_when(
-            lambda snapshot: snapshot.get(key) == value,
-            live=live,
-            timeout=timeout,
-            duplicate_okay=duplicate_okay,
+            _, live=live, timeout=timeout, duplicate_okay=duplicate_okay
         )
 
     def get_when_not_equal(
@@ -362,15 +372,19 @@ class State(
         duplicate_okay: bool = False
     ) -> dict:
         """
-        Block until ``state.get(key) != value``, and then return a copy of the state.
+        Block until ``state[key] != value``, and then return a copy of the state.
 
         .. include:: /api/state/get_when_equality.rst
         """
+
+        def _(snapshot):
+            try:
+                return snapshot[key] != value
+            except KeyError:
+                return False
+
         return self.get_when(
-            lambda snapshot: snapshot.get(key) != value,
-            live=live,
-            timeout=timeout,
-            duplicate_okay=duplicate_okay,
+            _, live=live, timeout=timeout, duplicate_okay=duplicate_okay
         )
 
     def get_when_none(
@@ -382,15 +396,19 @@ class State(
         duplicate_okay: bool = False
     ) -> dict:
         """
-        Block until ``state.get(key) is None``, and then return a copy of the state.
+        Block until ``state[key] is None``, and then return a copy of the state.
 
         .. include:: /api/state/get_when_equality.rst
         """
+
+        def _(snapshot):
+            try:
+                return snapshot[key] is None
+            except KeyError:
+                return False
+
         return self.get_when(
-            lambda snapshot: snapshot.get(key) is None,
-            live=live,
-            timeout=timeout,
-            duplicate_okay=duplicate_okay,
+            _, live=live, timeout=timeout, duplicate_okay=duplicate_okay
         )
 
     def get_when_not_none(
@@ -402,15 +420,19 @@ class State(
         duplicate_okay: bool = False
     ) -> dict:
         """
-        Block until ``state.get(key) is not None``, and then return a copy of the state.
+        Block until ``state[key] is not None``, and then return a copy of the state.
 
         .. include:: /api/state/get_when_equality.rst
         """
+
+        def _(snapshot):
+            try:
+                return snapshot[key] is not None
+            except KeyError:
+                return False
+
         return self.get_when(
-            lambda snapshot: snapshot.get(key) is not None,
-            live=live,
-            timeout=timeout,
-            duplicate_okay=duplicate_okay,
+            _, live=live, timeout=timeout, duplicate_okay=duplicate_okay
         )
 
     def get_when_available(

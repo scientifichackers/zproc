@@ -103,6 +103,7 @@ class Server(util.SecretKeyHolder):
 
     def pub_state(self, old_state: dict):
         """Publish the state to everyone"""
+
         self.pub_sock.send(
             self._active_identity
             + self._active_namespace
