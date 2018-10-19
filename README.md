@@ -82,6 +82,7 @@ eventually wanting to turn into a full-fledged framework for all things multitas
 
 ## Install
 
+(currently in aplha, please use `--pre`!)
 
 ```
 $ pip install zproc --pre
