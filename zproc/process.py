@@ -154,9 +154,14 @@ class Process(util.SecretKeyHolder):
 
                 Not guaranteed to work well with anything other than ``multiprocessing.Process``.
 
-        :ivar child: A ``multiprocessing.Process`` instance for the child process.
-        :ivar server_address: Passed on from the constructor.
-        :ivar target: Passed on from the constructor.
+        :ivar child:
+            A ``multiprocessing.Process`` instance for the child process.
+        :ivar server_address:
+            Passed on from the constructor.
+        :ivar target:
+            Passed on from the constructor.
+        :ivar namespace:
+            Passed on from the constructor. This is read-only.
         """
         assert callable(target), '"target" must be a `Callable`, not `{}`'.format(
             type(target)
@@ -165,6 +170,7 @@ class Process(util.SecretKeyHolder):
         super().__init__(secret_key)
 
         self.server_address = server_address
+        self.namespace = namespace
         self.target = target
 
         self._zmq_ctx = util.create_zmq_ctx()
@@ -181,7 +187,7 @@ class Process(util.SecretKeyHolder):
                 self.server_address,
                 self.target,
                 self.__repr__(),
-                namespace,
+                self.namespace,
                 secret_key,
                 stateful,
                 pass_context,

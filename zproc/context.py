@@ -86,19 +86,17 @@ class Context(util.SecretKeyHolder):
 
         :ivar state:
             A :py:class:`State` instance.
-
         :ivar process_list:
             A list of child ``Process``\ (s) created under this Context.
-
         :ivar worker_list:
             A list of worker ``Process``\ (s) created under this Context.
             Used for :py:meth:`Context.process_map`.
-
         :ivar server_process:
             A ``multiprocessing.Process`` object for the server, or None.
-
         :ivar server_address:
             The server's address as a 2 element ``tuple``.
+        :ivar namespace:
+            Passed on from the constructor. This is read-only.
         """
         super().__init__(secret_key)
 
@@ -109,8 +107,9 @@ class Context(util.SecretKeyHolder):
         else:
             self.server_process, self.server_address = None, server_address
 
+        self.namespace = namespace
         self.state = State(
-            self.server_address, namespace=namespace, secret_key=secret_key
+            self.server_address, namespace=self.namespace, secret_key=secret_key
         )
 
         self.process_list = []  # type:List[Process]
@@ -123,7 +122,7 @@ class Context(util.SecretKeyHolder):
         self._pull_address = util.bind_to_random_address(self._pull_sock)
 
         self._process_kwargs = process_kwargs
-        self._process_kwargs["namespace"] = namespace
+        self._process_kwargs["namespace"] = self.namespace
         self._process_kwargs["secret_key"] = self.secret_key
 
         self._worker_kwargs = {

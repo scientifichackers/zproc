@@ -78,7 +78,9 @@ def ping(
     secret_key: str = None
 ) -> Optional[int]:
     """
-    Ping the zproc server
+    Ping the zproc server.
+
+    This can be used to easily detect if a server is alive and running, with the aid of a suitable ``timeout``.
 
     :param server_address:
         The zproc server's address.

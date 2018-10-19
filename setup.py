@@ -18,7 +18,7 @@ URL = "https://github.com/devxpy/zproc"
 EMAIL = "devxpy@gmail.com"
 AUTHOR = "Dev Aggarwal"
 REQUIRES_PYTHON = ">=3.5"
-VERSION = "0.9.3"
+VERSION = "1.0.0a1"
 
 # What packages are required for this module to be executed?
 REQUIRED = ["pyzmq", "tblib", "psutil", "itsdangerous"]
@@ -52,6 +52,7 @@ else:
 
 class UploadCommand(Command):
     """Support setup.py upload."""
+
     description = "Build and publish the package."
     user_options = []
 
