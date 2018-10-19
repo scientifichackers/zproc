@@ -1,4 +1,4 @@
-<img src="https://i.imgur.com/sJARxXD.png" height="300" />
+<img src="https://i.imgur.com/sJARxXD.png" />
 
 *ZProc lets you do shared-state multitasking without the perils of having shared-memory.*
 
@@ -169,11 +169,10 @@ git clone https://github.com/pycampers/zproc.git
 cd zproc
 pipenv install
 pipenv install -d
-
+ 
 pipenv shell
 
 pip install -e .
-
 pytest 
 ```
 
