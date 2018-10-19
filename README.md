@@ -82,18 +82,15 @@ eventually wanting to turn into a full-fledged framework for all things multitas
 
 ## Install
 
+
 ```
-$ pip install zproc
+$ pip install zproc --pre
 ``` 
 
-**Or, from the development branch**
-
-```
-$ pip install git+https://github.com/pycampers/zproc.git@next#egg=zproc
-```
+[PyPI](https://pypi.org/project/zproc/).
 
 License: MIT License (MIT)<br>
-Requires: Python >=3.5
+Requires: Python >= 3.5
 
 ## Documentation ( [![Documentation Status](https://readthedocs.org/projects/zproc/badge/?version=latest)](https://zproc.readthedocs.io/) )
 
