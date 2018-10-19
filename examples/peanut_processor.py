@@ -111,7 +111,6 @@ Example output:
     PEANUT GEN: 68
     ...
 """
-
 from time import sleep
 import zproc
 

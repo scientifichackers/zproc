@@ -15,10 +15,8 @@ Expected Output:
 
 100
 """
-
-
-from time import sleep
 from random import random
+from time import sleep
 
 import zproc
 
@@ -27,17 +25,15 @@ ctx.state["count"] = 0
 
 
 @zproc.atomic
-def increment(state, fuzz):
-
+def increment(state: zproc.State):
     count = state["count"]
-    sleep(fuzz)  # this ensures that this operation is non-atomic
+    sleep(random())  # this ensures that this operation is non-atomic
     state["count"] = count + 1
-
     print(state["count"])
 
 
-def child(state):
-    increment(state, random())
+def child1(state):
+    increment(state)
 
 
-ctx.process_factory(child, count=100)
+ctx.process_factory(child1, count=50)

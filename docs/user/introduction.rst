@@ -5,11 +5,10 @@ The whole architecture of zproc is built around a :py:class:`.State` object.
 
 :py:class:`.Context` is provided as a convenient wrapper over :py:class:`.Process` and :py:class:`.State`.
 
-It's is the most obvious way to launch processes with zproc.
+It's the most obvious way to launch processes with zproc.
 
-Each :py:class:`.Context` object is associated with its own isolated state
-that is accessible by that its processes.
-
+Each :py:class:`.Context` object is associated with a state;
+accessible by its processes.
 
 Here's how you create a :py:class:`.Context`.
 
@@ -45,12 +44,16 @@ If you like to be cool, then you can use it as a decorator.
         pass
 
 
-The ``state`` is a *dict-like* object that you can use to represent your application's state.
+The ``state`` is a *dict-like* object.
+
+*dict-like*, because it's not exactly a dict.
+It provides a ``dict`` interface, but is actually just passing messages.
+
+You *cannot* mutate the underlying ``dict`` directly.
+It's protected by a Process whose sole job is to manage it.
 
 You can also access it from the :py:class:`.Context` itself using ``ctx.state``.
 
-*dict-like*, because it's not exactly a dict.
-It implements the ``dict`` methods, to provide that sweet syntactical sugar.
 
 .. code-block:: python
 
@@ -62,7 +65,6 @@ It implements the ``dict`` methods, to provide that sweet syntactical sugar.
 
     ...
 
-Behind the scenes, it's literally just passing messages using ZMQ sockets.
 
 Providing arguments to a Process
 --------------------------------
@@ -72,17 +74,10 @@ To provide some initial values to a Process, you can use use \*args and \*\*kwar
 .. code-block:: python
 
     def my_process(state, num, exp):
-        print(num ** exp)
+        print(num, exp)  # 2, 4
 
-    ctx.process(my_process, args=(2,), kwargs={'exp': 4})
+    ctx.process(my_process, args=[2], kwargs={'exp': 4})
 
-.. note::
-    ``args`` MUST be an ``Iterable``.
-
-    Since ``(2)`` evaluates to just ``2`` in Python,
-    it becomes necessary to have a ``,`` in there,
-    so that Python evaluates ``(2,)`` as a ``tuple`` of length ``1``,
-    containing ``2`` as the first element.
 
 Waiting for a Process
 ---------------------
@@ -142,7 +137,7 @@ That's why ZProc provides a more powerful construct, :py:meth:`~.Context.process
          ctx.process_map(
             power,
             range(100),
-            args=(3,),
+            args=[3],
             count=10  # distribute among 10 workers.
          )
     )
@@ -171,7 +166,7 @@ That's why ZProc provides a more powerful construct, :py:meth:`~.Context.process
     list(
         ctx.process_map(
             my_thingy,
-            args=(7,),
+            args=[7],
             map_kwargs=[
                 {'num': 10, 'exp': 3},
                 {'num': 5, 'exp': 5},
@@ -190,7 +185,7 @@ What's really cool about the process map is that it returns a generator.
 
 The moment you call it, it will distribute the task to "count" number of workers.
 
-It will return with a generator,
+It will then, return with a generator,
 which in-turn will do the job of pulling in the results from these workers,
 and arranging them in order.
 
@@ -229,11 +224,14 @@ As a result, the amount of time it takes for ``next(res)`` to return changes ove
 Reactive programming with zproc
 -------------------------------
 
-Now, let us uncover "reactive" part of zproc.
+This is the part where you really start to see the benefits of a smart state.
+The state knows when it's being mutated, and does the job of notifying everyone.
 
 I like to call it :ref:`state-watching`.
 
-state watching allows you to react to some change in the state in an efficient way.
+---
+
+State watching allows you to react to some change in the state in an efficient way.
 
 Lets say, you want to wait for the number of "cookies" to be "5".
 
@@ -260,7 +258,7 @@ But then you find out that this eats too much CPU, and put put some sleep.
 
 And from there on, you try to manage the time for which your application sleeps ( to arrive at a sweet spot).
 
-zproc provides an elegant, easy to use solution for this problem.
+zproc provides an elegant, easy to use solution to this problem.
 
 .. code-block:: python
 
@@ -271,7 +269,7 @@ zproc provides an elegant, easy to use solution for this problem.
 This eats very little to no CPU, and is fast enough for almost everyone needs.
 
 You must realise that this doesn't do any of that expensive "busy" waiting.
-Under the covers, it's actually a socket connecting waiting for a request.
+Under the covers, it's actually just a socket waiting for a request.
 
 If you want, you can even provide a function:
 
@@ -282,25 +280,26 @@ If you want, you can even provide a function:
 
 
 The function you provide will get called on each state update,
-to check whether the return value is ``True``-like.
+to check whether the return value is *truthy*.
 
-You obviously can't do things like this:
+.. caution::
 
-.. code-block:: python
+    You can't do things like this:
 
-    from time import time
+    .. code-block:: python
 
-    t = time()
-    state.get_when(lambda state: time() > t + 5)  # wrong!
+        from time import time
 
-The function gets called on state updates.
+        t = time()
+        state.get_when(lambda state: time() > t + 5)  # wrong!
 
-Changing time doesn't signify a state update.
+    The State responds to *state* changes. Changing time doesn't signify a state update.
+
 
 Mutating objects inside state
 -----------------------------
 
-You must remember that can't mutate (update) objects inside the state.
+You must remember that you can't mutate (update) objects deep inside the state.
 
 .. code-block:: python
 
@@ -323,26 +322,23 @@ which is to say using the :py:func:`~.atomic` decorator.
     def add_a_number(state, to_add)
         state['numbers'].append(to_add)
 
+
     def my_process(state):
         add_a_number(state, 4)
 
-It looks tedious at first,
-but trust me when I say that you will rip your brains apart when you find out
-that appending to lists in a dict is not atomic and try to do it safely with locks.
 
-You can read more about :ref:`atomicity`.
+Read more about :ref:`atomicity`.
 
 
-A note on performance
----------------------
+Something to keep in mind
+-------------------------
 
-There is always a cost to safety.
-You can write more performant code without zproc.
+Absolutely none of the the classes in ZProc are Process/Thread safe.
+You must never attempt to share a Context/State between multiple processes.
 
-However, when you weigh in the safety and ease of use of zproc,
-performance really falls short.
+Create a new one for each Process/Thread.
+Communicate and synchronize using the State at all times.
 
-And it's not like zproc is slow, see for yourself - `async vs zproc <https://github.com/pycampers/zproc/blob/master/examples/async_vs_zproc.py>`_
+This is also, in-general *very* good practice.
 
-Bottom line, minimizing the number of times your application accesses the state will
-result in lean and fast code.
+Never attempt to directly share python objects between Processes, and the multitasking gods will reward you :).

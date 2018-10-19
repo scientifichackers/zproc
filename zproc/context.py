@@ -2,19 +2,19 @@ import atexit
 import collections
 import functools
 import multiprocessing
-import pickle
 import signal
 from typing import (
     Tuple,
     Callable,
     Union,
     Hashable,
-    Iterable,
     Any,
     List,
     Mapping,
     Generator,
     Sequence,
+    Dict,
+    Optional,
 )
 
 import zmq
@@ -23,23 +23,22 @@ from zproc import processdef, tools, util
 from zproc.process import Process
 from zproc.state import State
 
-# holds the details about a task
-TaskDetail = collections.namedtuple("TaskDetail", ["task_number", "chunk_count"])
-
-# holds the details of a chunk in the task
-ChunkDetail = collections.namedtuple("ChunkDetail", ["list_index"])
+# holds the details for a task
+TaskDetail = collections.namedtuple("TaskDetail", ["task_id", "chunk_count"])
 
 
-class Context:
+class Context(util.SecretKeyHolder):
     def __init__(
         self,
-        server_address: tuple = None,
+        server_address: str = None,
         *,
         wait: bool = False,
         cleanup: bool = True,
         server_backend: Callable = multiprocessing.Process,
+        namespace: str = "default",
+        secret_key: str = None,
         **process_kwargs
-    ):
+    ) -> None:
         """
         Provides a high level interface to :py:class:`State` and :py:class:`Process`.
 
@@ -52,10 +51,9 @@ class Context:
 
         :param server_address:
             The address of the server.
-            (See :ref:`zproc-server-address-spec`)
 
-            If set to ``None``,
-            then a new server is started and a random address will be used.
+            If it is set to ``None``,
+            then a new server is started and a random address will be generated.
 
             Otherwise, it will connect to an existing server with the address provided.
 
@@ -63,6 +61,8 @@ class Context:
 
                 If you provide a "server_address", be sure to manually start the server,
                 as described here - :ref:`start-server`.
+
+            Please read :ref:`server-address-spec` for a detailed explanation.
 
         :param wait:
             Wait for all running process to finish their work before exiting.
@@ -86,33 +86,34 @@ class Context:
 
         :ivar state:
             A :py:class:`State` instance.
-
         :ivar process_list:
             A list of child ``Process``\ (s) created under this Context.
-
         :ivar worker_list:
             A list of worker ``Process``\ (s) created under this Context.
             Used for :py:meth:`Context.process_map`.
-
         :ivar server_process:
             A ``multiprocessing.Process`` object for the server, or None.
-
         :ivar server_address:
             The server's address as a 2 element ``tuple``.
+        :ivar namespace:
+            Passed on from the constructor. This is read-only.
         """
-
-        self._kwargs = process_kwargs
+        super().__init__(secret_key)
 
         if server_address is None:
             self.server_process, self.server_address = tools.start_server(
-                server_address, backend=server_backend
+                server_address, backend=server_backend, secret_key=secret_key
             )
         else:
             self.server_process, self.server_address = None, server_address
-        self.state = State(self.server_address)
 
-        self.process_list = []
-        self.worker_list = []
+        self.namespace = namespace
+        self.state = State(
+            self.server_address, namespace=self.namespace, secret_key=secret_key
+        )
+
+        self.process_list = []  # type:List[Process]
+        self.worker_list = []  # type: List[Process]
 
         self._push_sock = self.state._zmq_ctx.socket(zmq.PUSH)
         self._push_address = util.bind_to_random_address(self._push_sock)
@@ -120,31 +121,43 @@ class Context:
         self._pull_sock = self.state._zmq_ctx.socket(zmq.PULL)
         self._pull_address = util.bind_to_random_address(self._pull_sock)
 
+        self._process_kwargs = process_kwargs
+        self._process_kwargs["namespace"] = self.namespace
+        self._process_kwargs["secret_key"] = self.secret_key
+
         self._worker_kwargs = {
-            **self._kwargs,
+            **self._process_kwargs,
             # must be in reverse order for this to work
             # i.e. first pull addr, then push addr.
-            "args": (
-                self._pull_address,
-                self._push_address,
-                *self._kwargs.get("args", ()),
-            ),
+            "args": (self._pull_address, self._push_address, self.secret_key),
             # worker can't work without the state!
             "stateful": True,
+            "start": True,
         }
 
         self._task_counter = 0
-        # Dict[_TaskDetail, Dict[_ChunkDetail, Any]]
-        self._task_chunk_results = collections.defaultdict(dict)
 
+        self._task_chunk_results = collections.defaultdict(
+            dict
+        )  # type:Dict[TaskDetail, Dict[int, Any]]
+
+        # register cleanup before wait, so that wait runs before cleanup.
+        # (Order of execution is reversed)
         if cleanup:
-            signal.signal(signal.SIGTERM, util.clean_process_tree)
             atexit.register(util.clean_process_tree)
+            if util.is_main_thread():
+                signal.signal(signal.SIGTERM, util.clean_process_tree)
         if wait:
             atexit.register(self.wait_all)
 
+    def __repr__(self):
+        return "<{}>".format(self.__str__())
+
+    def __str__(self):
+        return "{} for {}".format(Context.__qualname__, self.state)
+
     def process(
-        self, target: Union[None, Callable] = None, **process_kwargs
+        self, target: Optional[Callable] = None, **process_kwargs
     ) -> Union[Process, Callable]:
         """
         Produce a child process bound to this context.
@@ -175,11 +188,10 @@ class Context:
             SHOULD be omitted when using this as a decorator.
 
         :param \*\*process_kwargs:
-            Keyword arguments that :py:class:`Process` takes, except ``server_address`` and ``target``.
+            .. include:: /api/context/params/process_kwargs.rst
 
         :return: The :py:class:`Process` instance produced.
         """
-
         if target is None:
 
             def decorator(fn):
@@ -188,9 +200,10 @@ class Context:
             return decorator
 
         process = Process(
-            self.server_address, target, **{**self._kwargs, **process_kwargs}
+            target, self.server_address, **{**self._process_kwargs, **process_kwargs}
         )
         self.process_list.append(process)
+
         return process
 
     def process_factory(self, *targets: Callable, count: int = 1, **process_kwargs):
@@ -204,19 +217,18 @@ class Context:
             The number of processes to spawn for each item in ``targets``.
 
         :param \*\*process_kwargs:
-            Keyword arguments that :py:class:`Process` takes, except ``server_address`` and ``target``.
+            .. include:: /api/context/params/process_kwargs.rst
 
         :return:
-            The ``list`` of :py:class:`Process` instance(s) produced.
+            A ``list`` of the :py:class:`Process` instance(s) produced.
         """
-
         return [
             self.process(target, **process_kwargs)
             for target in targets
             for _ in range(count)
         ]
 
-    def _populate_workers(self, size: int, new: bool = False):
+    def _repopulate_workers(self, size: int, new: bool):
         if not new:
             size -= len([worker for worker in self.worker_list if worker.is_alive])
 
@@ -228,40 +240,43 @@ class Context:
         elif size < 0:
             # Notify "size" no. of workers to finish up, and close shop.
             for _ in range(-size):
-                self._push_sock.send_pyobj(0)
+                util.send(None, self._push_sock, self._serializer)
 
-    def _pull_results_for_task(
+    def _pull_results(self):
+        response = util.recv(self._pull_sock, self._serializer)
+        # print(response)
+        task_detail, list_index, chunk_result = response
+        self._task_chunk_results[task_detail][list_index] = chunk_result
+
+    def pull_results_for_task(
         self, task_detail: TaskDetail
     ) -> Generator[Any, None, None]:
         """
         PULL "count" results from the process pool.
         Also arranges the results in-order.
         """
+        task_chunk_results = self._task_chunk_results[task_detail]
 
-        task_chunks = self._task_chunk_results[task_detail]
+        for list_index in range(task_detail.chunk_count):
+            while list_index not in task_chunk_results:
+                self._pull_results()
 
-        while len(task_chunks) < task_detail.chunk_count:
-            this, list_index, chunk_result = util.handle_remote_response(
-                self._pull_sock.recv_pyobj()
-            )
-            self._task_chunk_results[this][list_index] = chunk_result
-
-        for i in sorted(task_chunks.keys()):
-            yield from task_chunks[i]
+            yield from task_chunk_results[list_index]
 
     def process_map(
         self,
         target: Callable,
         map_iter: Sequence[Any] = None,
         *,
-        map_args: Sequence[Iterable[Any]] = None,
-        args=None,
+        map_args: Sequence[Sequence[Any]] = None,
+        args: Sequence = None,
         map_kwargs: Sequence[Mapping[str, Any]] = None,
-        kwargs=None,
+        kwargs: Mapping = None,
         count: int = None,
         stateful: bool = False,
-        new=False
-    ) -> Generator[Any, None, None]:
+        new: bool = False,
+        return_task: bool = False
+    ) -> Union[TaskDetail, Generator[Any, None, None]]:
         """
         Functional equivalent of ``map()`` in-built function, but executed in a parallel fashion.
 
@@ -362,6 +377,16 @@ class Context:
             By default, it is set to ``multiprocessing.cpu_count()``
             (The number of CPU cores on your system)
 
+        :param return_task:
+            Return a ``TaskDetail`` namedtuple object,
+            instead of a Generator that yields the results of the computation.
+
+            The ``TaskDetail`` returned can be passed to :py:meth:`Context.pull_results_for_task`,
+            which will fetch the results for you.
+
+            This is useful in situations where the results are required at a later time,
+            and since a Generator object is not easily serializable, things get a little tricky.
+            On the other hand, a namedtuple can be serialized to JSON, pretty easily.
 
         :return:
             The result is quite similar to ``map()`` in-built function.
@@ -371,7 +396,7 @@ class Context:
 
             The actual "processing" starts as soon as you call this function.
 
-            The returned ``generator`` only "waits" for the results from the worker processes.
+            The returned ``generator`` fetches the results from the worker processes, one-by-one.
 
         .. warning::
             - If ``len(map_iter) != len(maps_args) != len(map_kwargs)``,
@@ -379,7 +404,6 @@ class Context:
 
         See :ref:`process_map` for Examples.
         """
-
         if count is None:
             count = multiprocessing.cpu_count()
         if args is None:
@@ -387,9 +411,9 @@ class Context:
         if kwargs is None:
             kwargs = {}
 
-        task_detail = TaskDetail(task_number=self._task_counter, chunk_count=count)
+        task_detail = TaskDetail(task_id=self._task_counter, chunk_count=count)
         self._task_counter += 1
-        self._populate_workers(count, new)
+        self._repopulate_workers(count, new)
 
         lengths = [len(i) for i in (map_iter, map_args, map_kwargs) if i is not None]
         assert (
@@ -407,47 +431,62 @@ class Context:
         )
         # print(smallest, chunk_size, count, chunks)
 
-        for i in range(count):
-            self._push_sock.send_pyobj(
-                (
-                    task_detail,
-                    i,
-                    None if chunks[0] is None else chunks[0][i],
-                    None if chunks[1] is None else chunks[1][i],
-                    None if chunks[2] is None else chunks[2][i],
-                    stateful,
-                    target,
-                    args,
-                    kwargs,
-                ),
-                protocol=pickle.HIGHEST_PROTOCOL,
-            )
+        for chunk_id in range(count):
+            params = [
+                None if chunks[0] is None else chunks[0][chunk_id],
+                None if chunks[1] is None else chunks[1][chunk_id],
+                args,
+                None if chunks[2] is None else chunks[2][chunk_id],
+                kwargs,
+            ]
+            batch = [task_detail, chunk_id, stateful, target, params]
 
-        return self._pull_results_for_task(task_detail)
+            util.send(batch, self._push_sock, self._serializer)
 
-    def _create_watcher_decorator(
-        self, state_watcher_fn_name: str, process_kwargs: dict, *args, **kwargs
+        if return_task:
+            return task_detail
+
+        return self.pull_results_for_task(task_detail)
+
+    def _create_call_when_xxx_decorator(
+        self,
+        get_when_xxx_fn_name: str,
+        process_kwargs: dict,
+        *state_watcher_args,
+        **state_watcher_kwargs
     ):
+        # can't work without the state!
         stateful = process_kwargs.pop("stateful", True)
 
         def decorator(wrapped_fn):
             if stateful:
 
-                def watcher_process(state, *wrapped_fn_args, **wrapped_fn_kwargs):
-                    state_watcher_fn = getattr(state, state_watcher_fn_name)
+                def watcher_process(state, *args, **kwargs):
+                    get_when_xxx_fn = getattr(state, get_when_xxx_fn_name)
 
                     while True:
-                        state_watcher_fn(*args, **kwargs)
-                        wrapped_fn(state, *wrapped_fn_args, **wrapped_fn_kwargs)
+                        wrapped_fn(
+                            get_when_xxx_fn(
+                                *state_watcher_args, **state_watcher_kwargs
+                            ),
+                            state,
+                            *args,
+                            **kwargs
+                        )
 
             else:
 
-                def watcher_process(state, *wrapped_fn_args, **wrapped_fn_kwargs):
-                    state_watcher_fn = getattr(state, state_watcher_fn_name)
+                def watcher_process(state, *args, **kwargs):
+                    get_when_xxx_fn = getattr(state, get_when_xxx_fn_name)
 
                     while True:
-                        state_watcher_fn(*args, **kwargs)
-                        wrapped_fn(*wrapped_fn_args, **wrapped_fn_kwargs)
+                        wrapped_fn(
+                            get_when_xxx_fn(
+                                *state_watcher_args, **state_watcher_kwargs
+                            ),
+                            *args,
+                            **kwargs
+                        )
 
             watcher_process = self.process(watcher_process, **process_kwargs)
             functools.update_wrapper(watcher_process.target, wrapped_fn)
@@ -460,21 +499,13 @@ class Context:
         self,
         *keys: Hashable,
         exclude: bool = False,
-        live: bool = True,
+        live: bool = False,
         **process_kwargs
     ):
         """
         Decorator version of :py:meth:`~State.get_when_change()`.
 
-        Spawns a new Process that watches the state and calls the wrapped function forever.
-
-        :param \*\*process_kwargs: Keyword arguments that :py:class:`Process` takes, except ``server_address``.
-
-        All other parameters have same meaning as :py:meth:`~State.get_when_change()`
-
-        :return: A decorator function
-
-                The decorator function will return the :py:class:`Process` instance created
+        .. include:: /api/context/call_when_change.rst
 
         .. code-block:: python
             :caption: Example
@@ -483,29 +514,19 @@ class Context:
 
             ctx = zproc.Context()
 
-            @ctx.call_when_change()
-            def test(state):
-                print(state)
+            @ctx.call_when_change('gold')
+            def test(snapshot, state):
+                print(snapshot['gold'], state)
         """
-
-        return self._create_watcher_decorator(
-            "get_when_change", process_kwargs, *keys, exclude, live=live
+        return self._create_call_when_xxx_decorator(
+            "get_when_change", process_kwargs, *keys, exclude=exclude, live=live
         )
 
-    def call_when(self, test_fn: Callable, *, live: bool = True, **process_kwargs):
+    def call_when(self, test_fn: Callable, *, live: bool = False, **process_kwargs):
         """
         Decorator version of :py:meth:`~State.get_when()`.
 
-        Spawns a new Process that watches the state and calls the wrapped function forever.
-
-        :param \*\*process_kwargs: Keyword arguments that :py:class:`Process` takes, except ``server_address``.
-
-        All other parameters have same meaning as :py:meth:`~State.get_when()`
-
-        :return: A decorator function
-
-                The decorator function will return the :py:class:`Process` instance created
-
+        .. include:: /api/context/call_when.rst
 
         .. code-block:: python
             :caption: Example
@@ -514,31 +535,21 @@ class Context:
 
             ctx = zproc.Context()
 
-            @ctx.get_state_when(lambda state: state['foo'] == 5)
-            def test(state):
-                print(state)
+            @ctx.get_state_when(lambda state: state['trees'] == 5)
+            def test(snapshot, state):
+                print(snapshot['trees'], state)
         """
-
-        return self._create_watcher_decorator(
+        return self._create_call_when_xxx_decorator(
             "get_when", process_kwargs, test_fn, live=live
         )
 
     def call_when_equal(
-        self, key: Hashable, value: Any, *, live: bool = True, **process_kwargs
+        self, key: Hashable, value: Any, *, live: bool = False, **process_kwargs
     ):
         """
         Decorator version of :py:meth:`~State.get_when_equal()`.
 
-        Spawns a new Process that watches the state and calls the wrapped function forever.
-
-        :param \*\*process_kwargs: Keyword arguments that :py:class:`Process` takes, except ``server_address``.
-
-        All other parameters have same meaning as :py:meth:`~State.get_when_equal()`
-
-        :return: A decorator function
-
-                The decorator function will return the :py:class:`Process` instance created
-
+        .. include:: /api/context/call_when_equality.rst
 
         .. code-block:: python
             :caption: Example
@@ -547,32 +558,21 @@ class Context:
 
             ctx = zproc.Context()
 
-            @ctx.call_when_equal('foo', 5)
-            def test(state):
-                print(state)
+            @ctx.call_when_equal('oranges', 5)
+            def test(snapshot, state):
+                print(snapshot['oranges'], state)
         """
-
-        return self._create_watcher_decorator(
+        return self._create_call_when_xxx_decorator(
             "get_when_equal", process_kwargs, key, value, live=live
         )
 
     def call_when_not_equal(
-        self, key: Hashable, value: Any, *, live: bool = True, **process_kwargs
+        self, key: Hashable, value: Any, *, live: bool = False, **process_kwargs
     ):
         """
         Decorator version of :py:meth:`~State.get_when_not_equal()`.
 
-        Spawns a new Process that watches the state and calls the wrapped function forever.
-
-        :param \*\*process_kwargs: Keyword arguments that :py:class:`Process` takes, except ``server_address``.
-
-        All other parameters have same meaning as :py:meth:`~State.get_when_not_equal()`
-
-        :return:
-            A decorator function
-
-            The decorator function will return the :py:class:`Process` instance created
-
+        .. include:: /api/context/call_when_equality.rst
 
         .. code-block:: python
             :caption: Example
@@ -581,13 +581,46 @@ class Context:
 
             ctx = zproc.Context()
 
-            @ctx.call_when_not_equal('foo', 5)
-            def test(state):
-                print(state)
+            @ctx.call_when_not_equal('apples', 5)
+            def test(snapshot, state):
+                print(snapshot['apples'], state)
         """
-
-        return self._create_watcher_decorator(
+        return self._create_call_when_xxx_decorator(
             "get_when_not_equal", process_kwargs, key, value, live=live
+        )
+
+    def call_when_none(self, key: Hashable, *, live: bool = False, **process_kwargs):
+        """
+        Decorator version of :py:meth:`~State.get_when_none()`.
+
+        .. include:: /api/context/call_when_equality.rst
+        """
+        return self._create_call_when_xxx_decorator(
+            "get_when_none", process_kwargs, key, live=live
+        )
+
+    def call_when_not_none(
+        self, key: Hashable, *, live: bool = False, **process_kwargs
+    ):
+        """
+        Decorator version of :py:meth:`~State.get_when_not_none()`.
+
+        .. include:: /api/context/call_when_equality.rst
+        """
+        return self._create_call_when_xxx_decorator(
+            "get_when_not_none", process_kwargs, key, live=live
+        )
+
+    def call_when_available(
+        self, key: Hashable, *, live: bool = False, **process_kwargs
+    ):
+        """
+        Decorator version of :py:meth:`~State.get_when_available()`.
+
+        .. include:: /api/context/call_when_equality.rst
+        """
+        return self._create_call_when_xxx_decorator(
+            "get_when_available", process_kwargs, key, live=live
         )
 
     def wait_all(self) -> List[Tuple[Process, Any]]:
@@ -599,7 +632,6 @@ class Context:
             A ``list`` of 2-value ``tuple`` (s),
             containing a :py:class:`Process` object and the value returned by its ``target``.
         """
-
         return [(process, process.wait()) for process in self.process_list]
 
     def start_all(self):
@@ -609,7 +641,6 @@ class Context:
         Ignores if a Process is already started, unlike :py:meth:`~Process.start()`,
         which throws an ``AssertionError``.
         """
-
         for process in self.process_list:
             try:
                 process.start()
@@ -618,7 +649,6 @@ class Context:
 
     def stop_all(self):
         """Call :py:meth:`~Process.stop()` on all the child processes of this Context"""
-
         for proc in self.process_list:
             proc.stop()
 
@@ -637,7 +667,6 @@ class Context:
 
         Once closed, you shouldn't use this Context again.
         """
-
         self.stop_all()
 
         if self.server_process is not None:

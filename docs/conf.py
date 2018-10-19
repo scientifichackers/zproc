@@ -174,6 +174,3 @@ autodoc_member_order = "bysource"
 rst_prolog = """
 :github_url: https://github.com/pycampers/zproc
 """
-
-# inline_highlight_respect_highlight = True
-# inline_highlight_literals = True

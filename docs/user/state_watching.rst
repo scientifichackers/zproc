@@ -5,23 +5,26 @@ The magic of state watching
 **Watch the state for events, as-if you were watching a youtube video!**
 
 
-zproc allows you to "watch" the state using these methods, using the :py:class:`.State` API.
+zproc allows you to *watch* the state using these methods, @ the :py:class:`.State` API.
 
 - :py:meth:`~.State.get_when_change`
 - :py:meth:`~.State.get_when`
 - :py:meth:`~.State.get_when_equal`
 - :py:meth:`~.State.get_when_not_equal`
-
-Essentially, they allow you to wait for updates in the state.
+- :py:meth:`~.State.get_when_none`
+- :py:meth:`~.State.get_when_not_none`
 
 For example, the following code will watch the state,
-and print out a message when the price of gold is below 40$.
+and print out a message whenever the price of gold is below 40.
 
 .. code-block:: python
 
-    price = state.get_when(lamba state: state['gold_price'] < 40)
+    while True:
+        snapshot = state.get_when(lambda state: state['gold_price'] < 40)
 
-    print('"gold_price" is below 40$ !:', price)
+        print('"gold_price" is below 40!!:', snapshot['gold_price'])
+
+---
 
 There also these utility methods in :py:class:`.Context` that are just a wrapper
 over their counterparts in :py:class:`.State`.
@@ -30,28 +33,48 @@ over their counterparts in :py:class:`.State`.
 - :py:meth:`~.Context.call_when`
 - :py:meth:`~.Context.call_when_equal`
 - :py:meth:`~.Context.call_when_not_equal`
+- :py:meth:`~.Context.call_when_none`
+- :py:meth:`~.Context.call_when_not_none`
 
-
-These help you avoid writing the extra 5 lines of code.
 
 For example, the function ``want_pizza()`` will be called every-time the ``"num_pizza"`` key in the state changes.
 
 .. code-block:: python
 
     @ctx.call_when_change("num_pizza")
-    def want_pizza(state):
-        print("pizza be tasty!")
+    def want_pizza(snapshot, state):
+        print("pizza be tasty!", snapshot['num_pizza'])
+
+
+.. note::
+    All state-watchers are ``KeyError`` safe.
+    That means, if the dict key you requested for isn't present, a ``KeyError`` won't be thrown.
+
+Snapshots
+---------
+
+All watchers provide return with a *snapshot* of the state,
+corresponding to the state-change for which the state watcher was triggered.
+
+The *snapshot* is just a regular ``dict`` object.
+
+In practice, this helps avoid race conditions -- especially in cases where state keys are inter-dependent.
+
+.. _duplicate-events:
+
+Duplicate-ness of events
+------------------------
+
 
 
 .. _live-events:
-
 
 Live-ness of events
 -------------------
 
 zproc provides 2 different "modes" for watching the state.
 
-By default, all state watchers will provide **live updates**.
+By default, all state watchers will provide **buffered updates**.
 
 Let us see what that exactly means, in detail.
 
@@ -70,13 +93,13 @@ First, let us create a :py:class:`~Process` that will generate some peanuts, per
 
     ctx = zproc.Context()
     state = ctx.state
-
     state["peanuts"] = 0
 
 
     @zproc.atomic
     def inc_peanuts(state):
         state['peanuts'] += 1
+
 
     @ctx.process
     def peanut_gen(state):
@@ -97,7 +120,7 @@ Live consumer
 
         sleep(2)
 
-The above code will miss any updates that happen while it is sleeping (``sleep(5)``).
+The above code will miss any updates that happen while it is sleeping (``sleep(2)``).
 
 When consuming live updates, your code **can miss events**, if it's not paying attention.
 
@@ -116,7 +139,7 @@ To modify this behaviour, you need to pass ``live=False``.
 
         sleep(2)
 
-This way, the events are stored in a *buffer*,
+This way, the events are stored in a *queue*,
 so that your code **doesn't miss any events**.
 
 *like a normal youtube video, where you won't miss anything, since it's buffering.*
@@ -128,7 +151,7 @@ Hybrid consumer
 
 Hence the need for a :py:meth:`~.State.go_live` method.
 
-It *clears* the buffer, ignoring any previous events.
+It *clears* the outstanding queue (or buffer) -- deleting all previous events.
 
 *That's somewhat like the "LIVE" button on a live stream, that skips ahead to the live broadcast.*
 
@@ -152,10 +175,6 @@ It *clears* the buffer, ignoring any previous events.
     A **live** state watcher is strictly **LIVE**.
 
 
-Using these methods,
-alongside the ``live`` parameter and :py:meth:`~.State.go_live` method,
-one can create extremely simple looking, yet powerful applications.
-
 *A Full Example is available* `here. <https://github.com/pycampers/zproc/blob/master/examples/peanut_processor.py>`_
 
 
@@ -177,7 +196,7 @@ Timeouts
 
 You can also provide timeouts while watching the state, using ``timeout`` parameter.
 
-If an update doesn't occur within the timeout, a ``TimeoutError`` is raised.
+If an update doesn't occur within the specified timeout, a ``TimeoutError`` is raised.
 
 .. code-block:: python
 
@@ -185,7 +204,6 @@ If an update doesn't occur within the timeout, a ``TimeoutError`` is raised.
         print(state.get_when_change(timeout=5))  # wait 5 seconds for an update
     except TimeoutError:
         print('Waited too long!)
-
 
 
 
@@ -199,7 +217,9 @@ Here, we want to watch a button press, and determine whether it was a long or a 
 Some assumptions:
 
 - If the value of ``'button'`` is ``True``, the the button is pressed
+
 - If the value of ``'button'`` is ``False``, the button is not pressed.
+
 - The ``Reader`` is any arbitrary source of a value, e.g. a GPIO pin or a socket connection, receiving the value from an IOT button.
 
 .. code-block:: python
@@ -223,10 +243,9 @@ Some assumptions:
 
     # calls handle_press() whenever button is pressed
     @ctx.call_when_equal('button', True, live=True)
-    def handle_press(state):
+    def handle_press(_, state):  # The first arg will be the value of "button". We don't need that.
 
         print("button pressed")
-
 
         try:
             # wait 0.5 sec for a button to be released

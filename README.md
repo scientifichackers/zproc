@@ -1,20 +1,24 @@
-<img src="https://i.imgur.com/sJARxXD.png" height="300" />
+<img src="https://i.imgur.com/sJARxXD.png" />
 
-*P.S.A.: New releases are being deffered until 1.x.x release. Please use the [next](https://github.com/pycampers/zproc/tree/next) branch if you want to test it out.*
-
+*ZProc lets you do shared-state multitasking without the perils of having shared-memory.*
 
 **Behold, the power of ZProc:**
 
 ```python
+
+# Some initialization
 import zproc
 
 
 ctx = zproc.Context(wait=True)  # wait for processes in this context
 ctx.state["cookies"] = 0
 
+
+# Define "atomic" operations
+
 @zproc.atomic
 def eat_cookie(state):
-    """Eat a cookie atomically."""
+    """Eat a cookie."""
     
     state["cookies"] -= 1
     print("nom nom nom")
@@ -22,28 +26,25 @@ def eat_cookie(state):
 
 @zproc.atomic
 def bake_cookie(state):
-    """Bake a cookie atomically."""
-
+    """Bake a cookie."""
     state["cookies"] += 1
     print("Here's a cookie!")
 
 
-@ctx.call_when_change("cookies")
-def cookie_eater(state):
-    """Eat cookies as they're baked."""
+# Fire up processes
 
+@ctx.call_when_change('cookies')
+def cookie_eater(_, state):
+    """Eat cookies as they're baked."""
+    
     eat_cookie(state)
 
 
-@ctx.process
-def cookie_baker(state):
-    """Bake some cookies."""
-
-    for i in range(5):
-        bake_cookie(state)
+for i in range(5):
+    bake_cookie(ctx.state)
 ```
 
-**output**
+**Result:**
 
 ```
 Here's a cookie!
@@ -60,9 +61,36 @@ nom nom nom
 
 (baker and eater run in different processes)
 
+## The core idea
+
+ZProc tries to breathe new life into the archaic idea of shared-state multitasking by 
+protecting application state with logic and reason. 
+
+Shared state is frowned upon by almost everyone, 
+(mostly) due to the fact that memory is inherently dumb.
+
+Like memory doesn't really care who's writing to it.
+
+ZProc's state tries to keep a track of who's doing what.
+
+## The Goal
+
+ZProc aims to make building multi-taking applications easier and faster for everyone, in a pythonic way.
+
+It started out from the core idea of having a *smart* state -- 
+eventually wanting to turn into a full-fledged framework for all things multitasking.
+
 ## Install
 
-`pip install zproc`
+```
+$ pip install zproc
+``` 
+
+**Or, from the development branch**
+
+```
+$ pip install git+https://github.com/pycampers/zproc.git@next#egg=zproc
+```
 
 License: MIT License (MIT)<br>
 Requires: Python >=3.5
@@ -73,39 +101,10 @@ Requires: Python >=3.5
 
 #### [Examples](examples)
 
-## Why use ZProc?
-
-At the surface, it's just a better API for Message passing parallelism (using ZMQ).
-
-Message passing can be tedious because of all the manual wiring involved.
-
-ZProc lets you do message passing parallelism with a more pythonic, 
-safe, easy-to-use interface.
-
-It does that by providing a global `dict` called `state`.<br>
-The `state` is **not** a shared object.<br>
-It works _purely_ on message passing.
-
-It also supports a fair bit of reactive programming, 
-using [state watchers](http://zproc.readthedocs.io/en/latest/user/state_watching.html).
-
-Behind the covers, it uses the [Actor Model](https://en.wikipedia.org/wiki/Actor_model).
-
-It also borrows the `autoretry` feature of Celery, but unlike
-Celery it doesn't need a broker.
-
-Bottom line, you'll have a lot more fun doing parallel/concurrent programming using ZProc, than anything else.
 
 ## Features
 
--   🌠 &nbsp; Asynchronous paradigms without `async def`
-
-    -   Build a combination of synchronous and asynchronous systems, with ease.
-    -   By _watching_ for changes in state, without
-        [Busy Waiting](https://en.wikipedia.org/wiki/Busy_waiting).
-    -   [🔖](https://zproc.readthedocs.io/en/latest/api.html#state)
-
--   🌠 &nbsp; Process management
+- 🌠 &nbsp; Process management
 
     -   [Process Factory](https://zproc.readthedocs.io/en/latest/api.html#zproc.Context.process_factory)
     -   Remembers to kill processes when exiting, for general peace.
@@ -113,7 +112,19 @@ Bottom line, you'll have a lot more fun doing parallel/concurrent programming us
     -   Keeps a record of processes created using ZProc.
     -   [🔖](https://zproc.readthedocs.io/en/latest/api.html#context)
 
--   🌠 &nbsp; Atomic Operations
+- 🌠 &nbsp; Process Maps
+    
+    - Automatically manages worker processes, and delegates tasks to them.
+    -   [🔖](https://zproc.readthedocs.io/en/latest/api.html#context)    
+
+- 🌠 &nbsp; Asynchronous paradigms without `async def`
+
+    -   Build a combination of synchronous and asynchronous systems, with ease.
+    -   By _watching_ for changes in state, without
+        [Busy Waiting](https://en.wikipedia.org/wiki/Busy_waiting).
+    -   [🔖](https://zproc.readthedocs.io/en/latest/api.html#state)
+    
+- 🌠 &nbsp; Atomic Operations
     -   Perform an arbitrary number of operations on state as a single,
         atomic operation.
     -   [🔖](https://zproc.readthedocs.io/en/latest/user/atomicity.html)
@@ -147,35 +158,22 @@ Bottom line, you'll have a lot more fun doing parallel/concurrent programming us
     -   Please don't use it in production right now.
 
 -   Windows compatible?
+
     -   Probably?
-
-## Inner Workings
-
--   ZProc uses a Server, which is responsible for storing and communicating the state.
-
-    -   This isolates our resource (state), and makes it safer to do atomic operations.
-
--   The process(s) communicate through ZMQ sockets, over `ipc://`.
-
-    -   The clients (Proceses) use a `ZMQ_DEALER` socket.
-    -   The Server uses a `ZMQ_ROUTER` socket.
-
--   If a Process wishes to _watch_ the state, it subscribes to a global publish message.
-    -   The zproc server publishes the state at every state update.
-        (using `ZMQ_PUB` socket)
-    -   A Process may subscribe to this message and
-        filter out the event it needs (using `ZMQ_SUB` socket).
-    -   zmq sockets block your application efficiently
-        till an update occurs, eliminating the need for Busy Waiting.
-
-(Busy waiting refers to the `while True: <check condition>` approach).
-
+    
 ## Local development
 
 ```
 git clone https://github.com/pycampers/zproc.git
+
 cd zproc
 pipenv install
+pipenv install -d
+ 
+pipenv shell
+
+pip install -e .
+pytest 
 ```
 
 ## Build documentation
@@ -184,7 +182,9 @@ Assuming you have sphinx installed (Linux)
 
 ```
 cd docs
-pipenv run ./build.sh
+./build.sh 
+
+./build.sh loop  # starts a build loop.
 ```
 
 ## ZProc in the wild
@@ -205,13 +205,13 @@ pipenv run ./build.sh
     ZProc can handle nested procesess!
 -   Thanks to Kennith Rietz.
     His setup.py was used to host this project on pypi.
-    Plus lot of documentation is blatantly copied
+    Plus a lot of documentation structure is blatantly copied
     from his documentation on requests
+
+---
 
 ZProc is short for [Zero](http://zguide.zeromq.org/page:all#The-Zen-of-Zero) Process.
 
 ---
-
-<a href="https://www.buymeacoffee.com/u75YezVri" target="_blank"><img src="https://www.buymeacoffee.com/assets/img/custom_images/black_img.png" alt="Buy Me A Coffee" style="height: auto !important;width: auto !important;" ></a>
 
 [🐍🏕️](http://www.pycampers.com/)

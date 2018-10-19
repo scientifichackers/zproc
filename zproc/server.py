@@ -1,171 +1,190 @@
-import multiprocessing
 import os
-import pickle
+import signal
+from collections import defaultdict
 from copy import deepcopy
-from typing import Tuple
+from typing import Any, Dict
 
+import itsdangerous
 import zmq
 from tblib import pickling_support
 
-from zproc import util
+from zproc import util, exceptions
+from zproc.constants import Msgs, Commands
 
-# installs pickle-ing support for exceptions.
 pickling_support.install()
 
 
-class Server:
+class Server(util.SecretKeyHolder):
+    _active_identity = b""
+    _active_namespace = b""
+    _active_state = {}  # type:dict
+
     def __init__(
-        self,
-        server_address: Tuple[str, str] = None,
-        sendconn: multiprocessing.Pipe = None,
-    ):
-        self.state = {}
+        self, server_address: str, push_address: str, secret_key: str = None
+    ) -> None:
+        super().__init__(secret_key)
 
-        self._zmq_ctx = zmq.Context()
-        self._zmq_ctx.setsockopt(zmq.LINGER, 0)
+        self.zmq_ctx = util.create_zmq_ctx()
 
-        self._router_sock = self._zmq_ctx.socket(zmq.ROUTER)
-        self._pub_sock = self._zmq_ctx.socket(zmq.PUB)
+        self.router_sock = self.zmq_ctx.socket(zmq.ROUTER)
+        self.pub_sock = self.zmq_ctx.socket(zmq.PUB)
+        self.pull_sock = self.zmq_ctx.socket(zmq.PULL)
 
-        if server_address is None:
-            req_rep_address = util.bind_to_random_address(self._router_sock)
-            pub_sub_address = util.bind_to_random_address(self._pub_sock)
+        push_sock = self.zmq_ctx.socket(zmq.PUSH)
+        push_sock.connect(push_address)
 
-            sendconn.send((req_rep_address, pub_sub_address))
-            sendconn.close()
+        try:
+            if server_address:
+                self.req_rep_address = server_address
+
+                self.router_sock.bind(self.req_rep_address)
+                if "ipc" in server_address:
+                    self.pub_sub_address = util.bind_to_random_ipc(self.pub_sock)
+                    self.push_pull_address = util.bind_to_random_ipc(self.pull_sock)
+                else:
+                    self.pub_sub_address = util.bind_to_random_tcp(self.pub_sock)
+                    self.push_pull_address = util.bind_to_random_tcp(self.pull_sock)
+            else:
+                self.req_rep_address = util.bind_to_random_address(self.router_sock)
+                self.pub_sub_address = util.bind_to_random_address(self.pub_sock)
+                self.push_pull_address = util.bind_to_random_address(self.pull_sock)
+        except Exception:
+            push_sock.send(self._serializer.dumps(exceptions.RemoteException()))
+            self.close()
         else:
-            self._router_sock.bind(server_address[0])
-            self._pub_sock.bind(server_address[1])
+            push_sock.send(self._serializer.dumps(self.req_rep_address))
+        finally:
+            push_sock.close()
 
         # see State._get_subscribe_sock() for more
-        self._pub_sock.setsockopt(zmq.INVERT_MATCHING, 1)
+        self.pub_sock.setsockopt(zmq.INVERT_MATCHING, 1)
 
-    def _wait_for_request(self) -> Tuple[str, dict]:
-        """wait for a client to send a request"""
+        self.state_store = defaultdict(dict)  # type:Dict[bytes, Dict[Any, Any]]
 
-        identity, msg_dict = self._router_sock.recv_multipart()
-        return identity, pickle.loads(msg_dict)
+        self.dispatch_dict = {
+            Commands.exec_atomic_fn: self.exec_atomic_fn,
+            Commands.exec_dict_method: self.exec_dict_method,
+            Commands.get_state: self.send_state,
+            Commands.set_state: self.set_state,
+            Commands.head: self.head,
+            Commands.ping: self.ping,
+        }
 
-    def _reply(self, identity, response):
+    def recv(self) -> Dict[Msgs, Any]:
+        self._active_identity, msg = self.router_sock.recv_multipart()
+
+        request = self._serializer.loads(msg)
+        try:
+            self._active_namespace = request[Msgs.namespace]
+        except KeyError:
+            pass
+        self._active_state = self.state_store[self._active_namespace]
+
+        # print(
+        #     self._active_identity,
+        #     msg,
+        #     request,
+        #     self._active_namespace,
+        #     self._active_state,
+        # )
+        return request
+
+    def send(self, response):
         """reply with ``response`` to a client (with said ``identity``)"""
+        # print("server rep:", self.identity_for_req, response)
 
-        return self._router_sock.send_multipart(
-            [identity, pickle.dumps(response, protocol=pickle.HIGHEST_PROTOCOL)]
+        self.router_sock.send_multipart(
+            [self._active_identity, self._serializer.dumps(response)]
         )
 
-    def _exception_reply(self, identity):
-        """
-        Retrieve the current exception,
-        serialize it, and send it to the client with said ``identity``
-        """
+    def dispatch(self, request):
+        # print("dispatch:", request)
+        self.dispatch_dict[request[Msgs.cmd]](request)
 
-        return self._reply(identity, util.RemoteException())
-
-    def _pub_state_if_changed(self, identity: bytes, old_state: dict):
+    def pub_state(self, old_state: dict):
         """Publish the state to everyone"""
 
-        if old_state != self.state:
-            return self._pub_sock.send(
-                identity
-                + pickle.dumps(
-                    [old_state, self.state], protocol=pickle.HIGHEST_PROTOCOL
-                )
+        self.pub_sock.send(
+            self._active_identity
+            + self._active_namespace
+            + self._serializer.dumps(
+                [old_state, self._active_state, old_state == self._active_state]
             )
-
-    def _fn_executor(self, identity, fn, args, kwargs):
-        """
-        Run a function atomically (sort-of)
-        and returns the result back to the client with ``identity``.
-
-        - Restores the state if an error occurs.
-        - Publishes the state if it changes after the function executes.
-        """
-
-        old_state = deepcopy(self.state)
-        # print(fn, args, kwargs)
-        try:
-            result = fn(*args, **kwargs)
-        except:
-            self.state = old_state  # restore previous state
-            self._exception_reply(identity)
-        else:
-            self._reply(identity, result)
-            self._pub_state_if_changed(identity, old_state)
-
-    def ping(self, identity, request):
-        return self._reply(
-            identity, {Msg.pid: os.getpid(), Msg.payload: request[Msg.payload]}
         )
 
-    def state_reply(self, identity, request=None):
-        """reply with state to a client (with said ``identity``)"""
+    def fn_executor(self, fn):
+        """
+        Run a function,
+        and return the result back to the client with ``identity``.
 
-        self._reply(identity, self.state)
+        Publishes the state if the function executes successfully.
+        """
+        old_state = deepcopy(self._active_state)
+        self.send(fn())
+        self.pub_state(old_state)
 
-    def exec_state_method(self, identity, request):
+    def head(self, _):
+        self.send((self.pub_sub_address, self.push_pull_address))
+
+    def ping(self, request):
+        self.send({Msgs.info: [request[Msgs.info], os.getpid()]})
+
+    def set_state(self, request):
+        def _set_state():
+            self.state_store[self._active_namespace] = request[Msgs.info]
+
+        self.fn_executor(_set_state)
+
+    def send_state(self, _=None):
+        """reply with state to the current client"""
+        self.send(self._active_state)
+
+    def exec_dict_method(self, request):
         """Execute a method on the state ``dict`` and reply with the result."""
-
         state_method_name, args, kwargs = (
-            request[Msg.state_method],
-            request[Msg.args],
-            request[Msg.kwargs],
+            request[Msgs.info],
+            request[Msgs.args],
+            request[Msgs.kwargs],
         )
         # print(method_name, args, kwargs)
-        return self._fn_executor(
-            identity, getattr(self.state, state_method_name), args, kwargs
+        self.fn_executor(
+            lambda: getattr(self._active_state, state_method_name)(*args, **kwargs)
         )
 
-    def exec_atomic_fn(self, identity: str, request: dict):
-        """Execute a function, atomically  and reply with the result."""
+    def exec_atomic_fn(self, _):
+        """Execute a function, atomically and reply with the result."""
+        self.send(self._active_state)
 
-        fn, args, kwargs = (request[Msg.fn], request[Msg.args], request[Msg.kwargs])
+        old_state = deepcopy(self._active_state)
+        new_state = self._serializer.loads(self.pull_sock.recv())
 
-        return self._fn_executor(
-            identity, util.deserialize_fn(fn), (self.state, *args), kwargs
-        )
+        if new_state is not None:
+            self.state_store[self._active_namespace] = self._active_state = new_state
+
+        self.pub_state(old_state)
 
     def close(self):
-        self._router_sock.close()
-        self._pub_sock.close()
-        util.close_zmq_ctx(self._zmq_ctx)
+        self.router_sock.close()
+        self.pub_sock.close()
+        util.close_zmq_ctx(self.zmq_ctx)
+        os._exit(1)
 
-    def mainloop(self):
+    def main(self):
+        def signal_handler(signum, _):
+            self.close()
+            print("Stopped server:", os.getpid())
+            os._exit(signum)
+
+        signal.signal(signal.SIGTERM, signal_handler)
+
         while True:
-            identity, request = self._wait_for_request()
-            # print(request, identity)
-
             try:
-                # retrieve the method matching the one in the request,
-                # and then call it with appropriate args.
-                getattr(self, request[Msg.server_fn])(identity, request)
+                self.dispatch(self.recv())
+            except itsdangerous.BadSignature:
+                pass
             except KeyboardInterrupt:
-                return self.close()
-            except:
+                self.close()
+                raise
+            except Exception:
                 # proxy the exception back to parent.
-                self._exception_reply(identity)
-
-
-# Here are some static declarations.
-# They are here to prevent typos, while constructing messages.
-#
-# Could've been a dict, but my IDE doesn't seem to detect and refactor changes in dict keys.
-
-
-class Msg:
-    server_fn = 0
-    state_method = 1
-    args = 2
-    kwargs = 3
-    fn = 4
-    key = 5
-    keys = 6
-    value = 7
-    payload = 8
-    pid = 9
-
-
-class ServerFn:
-    ping = Server.ping.__name__
-    state_reply = Server.state_reply.__name__
-    exec_atomic_fn = Server.exec_atomic_fn.__name__
-    exec_state_method = Server.exec_state_method.__name__
+                self.send(exceptions.RemoteException())

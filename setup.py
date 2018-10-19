@@ -18,13 +18,16 @@ URL = "https://github.com/devxpy/zproc"
 EMAIL = "devxpy@gmail.com"
 AUTHOR = "Dev Aggarwal"
 REQUIRES_PYTHON = ">=3.5"
-VERSION = "0.9.2"
+VERSION = "1.0.0a1"
 
 # What packages are required for this module to be executed?
-REQUIRED = ["pyzmq", "tblib", "psutil"]
+REQUIRED = ["pyzmq", "tblib", "psutil", "itsdangerous"]
 
 # What packages are optional?
-EXTRA = {"docs": ["sphinx", "twine", "sphinx_rtd_theme"]}
+EXTRA = {
+    # "docs" dependencies are used by readthedocs (see `readthedocs.yml` file)
+    "docs": ["sphinx", "twine", "sphinx_rtd_theme"]
+}
 
 # The rest you shouldn't have to touch too much :)
 # ------------------------------------------------
@@ -95,7 +98,7 @@ setup(
     author_email=EMAIL,
     python_requires=REQUIRES_PYTHON,
     url=URL,
-    packages=find_packages(exclude=("tests", "docs", "examples")),
+    packages=find_packages(exclude=("tests", "docs", "examples", "benchmarks")),
     install_requires=REQUIRED,
     extra_require=EXTRA,
     include_package_data=True,

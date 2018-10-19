@@ -1,99 +1,116 @@
 """
 Test the dict API, offered by State
 """
-
-import unittest
+import pytest
 
 import zproc
 
-
-class TestStateDictMethods(unittest.TestCase):
-    def setUp(self):
-        ctx = zproc.Context()
-        ctx.state.update({'foo': 'foo', 'bar': 'bar'})
-
-        self.test1, self.test2 = ctx.state, {'foo': 'foo', 'bar': 'bar'}
-
-    def test_update(self):
-        self.test1.update({'zoo': 1, 'dog': 2})
-        self.test2.update({'zoo': 1, 'dog': 2})
-
-        self.assertEqual(self.test1, self.test2)
-
-    def test__contains__(self):
-        self.assertEqual('foo' in self.test1, 'foo' in self.test2)
-        self.assertEqual('foo' not in self.test1, 'foo' not in self.test2)
-
-    def test__delitem__(self):
-        del self.test1['foo']
-        del self.test2['foo']
-        self.assertEqual(self.test1, self.test2)
-
-    def test__eq__(self):
-        self.assertEqual(self.test1 == {'bar': 'bar'}, self.test2 == {'bar': 'bar'})
-
-    def test__getitem__(self):
-        self.assertEqual(self.test1['bar'], self.test2['bar'])
-
-    def test__iter__(self):
-        for k1, k2 in zip(self.test1, self.test2):
-            self.assertEqual(k1, k2)
-
-    def test__len__(self):
-        self.assertEqual(len(self.test1), len(self.test2))
-
-    def test__ne__(self):
-        self.assertEqual(self.test1 != {'bar': 'bar'}, self.test2 != {'bar': 'bar'})
-
-    def test__setitem__(self):
-        self.test1['foo'] = 2
-        self.test2['foo'] = 2
-        self.assertEqual(self.test1, self.test2)
-
-    def test_clear(self):
-        self.test1.clear()
-        self.test2.clear()
-        self.assertEqual(self.test1, self.test2)
-
-    def test_dict_inbuilt(self):
-        self.assertDictEqual(dict(self.test1), dict(self.test2))
-
-    def test_copy(self):
-        self.assertDictEqual(self.test1.copy(), self.test2.copy())
-
-    def test_fromkeys(self):
-        self.assertEqual(self.test1.fromkeys([1, 2, 3], 'foo'), self.test2.fromkeys([1, 2, 3], 'foo'))
-
-    def test_get(self):
-        self.assertEqual(self.test1.get('xxx', []), self.test2.get('xxx', []))
-        self.assertEqual(self.test1.get('foo'), self.test2.get('foo'))
-
-    def test_items(self):
-        for i, j in zip(self.test1.items(), self.test2.items()):
-            self.assertEqual(i[0], j[0])
-            self.assertEqual(i[1], j[1])
-
-    def test_values(self):
-        for i, j in zip(self.test1.values(), self.test2.values()):
-            self.assertEqual(i, j)
-
-    def test_keys(self):
-        for i, j in zip(self.test1.keys(), self.test2.keys()):
-            self.assertEqual(i, j)
-
-    def test_setdefault(self):
-        self.test1.setdefault('zzz', None)
-        self.test2.setdefault('zzz', None)
-        self.assertEqual(self.test1, self.test2)
-
-    def test_pop(self):
-        self.assertEqual(self.test1.pop('foo'), self.test2.pop('foo'))
-        self.assertEqual(self.test1, self.test2)
-
-    def test_popitem(self):
-        self.assertEqual(self.test1.popitem(), self.test2.popitem())
-        self.assertEqual(self.test1, self.test2)
+ctx = zproc.Context()
 
 
-if __name__ == '__main__':
-    unittest.main()
+@pytest.fixture
+def pydict() -> dict:
+    return {"foo": "foo", "bar": "bar"}
+
+
+@pytest.fixture
+def state(pydict) -> zproc.State:
+    ctx.state.set(pydict)
+    return ctx.state
+
+
+def test_update(state, pydict):
+    state.update({"zoo": 1, "dog": 2})
+    pydict.update({"zoo": 1, "dog": 2})
+
+    assert state == pydict
+
+
+def test__contains__(state, pydict):
+    assert ("foo" in state) == ("foo" in pydict)
+    assert ("foo" not in state) == ("foo" not in pydict)
+
+
+def test__delitem__(state, pydict):
+    del state["foo"]
+    del pydict["foo"]
+
+    assert state == pydict
+
+
+def test__eq__(state, pydict):
+    assert (state == {"bar": "bar"}) == (pydict == {"bar": "bar"})
+
+
+def test__getitem__(state, pydict):
+    assert state["bar"] == pydict["bar"]
+
+
+def test__iter__(state, pydict):
+    for k1, k2 in zip(state, pydict):
+        assert k1 == k2
+
+
+def test__len__(state, pydict):
+    assert len(state) == len(pydict)
+
+
+def test__ne__(state, pydict):
+    assert (state != {"bar": "bar"}) == (pydict != {"bar": "bar"})
+
+
+def test__setitem__(state, pydict):
+    state["foo"] = 2
+    pydict["foo"] = 2
+    assert state == pydict
+
+
+def test_clear(state, pydict):
+    state.clear()
+    pydict.clear()
+    assert state == pydict
+
+
+def test_dict_inbuilt(state, pydict):
+    assert dict(state) == dict(pydict)
+
+
+def test_copy(state, pydict):
+    assert state.copy() == pydict.copy()
+
+
+def test_get(state, pydict):
+    assert state.get("xxx", []) == pydict.get("xxx", [])
+    assert state.get("foo") == pydict.get("foo")
+
+
+def test_items(state, pydict):
+    for i, j in zip(state.items(), pydict.items()):
+        assert i[0] == j[0] and i[1] == j[1]
+
+
+def test_values(state, pydict):
+    for i, j in zip(state.values(), pydict.values()):
+        assert i == j
+
+
+def test_keys(state, pydict):
+    for i, j in zip(state.keys(), pydict.keys()):
+        assert i == j
+
+
+def test_setdefault(state, pydict):
+    state.setdefault("zzz", None)
+    pydict.setdefault("zzz", None)
+
+    assert state == pydict
+
+
+def test_pop(state, pydict):
+    assert state.pop("foo") == pydict.pop("foo")
+    assert state == pydict
+
+
+def test_popitem(state, pydict):
+    assert state.popitem() == pydict.popitem()
+    assert state == pydict

@@ -14,7 +14,6 @@ nom nom nom
 nom nom nom
 nom nom nom
 """
-
 import zproc
 
 ctx = zproc.Context(wait=True)  # background waits for all processes to finish
@@ -34,7 +33,7 @@ def bake_cookie(state):
 
 
 @ctx.call_when_change("cookies")
-def cookie_eater(state):
+def cookie_eater(_, state):
     eat_cookie(state)
 
 

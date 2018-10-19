@@ -1,5 +1,6 @@
 .idea
-
+zproc/*.c
+zproc/*.so
 
 # Created by https://www.gitignore.io/api/python,pycharm
 

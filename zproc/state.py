@@ -1,48 +1,35 @@
 import functools
-import itertools
 import os
-import pickle
 import time
-from typing import Union, Hashable
+from contextlib import contextmanager
+from typing import Union, Hashable, Any, Callable, Optional, Tuple, Iterable, Generator
 
+import itsdangerous
 import zmq
 
-from zproc import tools, util
-from zproc.server import ServerFn, Msg
+from zproc import tools, util, state_type
+from zproc.constants import Msgs, Commands
 
-ZMQ_IDENTITY_LEN = 8
-
-
-def _state_watcher_decorator_gen(self: "State", live: bool):
-    """Generates a template for a state watcher mainloop."""
-
-    def decorator(wrapped_fn):
-        @functools.wraps(wrapped_fn)
-        def wrapper():
-            if live:
-                subscribe_sock = self._subscribe_sock_gen()
-            else:
-                subscribe_sock = self._subscribe_sock
-
-            try:
-                return wrapped_fn(subscribe_sock)
-            finally:
-                if live:
-                    subscribe_sock.close()
-
-        return wrapper
-
-    return decorator
+ZMQ_IDENTITY_SIZE = 8
+DEFAULT_ZMQ_RECVTIMEO = -1
 
 
-class State:
-    def __init__(self, server_address):
+class State(
+    util.SecretKeyHolder, state_type.StateDictMethodStub, metaclass=state_type.StateType
+):
+    def __init__(
+        self,
+        server_address: str,
+        *,
+        namespace: str = "default",
+        secret_key: Optional[str] = None
+    ) -> None:
         """
         Allows accessing state stored on the zproc server, through a dict-like API.
 
         Communicates to the zproc server using the ZMQ sockets.
 
-        Don't share a State object between Processes / Threads.
+        Please don't share a State object between Processes/Threads.
         A State object is not thread-safe.
 
         Boasts the following ``dict``-like members, for accessing the state:
@@ -53,36 +40,142 @@ class State:
             ``__len__()``, ``__ne__()``, ``__setitem__()``
 
         - Methods:
-            ``clear()``, ``copy()``, ``fromkeys()``, ``get()``,
+            ``clear()``, ``copy()``, ``get()``,
             ``items()``,  ``keys()``, ``pop()``, ``popitem()``,
             ``setdefault()``, ``update()``, ``values()``
 
         :param server_address:
             The address of zproc server.
-            (See :ref:`zproc-server-address-spec`)
 
             If you are using a :py:class:`Context`, then this is automatically provided.
 
-        :ivar server_address: Passed on from constructor
-        """
+            Please read :ref:`server-address-spec` for a detailed explanation.
 
-        self._zmq_ctx = zmq.Context()
-        self._zmq_ctx.setsockopt(zmq.LINGER, 0)
+        :ivar server_address: Passed on from constructor.
+        """
+        super().__init__(secret_key)
 
         self.server_address = server_address
-        self._dealer_sock_address, self._subscribe_sock_address = server_address
+        self.namespace = namespace
+        self._identity = os.urandom(ZMQ_IDENTITY_SIZE)
 
-        self._identity = os.urandom(ZMQ_IDENTITY_LEN)
+        self._zmq_ctx = util.create_zmq_ctx()
 
         self._dealer_sock = self._zmq_ctx.socket(zmq.DEALER)
         self._dealer_sock.setsockopt(zmq.IDENTITY, self._identity)
-        self._dealer_sock.connect(self._dealer_sock_address)
+        self._dealer_sock.connect(self.server_address)
 
-        self._subscribe_sock = self._subscribe_sock_gen()
+        self._sub_address, self._push_address = self._head()
 
-    def _subscribe_sock_gen(self):
+        self._push_sock = self._zmq_ctx.socket(zmq.PUSH)
+        self._push_sock.connect(self._push_address)
+
+        self._active_sub_sock = self._create_sub_sock()
+
+    def __str__(self):
+        return "{}: {} to {} at {}".format(
+            State.__qualname__, self.copy(), repr(self.server_address), hex(id(self))
+        )
+
+    def __repr__(self):
+        return "<{}>".format(self.__str__())
+
+    def fork(
+        self,
+        server_address: Optional[str] = None,
+        *,
+        namespace: Optional[str] = None,
+        secret_key: Optional[str] = None
+    ) -> "State":
+        """
+        "Forks" this State object.
+
+        Takes the same args as the :py:class:`State` constructor,
+        except that they automatically default to the values provided during the creation of this State object.
+
+        If no args are provided to this function,
+        then it shall create a new :py:class:`State` object
+        that follows the exact same semantics as this one.
+
+        This is preferred over copying a :py:class:`State` object.
+
+        Useful when one needs to access 2 or more namespaces on the same server.
+        """
+        if server_address is None:
+            server_address = self.server_address
+        if namespace is None:
+            namespace = self.namespace
+        if secret_key is None:
+            secret_key = self.secret_key
+
+        return self.__class__(
+            server_address, namespace=namespace, secret_key=secret_key
+        )
+
+    _namespace_bytes = b""
+    _namespace_len = 0
+
+    @property
+    def namespace(self):
+        return self._namespace_bytes.decode()
+
+    @namespace.setter
+    def namespace(self, namespace: str):
+        assert len(namespace) > 0, "'namespace' cannot be empty!"
+
+        self._namespace_bytes = namespace.encode()
+        self._namespace_len = len(self._namespace_bytes)
+
+    def _req_rep(self, request: dict):
+        request[Msgs.namespace] = self._namespace_bytes
+        # print("sent:", request)
+        util.send(request, self._dealer_sock, self._serializer)
+        response = util.recv(self._dealer_sock, self._serializer)
+        # print("recvd:", response)
+        return response
+
+    def _run_fn_atomically(self, fn: Callable, *args, **kwargs):
+        snapshot = self._req_rep({Msgs.cmd: Commands.exec_atomic_fn})
+
+        try:
+            result = fn(snapshot, *args, **kwargs)
+        except Exception:
+            util.send(None, self._push_sock, self._serializer)
+            raise
+        else:
+            util.send(snapshot, self._push_sock, self._serializer)
+
+        return result
+
+    def _head(self):
+        return self._req_rep({Msgs.cmd: Commands.head})
+
+    def set(self, value: dict):
+        """
+        Set the state, completely over-writing the previous value.
+        """
+        return self._req_rep({Msgs.cmd: Commands.set_state, Msgs.info: value})
+
+    def copy(self):
+        """
+        Return a deep-copy of the state.
+
+        Unlike the shallow-copy returned by :py:meth:`dict.copy`.
+        """
+        return self._req_rep({Msgs.cmd: Commands.get_state})
+
+    def keys(self):
+        return self.copy().keys()
+
+    def values(self):
+        return self.copy().values()
+
+    def items(self):
+        return self.copy().items()
+
+    def _create_sub_sock(self):
         sock = self._zmq_ctx.socket(zmq.SUB)
-        sock.connect(self._subscribe_sock_address)
+        sock.connect(self._sub_address)
 
         # prevents consuming our own updates, resulting in an circular message
         sock.setsockopt(zmq.SUBSCRIBE, self._identity)
@@ -90,264 +183,277 @@ class State:
 
         return sock
 
-    @staticmethod
-    def _subscribe(subscribe_sock, timeout, start_time=None):
-        old_timeout = subscribe_sock.getsockopt(zmq.RCVTIMEO)
+    def go_live(self):
+        """
+        Clear the outstanding queue (or buffer), thus clearing any past events that were stored.
 
-        if timeout is not None:
-            subscribe_sock.setsockopt(zmq.RCVTIMEO, int(timeout * 1000))
+        Internally, this re-opens a socket, which in-turn clears the queue.
+
+        Please read :ref:`live-events` for a detailed explanation.
+        """
+        self._active_sub_sock.close()
+        self._active_sub_sock = self._create_sub_sock()
+
+    @contextmanager
+    def _setup_state_watch(
+        self, live: bool, timeout: Optional[Union[float, int]], duplicate_okay: bool
+    ):
+        if live:
+            sub_sock = self._create_sub_sock()
         else:
-            subscribe_sock.setsockopt(zmq.RCVTIMEO, -1)
+            sub_sock = self._active_sub_sock
+
+        if timeout is None:
+
+            def check_timeout():
+                pass
+
+        else:
+            sub_sock.setsockopt(zmq.RCVTIMEO, int(timeout * 1000))
+            epoch = time.time()
+
+            def check_timeout():
+                if time.time() - epoch > timeout:
+                    raise TimeoutError("Timed-out while waiting for a state update.")
 
         try:
-            response = util.handle_remote_response(
-                pickle.loads(subscribe_sock.recv()[ZMQ_IDENTITY_LEN:])
-            )
+            yield lambda: self._recv_sub(sub_sock, check_timeout, duplicate_okay)
         except zmq.error.Again:
             raise TimeoutError("Timed-out while waiting for a state update.")
-        else:
-            if (
-                timeout is not None
-                and start_time is not None
-                and time.time() - start_time > timeout
-            ):
-                raise TimeoutError("Timed-out while waiting for a state update.")
-            return response
         finally:
-            subscribe_sock.setsockopt(zmq.RCVTIMEO, old_timeout)
+            sub_sock.setsockopt(zmq.RCVTIMEO, DEFAULT_ZMQ_RECVTIMEO)
 
-    def _req_rep(self, request):
-        self._dealer_sock.send_pyobj(request, protocol=pickle.HIGHEST_PROTOCOL)
-        response = self._dealer_sock.recv_pyobj()
+            if live:
+                sub_sock.close()
 
-        return util.handle_remote_response(response)
+    def _recv_sub(
+        self, sub_sock: zmq.Socket, check_timeout: Callable, duplicate_okay: bool
+    ):
+        while True:
+            msg = sub_sock.recv()[ZMQ_IDENTITY_SIZE:]
+            # print(msg)
+            if not msg.startswith(self._namespace_bytes):
+                check_timeout()
+                continue
+            msg = msg[self._namespace_len :]
+
+            try:
+                msg = self._serializer.loads(msg)
+            except itsdangerous.BadSignature:
+                check_timeout()
+                continue
+
+            before, after, identical = msg
+            if not identical or duplicate_okay:
+                # print(before, after, identical)
+                return before, after, identical
+
+            check_timeout()
+
+    @staticmethod
+    def _create_dictkey_selector(
+        keys: Iterable[Hashable], exclude: bool
+    ) -> Callable[[dict, dict], Generator[Hashable, None, None]]:
+        if exclude:
+            return lambda before, after: (
+                key for key in [*before.keys(), *after.keys()] if key not in keys
+            )
+
+        return lambda before, after: (
+            key for key in [*before.keys(), *after.keys()] if key in keys
+        )
+
+    def get_raw_update(
+        self,
+        live: bool = False,
+        timeout: Optional[Union[float, int]] = None,
+        duplicate_okay: bool = False,
+    ) -> Tuple[dict, dict, bool]:
+        """
+        A low-level hook that emits each and every state update.
+
+        .. include:: /api/state/get_raw_update.rst
+        """
+        with self._setup_state_watch(live, timeout, duplicate_okay) as recv_sub:
+            return recv_sub()
 
     def get_when_change(
         self,
         *keys: Hashable,
         exclude: bool = False,
-        live: bool = True,
-        timeout: Union[None, float, int] = None
-    ):
+        live: bool = False,
+        timeout: Optional[Union[float, int]] = None,
+        duplicate_okay: bool = False
+    ) -> dict:
         """
-        | Block until a change is observed.
+        Block until a change is observed, and then return a copy of the state.
 
-        :param \*keys:
-            Observe for changes in these ``dict`` key(s).
-
-            If no key is provided, any change in the ``state`` is respected.
-        :param exclude:
-            Reverse the lookup logic i.e.,
-
-            Watch for changes in all ``dict`` keys *except* \*keys.
-
-            If \*keys is not provided, then this has no effect.
-        :param live:
-            Whether to get "live" updates. (See :ref:`live-events`)
-        :param timeout:
-            Sets the timeout in seconds. By default it is set to ``None``.
-
-            If the value is 0, it will return immediately, with a ``TimeoutError``,
-            if no update is available.
-
-            If the value is ``None``, it will block until an update is available.
-
-            For all other values, it will wait for and update,
-            for that amount of time before returning with a ``TimeoutError``.
-
-        :return: Roughly,
-
-        .. code-block:: python
-
-            if exclude:
-                return state.copy()
-
-            if len(keys) == 0:
-                return state.copy()
-
-            if len(keys) == 1:
-                return state.get(key)
-
-            if len(keys) > 1:
-                return [state.get(key) for key in keys]
+        .. include:: /api/state/get_when_change.rst
         """
-
-        num_keys = len(keys)
-
-        if num_keys:
-            if exclude:
-
-                def select_keys(old_state, new_state):
-                    return (
-                        key
-                        for key in itertools.chain(old_state.keys(), new_state.keys())
-                        if key not in keys
-                    )
-
-            else:
-
-                def select_keys(old, new_state):
-                    return (
-                        key
-                        for key in itertools.chain(old.keys(), new_state.keys())
-                        if key in keys
-                    )
-
-            @_state_watcher_decorator_gen(self, live)
-            def _get_state(sock):
-                if timeout is None:
-                    start_time = None
-                else:
-                    start_time = time.time()
+        with self._setup_state_watch(live, timeout, duplicate_okay) as recv_sub:
+            if len(keys):
+                select_keys = self._create_dictkey_selector(keys, exclude)
 
                 while True:
-                    old_state, new_state = self._subscribe(sock, timeout, start_time)
+                    before, after, _ = recv_sub()
 
-                    for key in select_keys(old_state, new_state):
+                    for key in select_keys(before, after):
                         try:
-                            old_val, new_val = old_state[key], new_state[key]
-                        except KeyError:  # In a way, this implies something changed
-                            return new_state
+                            before_val, after_val = before[key], after[key]
+                        except KeyError:  # this indirectly implies that something changed
+                            return after
                         else:
-                            if new_val != old_val:
-                                return new_state
-
-        else:
-
-            @_state_watcher_decorator_gen(self, live)
-            def _get_state(sock):
-                return self._subscribe(sock, timeout)[1]
-
-        current_state = _get_state()
-
-        if exclude or num_keys == 0:
-            return current_state
-        elif num_keys == 1:
-            return current_state.get(keys[0])
-        else:
-            return [current_state.get(key) for key in keys]
-
-    def get_when(self, test_fn, *, live=True, timeout=None):
-        """
-         Block until ``test_fn(state)`` returns a True-like value.
-
-         Where, ``state`` is a :py:class:`State` instance.
-
-         Roughly, ``if test_fn(state): return state.copy()``
-
-        :param test_fn: A ``function``, which is called on each state-change.
-        :param live: Whether to get "live" updates. (See :ref:`live-events`)
-        :param timeout: Sets the timeout in seconds. By default it is set to ``None``.
-
-                        If the value is 0, it will return immediately, with a ``TimeoutError``,
-                        if no update is available.
-
-                        If the value is ``None``, it will block until an update is available.
-
-                        For all other values, it will wait for and update,
-                        for that amount of time before returning with a ``TimeoutError``.
-
-        :return: state
-        :rtype: ``dict``
-        """
-
-        @_state_watcher_decorator_gen(self, live)
-        def mainloop(sock):
-            if timeout is None:
-                start_time = None
+                            if before_val != after_val:
+                                return after
             else:
-                start_time = time.time()
-            latest_state = self.copy()
+                while True:
+                    return recv_sub()[1]
 
+    def get_when(
+        self,
+        test_fn,
+        *,
+        live: bool = False,
+        timeout: Optional[Union[float, int]] = None,
+        duplicate_okay: bool = False
+    ) -> dict:
+        """
+        Block until ``test_fn(snapshot)`` returns a "truthy" value,
+        and then return a copy of the state.
+
+        *Where-*
+
+        ``snapshot`` is a ``dict``, containing a copy of the state.
+
+        .. include:: /api/state/get_when.rst
+        """
+        snapshot = self.copy()
+        if test_fn(snapshot):
+            return snapshot
+
+        with self._setup_state_watch(live, timeout, duplicate_okay) as recv_sub:
             while True:
-                if test_fn(latest_state):
-                    return latest_state
+                snapshot = recv_sub()[1]
+                if test_fn(snapshot):
+                    return snapshot
 
-                latest_state = self._subscribe(sock, timeout, start_time)[-1]
-
-        return mainloop()
-
-    def get_when_equal(self, key, value, *, live=True, timeout=None):
+    def get_when_equal(
+        self,
+        key: Hashable,
+        value: Any,
+        *,
+        live: bool = False,
+        timeout: Optional[Union[float, int]] = None,
+        duplicate_okay: bool = False
+    ) -> dict:
         """
-        Block until ``state.get(key) == value``.
+        Block until ``state[key] == value``, and then return a copy of the state.
 
-        :param key: ``dict`` key
-        :param value: ``dict`` value.
-        :param live: Whether to get "live" updates. (See :ref:`live-events`)
-        :param timeout: Sets the timeout in seconds. By default it is set to ``None``.
-
-                        If the value is 0, it will return immediately, with a ``TimeoutError``,
-                        if no update is available.
-
-                        If the value is ``None``, it will block until an update is available.
-
-                        For all other values, it will wait for and update,
-                        for that amount of time before returning with a ``TimeoutError``.
-
-        :return: ``state.get(key)``
+        .. include:: /api/state/get_when_equality.rst
         """
 
-        @_state_watcher_decorator_gen(self, live)
-        def mainloop(sock):
-            if timeout is None:
-                start_time = None
-            else:
-                start_time = time.time()
-            latest_key = self.get(key)
+        def _(snapshot):
+            try:
+                return snapshot[key] == value
+            except KeyError:
+                return False
 
-            while True:
-                if latest_key == value:
-                    return latest_key
+        return self.get_when(
+            _, live=live, timeout=timeout, duplicate_okay=duplicate_okay
+        )
 
-                latest_key = self._subscribe(sock, timeout, start_time)[-1].get(key)
-
-        return mainloop()
-
-    def get_when_not_equal(self, key, value, *, live=True, timeout=None):
+    def get_when_not_equal(
+        self,
+        key: Hashable,
+        value: Any,
+        *,
+        live: bool = False,
+        timeout: Optional[Union[float, int]] = None,
+        duplicate_okay: bool = False
+    ) -> dict:
         """
-        Block until ``state.get(key) != value``.
+        Block until ``state[key] != value``, and then return a copy of the state.
 
-        :param key: ``dict`` key.
-        :param value: ``dict`` value.
-        :param live: Whether to get "live" updates. (See :ref:`live-events`)
-        :param timeout: Sets the timeout in seconds. By default it is set to ``None``.
-
-                        If the value is 0, it will return immediately, with a ``TimeoutError``,
-                        if no update is available.
-
-                        If the value is ``None``, it will block until an update is available.
-
-                        For all other values, it will wait for and update,
-                        for that amount of time before returning with a ``TimeoutError``.
-
-        :return: ``state.get(key)``
+        .. include:: /api/state/get_when_equality.rst
         """
 
-        @_state_watcher_decorator_gen(self, live)
-        def mainloop(sock):
-            if timeout is None:
-                start_time = None
-            else:
-                start_time = time.time()
-            latest_key = self.get(key)
+        def _(snapshot):
+            try:
+                return snapshot[key] != value
+            except KeyError:
+                return False
 
-            while True:
-                if latest_key != value:
-                    return latest_key
+        return self.get_when(
+            _, live=live, timeout=timeout, duplicate_okay=duplicate_okay
+        )
 
-                latest_key = self._subscribe(sock, timeout, start_time)[-1].get(key)
-
-        return mainloop()
-
-    def go_live(self):
+    def get_when_none(
+        self,
+        key: Hashable,
+        *,
+        live: bool = False,
+        timeout: Optional[Union[float, int]] = None,
+        duplicate_okay: bool = False
+    ) -> dict:
         """
-        Clear the events buffer, thus removing past events that were stored.
+        Block until ``state[key] is None``, and then return a copy of the state.
 
-        (See :ref:`live-events`)
+        .. include:: /api/state/get_when_equality.rst
         """
 
-        self._subscribe_sock.close()
-        self._subscribe_sock = self._subscribe_sock_gen()
+        def _(snapshot):
+            try:
+                return snapshot[key] is None
+            except KeyError:
+                return False
+
+        return self.get_when(
+            _, live=live, timeout=timeout, duplicate_okay=duplicate_okay
+        )
+
+    def get_when_not_none(
+        self,
+        key: Hashable,
+        *,
+        live: bool = False,
+        timeout: Optional[Union[float, int]] = None,
+        duplicate_okay: bool = False
+    ) -> dict:
+        """
+        Block until ``state[key] is not None``, and then return a copy of the state.
+
+        .. include:: /api/state/get_when_equality.rst
+        """
+
+        def _(snapshot):
+            try:
+                return snapshot[key] is not None
+            except KeyError:
+                return False
+
+        return self.get_when(
+            _, live=live, timeout=timeout, duplicate_okay=duplicate_okay
+        )
+
+    def get_when_available(
+        self,
+        key: Hashable,
+        *,
+        live: bool = False,
+        timeout: Optional[Union[float, int]] = None,
+        duplicate_okay: bool = False
+    ):
+        """
+        Block until ``key in state``, and then return a copy of the state.
+
+        .. include:: /api/state/get_when_equality.rst
+        """
+        return self.get_when(
+            lambda snapshot: key in snapshot,
+            live=live,
+            timeout=timeout,
+            duplicate_okay=duplicate_okay,
+        )
 
     def ping(self, **kwargs):
         """
@@ -356,80 +462,56 @@ class State:
         :param kwargs: Keyword arguments that :py:func:`ping` takes, except ``server_address``.
         :return: Same as :py:func:`ping`
         """
-
         return tools.ping(self.server_address, **kwargs)
 
     def close(self):
         """
-        Close this State and disconnect with the Server
+        Close this State and disconnect with the Server.
         """
-
         self._dealer_sock.close()
-        self._subscribe_sock.close()
+        self._push_sock.close()
+        self._active_sub_sock.close()
         util.close_zmq_ctx(self._zmq_ctx)
 
-    def copy(self):
-        return self._req_rep({Msg.server_fn: ServerFn.state_reply})
 
-    def keys(self):
-        return self.copy().keys()
-
-    def items(self):
-        return self.copy().items()
-
-    def values(self):
-        return self.copy().values()
-
-    def __repr__(self):
-        return "<{} value: {}>".format(State.__qualname__, self.copy())
-
-
-_GENERATED_STATE_METHODS = {
-    "__contains__",
-    "__delitem__",
-    "__eq__",
-    "__getitem__",
-    "__iter__",
-    "__len__",
-    "__ne__",
-    "__setitem__",
-    "clear",
-    "fromkeys",
-    "get",
-    "pop",
-    "popitem",
-    "setdefault",
-    "update",
-}
-
-
-def _remote_method_gen(state_method_name: str):
+def atomic(fn: Callable) -> Callable:
     """
-    Generates a method for the State class,
-    that will call the "method_name" on the dict stored as the state on the server,
-    and return the result.
+    Wraps a function, to create an atomic operation out of it.
 
-    Glorified RPC.
+    No Process shall access the state while ``fn`` is running.
 
-    (These could've been static methods in the State class,
-    enabling better code completion in IDEs.
-    But that's a little hard to maintain.)
+    .. note::
+        - The first argument to the wrapped function *must* be a :py:class:`State` object.
+
+        - | The wrapped function receives a frozen version (snapshot) of state;
+          | a ``dict`` object, not a :py:class:`State` object.
+
+    Please read :ref:`atomicity` for a detailed explanation.
+
+    :param fn:
+        The ``function`` to be wrapped, as an atomic function.
+
+    :returns:
+        A wrapper ``function``.
+
+        The "wrapper" ``function`` returns the value returned by the "wrapped" ``function``.
+
+    >>> import zproc
+    >>>
+    >>> @zproc.atomic
+    ... def increment(snapshot):
+    ...     return snapshot['count'] + 1
+    ...
+    >>>
+    >>> ctx = zproc.Context()
+    >>> ctx.state['count'] = 0
+    >>>
+    >>> increment(ctx.state)
+    1
     """
 
-    def remote_method(self: State, *args, **kwargs):
-        return self._req_rep(
-            {
-                Msg.server_fn: ServerFn.exec_state_method,
-                Msg.state_method: state_method_name,
-                Msg.args: args,
-                Msg.kwargs: kwargs,
-            }
-        )
+    @functools.wraps(fn)
+    def wrapper(state: State, *args, **kwargs):
+        return state._run_fn_atomically(fn, *args, **kwargs)
 
-    remote_method.__name__ = state_method_name
-
-    return remote_method
-
-
-for name in _GENERATED_STATE_METHODS:
-    setattr(State, name, _remote_method_gen(name))
+    return wrapper

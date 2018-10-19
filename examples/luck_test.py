@@ -15,7 +15,6 @@ num gen: STOP was set to True, so lets exit
 num gen: exit
 
 """
-
 import random
 
 import zproc
@@ -41,7 +40,7 @@ if __name__ == "__main__":
 
     # give the context some processes to work with
     # also give some props to the num listener
-    ctx.process(num_listener, args=(0.6, 0.601))
+    ctx.process(num_listener, args=[0.6, 0.601])
 
     while True:
         if state.get("STOP"):

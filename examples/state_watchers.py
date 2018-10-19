@@ -1,22 +1,20 @@
 """
-A demonstration of all synchronization techniques zproc has to offer
-
+A demonstration of the numerous ways of "watching" the state.
 
 # Expected output
 
-main: child processes started
-main: I set flag1
-.get_when(lambda s: s.get("flag1") is True) -> {'flag1': True, 'flag2': False}
-.get_when_change() -> {'flag1': True, 'flag2': False}
+.get_when_not_equal('flag1', False) -> None
+
+main: I set flag1:
+.get_when(lambda s: s.get("flag1") is True) -> {'flag1': True}
 .get_when_equal('flag1', True) -> True
-.get_when_not_equal('flag1', False) -> True
-main: I set flag2
-main: I exit
+.get_when_change() -> {'flag1': True}
+
+main: I set flag2:
 .get_when_change("flag1", exclude=True) -> {'flag1': True, 'flag2': True}
 .get_when_change("flag2") -> True
 
 """
-
 from time import sleep
 
 import zproc
@@ -38,7 +36,7 @@ def child3(state):
 
 
 def child4(state):
-    val = state.get_when_change("flag1")
+    val = state.get_when_change()
     print(".get_when_change() ->", val)
 
 
@@ -55,19 +53,14 @@ def child6(state):
 if __name__ == "__main__":
     ctx = zproc.Context(wait=True)
 
-    ctx.state.setdefault("flag1", False)
-    ctx.state.setdefault("flag2", False)
-
     ctx.process_factory(child1, child2, child3, child4, child5, child6)
 
-    print("main: child processes started")
-
     sleep(1)
 
-    ctx.state["flag1"] = True
     print("\nmain: I set flag1:")
+    ctx.state["flag1"] = True
 
     sleep(1)
 
-    ctx.state["flag2"] = True
     print("\nmain: I set flag2:")
+    ctx.state["flag2"] = True

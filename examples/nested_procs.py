@@ -1,7 +1,6 @@
 """
 Demonstration of how to handle nested processes
 """
-
 import zproc
 
 ctx = zproc.Context(wait=True)
