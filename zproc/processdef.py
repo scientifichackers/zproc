@@ -49,7 +49,7 @@ def child_process(
     result_sock = zmq_ctx.socket(zmq.PUSH)
     result_sock.connect(result_address)
 
-    serialier = util.get_serializer(secret_key)
+    serializer = util.get_serializer(secret_key)
 
     to_catch = tuple(util.convert_to_exceptions(retry_for))
 
@@ -77,7 +77,7 @@ def child_process(
                 if retry_kwargs is not None:
                     kwargs = retry_kwargs
         else:
-            util.send(return_value, result_sock, serialier)
+            util.send(return_value, result_sock, serializer)
             util.clean_process_tree()
             break
 
