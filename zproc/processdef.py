@@ -37,8 +37,10 @@ def child_process(
 
         ctx = Context(server_address, namespace=namespace, secret_key=secret_key)
         state = ctx.state  # type: Union[State, None]
-    else:
+    elif stateful:
         state = State(server_address, namespace=namespace, secret_key=secret_key)
+    else:
+        state = None
 
     if state is None:
         zmq_ctx = util.create_zmq_ctx()
