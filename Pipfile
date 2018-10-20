@@ -8,6 +8,7 @@ pyzmq = "*"
 tblib = "*"
 psutil = "*"
 itsdangerous = "*"
+joblib = "*"
 
 [dev-packages]
 sphinx-rtd-theme = "*"

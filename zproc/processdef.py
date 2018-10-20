@@ -37,10 +37,8 @@ def child_process(
 
         ctx = Context(server_address, namespace=namespace, secret_key=secret_key)
         state = ctx.state  # type: Union[State, None]
-    elif stateful:
-        state = State(server_address, namespace=namespace, secret_key=secret_key)
     else:
-        state = None
+        state = State(server_address, namespace=namespace, secret_key=secret_key)
 
     if state is None:
         zmq_ctx = util.create_zmq_ctx()
@@ -78,9 +76,10 @@ def child_process(
                     kwargs = retry_kwargs
         else:
             util.send(return_value, result_sock, serialier)
-            result_sock.close()
+            util.clean_process_tree()
+            break
 
-            util.clean_process_tree(0)
+    result_sock.close()
 
 
 def _stateful_worker(state, target, i, a, _a, k, _k):
