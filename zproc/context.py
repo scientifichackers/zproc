@@ -622,17 +622,19 @@ class Context(util.SecretKeyHolder):
             "get_when_available", process_kwargs, key, live=live
         )
 
-    def wait_all(self) -> list:
+    def wait_all(self, timeout: Optional[Union[int, float]] = None) -> list:
         """
         Call :py:meth:`~Process.wait()` on all the child processes of this Context.
         (Excluding the worker processes)
 
         Retains the same order as ``Context.process_list``.
 
+        :param timeout:
+            Same as :py:meth:`~Process.wait()`.
         :return:
             A ``list`` containing the values returned by child Processes of this Context.
         """
-        return [process.wait() for process in self.process_list]
+        return [process.wait(timeout) for process in self.process_list]
 
     def start_all(self):
         """
