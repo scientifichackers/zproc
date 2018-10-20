@@ -131,8 +131,12 @@ def clean_process_tree(*signal_handler_args):
         os.kill(process.pid, signal.SIGTERM)
         print("Stopped:", process)
 
-    if len(signal_handler_args):
-        os._exit(signal_handler_args[0])
+    try:
+        signum = signal_handler_args[0]
+    except IndexError:
+        pass
+    else:
+        os._exit(signum)
 
 
 def handle_crash(exc, retry_delay, tries, max_tries, process_repr):

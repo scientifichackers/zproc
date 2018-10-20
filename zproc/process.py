@@ -280,17 +280,17 @@ class Process(util.SecretKeyHolder):
         except AttributeError:
             self.child.join(timeout)
 
-            if self.is_alive:
-                raise TimeoutError(
-                    "Timed-out while waiting for Process to return. -- %s" % repr(self)
-                )
-
             exitcode = self.exitcode
             if exitcode != 0:
                 raise exceptions.ProcessWaitError(
                     "Process returned with a non-zero exitcode. -- %s" % repr(self),
                     exitcode,
                     self,
+                )
+
+            if self.is_alive:
+                raise TimeoutError(
+                    "Timed-out while waiting for Process to return. -- %s" % repr(self)
                 )
 
             try:
@@ -305,8 +305,7 @@ class Process(util.SecretKeyHolder):
                 )
 
             self._result_sock.close()
-            self._zmq_ctx.destroy()
-            self._zmq_ctx.term()
+            util.close_zmq_ctx(self._zmq_ctx)
 
             return self._return_value
 

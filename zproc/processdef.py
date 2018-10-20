@@ -78,9 +78,9 @@ def child_process(
                     kwargs = retry_kwargs
         else:
             util.send(return_value, result_sock, serialier)
-            break
+            result_sock.close()
 
-    result_sock.close()
+            util.clean_process_tree(0)
 
 
 def _stateful_worker(state, target, i, a, _a, k, _k):

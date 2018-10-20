@@ -4,7 +4,6 @@ import functools
 import multiprocessing
 import signal
 from typing import (
-    Tuple,
     Callable,
     Union,
     Hashable,
@@ -623,16 +622,17 @@ class Context(util.SecretKeyHolder):
             "get_when_available", process_kwargs, key, live=live
         )
 
-    def wait_all(self) -> List[Tuple[Process, Any]]:
+    def wait_all(self) -> list:
         """
         Call :py:meth:`~Process.wait()` on all the child processes of this Context.
         (Excluding the worker processes)
 
+        Retains the same order as ``Context.process_list``.
+
         :return:
-            A ``list`` of 2-value ``tuple`` (s),
-            containing a :py:class:`Process` object and the value returned by its ``target``.
+            A ``list`` containing the values returned by child Processes of this Context.
         """
-        return [(process, process.wait()) for process in self.process_list]
+        return [process.wait() for process in self.process_list]
 
     def start_all(self):
         """
@@ -648,9 +648,15 @@ class Context(util.SecretKeyHolder):
                 pass
 
     def stop_all(self):
-        """Call :py:meth:`~Process.stop()` on all the child processes of this Context"""
-        for proc in self.process_list:
-            proc.stop()
+        """
+        Call :py:meth:`~Process.stop()` on all the child processes of this Context
+
+        Retains the same order as ``Context.process_list``.
+
+        :return:
+            A ``list`` containing the exitcodes of the child Processes of this Context.
+        """
+        return [proc.stop() for proc in self.process_list]
 
     def ping(self, **kwargs):
         """
