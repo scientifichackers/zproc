@@ -53,9 +53,9 @@ def child_process(
 
     to_catch = tuple(util.convert_to_exceptions(retry_for))
 
-    tries = 0
+    retries = 0
     while True:
-        tries += 1
+        retries += 1
 
         try:
             if pass_context:
@@ -65,12 +65,20 @@ def child_process(
             else:
                 return_value = target(*args, **kwargs)
         except exceptions.ProcessExit as e:
-            os._exit(e.status)
+            result_sock.close()
+            util.clean_process_tree(e.status)
+            return
         except to_catch as e:
-            if (max_retries is not None) and (tries > max_retries):
+            if (max_retries is not None) and (retries > max_retries):
                 raise e
             else:
-                util.handle_crash(e, retry_delay, tries, max_retries, process_repr)
+                util.handle_process_crash(
+                    exc=e,
+                    retry_delay=retry_delay,
+                    retries=retries,
+                    max_retries=max_retries,
+                    process_repr=process_repr,
+                )
 
                 if retry_args is not None:
                     args = retry_args
@@ -79,9 +87,8 @@ def child_process(
         else:
             util.send(return_value, result_sock, serializer)
             util.clean_process_tree()
-            break
-
-    result_sock.close()
+            result_sock.close()
+            return
 
 
 def _stateful_worker(state, target, i, a, _a, k, _k):

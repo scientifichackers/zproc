@@ -139,7 +139,7 @@ def clean_process_tree(*signal_handler_args):
         os._exit(signum)
 
 
-def handle_crash(exc, retry_delay, tries, max_tries, process_repr):
+def handle_process_crash(exc, retry_delay, retries, max_retries, process_repr):
     msg = "\nZProc crash report:\n"
 
     if isinstance(exc, exceptions.SignalException):
@@ -148,9 +148,9 @@ def handle_crash(exc, retry_delay, tries, max_tries, process_repr):
         traceback.print_exc()
 
     msg += "\t{}\n".format(process_repr)
-    msg += "\tTried - {} time(s)\n".format(tries)
+    msg += "\tTried - {} time(s)\n".format(retries)
 
-    if max_tries is not None and tries >= max_tries:
+    if max_retries is not None and retries >= max_retries:
         msg += "\t**Max tries reached!**\n"
         restore_signal_exception_behavior(exc)
     else:

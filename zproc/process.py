@@ -278,36 +278,38 @@ class Process(util.SecretKeyHolder):
         try:
             return self._return_value
         except AttributeError:
-            self.child.join(timeout)
+            pass
 
-            exitcode = self.exitcode
-            if exitcode != 0:
-                raise exceptions.ProcessWaitError(
-                    "Process returned with a non-zero exitcode. -- %s" % repr(self),
-                    exitcode,
-                    self,
-                )
+        self.child.join(timeout)
 
-            if self.is_alive:
-                raise TimeoutError(
-                    "Timed-out while waiting for Process to return. -- %s" % repr(self)
-                )
+        if self.is_alive:
+            raise TimeoutError(
+                "Timed-out while waiting for Process to return. -- %s" % repr(self)
+            )
 
-            try:
-                self._return_value = util.recv(
-                    self._result_sock, self._serializer
-                )  # type: Any
-            except zmq.error.Again:
-                raise exceptions.ProcessWaitError(
-                    "The Process died before sending its return value. "
-                    "It probably crashed, got killed, or exited without warning.",
-                    exitcode,
-                )
+        exitcode = self.exitcode
+        if exitcode != 0:
+            raise exceptions.ProcessWaitError(
+                "Process finished with a non-zero exitcode (%d)." % exitcode,
+                exitcode,
+                self,
+            )
 
-            self._result_sock.close()
-            util.close_zmq_ctx(self._zmq_ctx)
+        try:
+            self._return_value = util.recv(
+                self._result_sock, self._serializer
+            )  # type: Any
+        except zmq.error.Again:
+            raise exceptions.ProcessWaitError(
+                "The Process died before sending its return value. "
+                "It probably crashed, got killed, or exited without warning.",
+                exitcode,
+            )
 
-            return self._return_value
+        self._result_sock.close()
+        util.close_zmq_ctx(self._zmq_ctx)
+
+        return self._return_value
 
     @property
     def is_alive(self):

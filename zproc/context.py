@@ -3,6 +3,7 @@ import collections
 import functools
 import multiprocessing
 import signal
+import time
 from typing import (
     Callable,
     Union,
@@ -622,7 +623,16 @@ class Context(util.SecretKeyHolder):
             "get_when_available", process_kwargs, key, live=live
         )
 
-    def wait_all(self, timeout: Optional[Union[int, float]] = None) -> list:
+    @staticmethod
+    def _wait_or_catch_exc(process: Process, *args, **kwargs) -> Union[Exception, Any]:
+        try:
+            return process.wait(*args, **kwargs)
+        except Exception as e:
+            return e
+
+    def wait_all(
+        self, timeout: Optional[Union[int, float]] = None, safe: bool = False
+    ) -> List[Union[Any, Exception]]:
         """
         Call :py:meth:`~Process.wait()` on all the child processes of this Context.
         (Excluding the worker processes)
@@ -631,10 +641,28 @@ class Context(util.SecretKeyHolder):
 
         :param timeout:
             Same as :py:meth:`~Process.wait()`.
+
+            This parameter controls the timeout for all the Processes combined,
+            not a single :py:meth:`~Process.wait()` call.
+        :param safe:
+            Suppress any errors that occur while waiting for a Process.
+
+            The return value of failed :py:meth:`~Process.wait()` calls are substituted with the ``Exception`` that occurred.
         :return:
             A ``list`` containing the values returned by child Processes of this Context.
         """
-        return [process.wait(timeout) for process in self.process_list]
+        if safe:
+            _wait = self._wait_or_catch_exc
+        else:
+            _wait = Process.wait
+
+        if timeout is None:
+            return [_wait(process) for process in self.process_list]
+        else:
+            final = time.time() + timeout
+            return [
+                _wait(process, final - time.time()) for process in self.process_list
+            ]
 
     def start_all(self):
         """
