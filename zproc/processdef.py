@@ -1,4 +1,3 @@
-import os
 from typing import Union, Callable, Optional
 
 import zmq
@@ -65,7 +64,6 @@ def child_process(
             else:
                 return_value = target(*args, **kwargs)
         except exceptions.ProcessExit as e:
-            result_sock.close()
             util.clean_process_tree(e.status)
             return
         except to_catch as e:
@@ -86,8 +84,7 @@ def child_process(
                     kwargs = retry_kwargs
         else:
             util.send(return_value, result_sock, serializer)
-            util.clean_process_tree()
-            result_sock.close()
+            util.clean_process_tree(0)
             return
 
 

@@ -3,7 +3,7 @@ import time
 
 import zproc
 
-TOLERANCE = 10 ** -2
+TOLERANCE = 0.1
 
 
 @pytest.fixture

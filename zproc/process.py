@@ -1,7 +1,6 @@
 import multiprocessing
 import os
 import signal
-import uuid
 from typing import Callable, Union, Sequence, Mapping, Any, Optional
 
 import zmq

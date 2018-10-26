@@ -39,7 +39,7 @@ def test_get_when_change(state):
 
 def test_call_when_change(ctx):
     @ctx.call_when_change()
-    def child4_clone(snapshot, _):
+    def my_process(snapshot, _):
         assert isinstance(snapshot, dict)
         raise zproc.ProcessExit()
 
@@ -54,7 +54,7 @@ def test_get_when(state):
 
 def test_call_when(ctx):
     @ctx.call_when(lambda s: s.get("true") is True)
-    def child1_clone(snapshot, _):
+    def my_process(snapshot, _):
         assert snapshot["true"] is True
         raise zproc.ProcessExit()
 
@@ -69,7 +69,7 @@ def test_get_when_equal(state):
 
 def test_call_when_equal(ctx):
     @ctx.call_when_equal("true", True)
-    def child2_clone(snapshot, _):
+    def my_process(snapshot, _):
         assert snapshot["true"]
         raise zproc.ProcessExit()
 
@@ -84,7 +84,7 @@ def test_get_when_not_equal(state):
 
 def test_call_when_not_equal(ctx):
     @ctx.call_when_not_equal("true", False)
-    def child3_clone(snapshot, _):
+    def my_process(snapshot, _):
         assert snapshot["true"] is not False
         raise zproc.ProcessExit()
 
@@ -99,7 +99,7 @@ def test_get_when_none(state):
 
 def test_call_when_none(ctx):
     @ctx.call_when_none("none")
-    def child3_clone(snapshot, _):
+    def my_process(snapshot, _):
         assert snapshot.get("none") is None
         raise zproc.ProcessExit()
 
@@ -114,7 +114,7 @@ def test_get_when_not_none(state):
 
 def test_call_when_not_none(ctx):
     @ctx.call_when_not_none("none")
-    def child3_clone(snapshot, _):
+    def my_process(snapshot, _):
         assert snapshot["none"] is not None
         raise zproc.ProcessExit()
 
@@ -129,6 +129,6 @@ def test_get_when_avail(state):
 
 def test_call_when_avail(ctx):
     @ctx.call_when_available("avail")
-    def child3_clone(snapshot, _):
+    def my_process(snapshot, _):
         assert "avail" in snapshot
         raise zproc.ProcessExit()

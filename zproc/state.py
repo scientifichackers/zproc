@@ -195,7 +195,7 @@ class State(
         self._active_sub_sock = self._create_sub_sock()
 
     @contextmanager
-    def _setup_state_watch(
+    def _setup_recv_sub(
         self, live: bool, timeout: Optional[Union[float, int]], duplicate_okay: bool
     ):
         if live:
@@ -205,19 +205,17 @@ class State(
 
         if timeout is None:
 
-            def check_timeout():
+            def update_timeout():
                 pass
 
         else:
-            sub_sock.setsockopt(zmq.RCVTIMEO, int(timeout * 1000))
-            epoch = time.time()
+            final = time.time() + timeout
 
-            def check_timeout():
-                if time.time() - epoch > timeout:
-                    raise TimeoutError("Timed-out while waiting for a state update.")
+            def update_timeout():
+                sub_sock.setsockopt(zmq.RCVTIMEO, int((final - time.time()) * 1000))
 
         try:
-            yield lambda: self._recv_sub(sub_sock, check_timeout, duplicate_okay)
+            yield lambda: self._recv_sub(sub_sock, update_timeout, duplicate_okay)
         except zmq.error.Again:
             raise TimeoutError("Timed-out while waiting for a state update.")
         finally:
@@ -227,28 +225,25 @@ class State(
                 sub_sock.close()
 
     def _recv_sub(
-        self, sub_sock: zmq.Socket, check_timeout: Callable, duplicate_okay: bool
+        self, sub_sock: zmq.Socket, update_timeout: Callable, duplicate_okay: bool
     ):
         while True:
+            update_timeout()
             msg = sub_sock.recv()[ZMQ_IDENTITY_SIZE:]
             # print(msg)
             if not msg.startswith(self._namespace_bytes):
-                check_timeout()
                 continue
             msg = msg[self._namespace_len :]
 
             try:
                 msg = self._serializer.loads(msg)
             except itsdangerous.BadSignature:
-                check_timeout()
                 continue
 
             before, after, identical = msg
             if not identical or duplicate_okay:
                 # print(before, after, identical)
                 return before, after, identical
-
-            check_timeout()
 
     @staticmethod
     def _create_dictkey_selector(
@@ -274,7 +269,7 @@ class State(
 
         .. include:: /api/state/get_raw_update.rst
         """
-        with self._setup_state_watch(live, timeout, duplicate_okay) as recv_sub:
+        with self._setup_recv_sub(live, timeout, duplicate_okay) as recv_sub:
             return recv_sub()
 
     def get_when_change(
@@ -290,7 +285,7 @@ class State(
 
         .. include:: /api/state/get_when_change.rst
         """
-        with self._setup_state_watch(live, timeout, duplicate_okay) as recv_sub:
+        with self._setup_recv_sub(live, timeout, duplicate_okay) as recv_sub:
             if len(keys):
                 select_keys = self._create_dictkey_selector(keys, exclude)
 
@@ -331,7 +326,7 @@ class State(
         if test_fn(snapshot):
             return snapshot
 
-        with self._setup_state_watch(live, timeout, duplicate_okay) as recv_sub:
+        with self._setup_recv_sub(live, timeout, duplicate_okay) as recv_sub:
             while True:
                 snapshot = recv_sub()[1]
                 if test_fn(snapshot):
