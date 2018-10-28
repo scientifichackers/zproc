@@ -126,11 +126,26 @@ def close_zmq_ctx(ctx: zmq.Context):
 
 
 def clean_process_tree(*signal_handler_args):
-    """Kill all Processes in the current Process tree, recursively."""
-    for process in psutil.Process().children(recursive=True):
-        os.kill(process.pid, signal.SIGTERM)
-        print("Stopped:", process)
+    """Stop all Processes in the current Process tree, recursively."""
 
+    def on_terminate(proc):
+        print("process {} terminated with exit code {}".format(proc, proc.returncode))
+
+    procs = psutil.Process().children(recursive=True)
+    # send SIGTERM
+    for p in procs:
+        p.terminate()
+    gone, alive = psutil.wait_procs(procs, timeout=1, callback=on_terminate)
+    if alive:
+        # send SIGKILL
+        for p in alive:
+            print("process {} survived SIGTERM; trying SIGKILL".format(p))
+            p.kill()
+        gone, alive = psutil.wait_procs(alive, timeout=1, callback=on_terminate)
+        if alive:
+            # give up
+            for p in alive:
+                print("process {} survived SIGKILL; giving up".format(p))
     try:
         signum = signal_handler_args[0]
     except IndexError:
