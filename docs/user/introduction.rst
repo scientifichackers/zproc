@@ -1,14 +1,13 @@
 Introduction to ZProc
 =====================
 
-The whole architecture of zproc is built around a :py:class:`.State` object.
+The idea of zproc revolves around this :py:class:`.State` object.
 
-:py:class:`.Context` is provided as a convenient wrapper over :py:class:`.Process` and :py:class:`.State`.
-
+A :py:class:`.Context` is provided as an encapsulation of :py:class:`.Process` and :py:class:`.State`.
 It's the most obvious way to launch processes with zproc.
 
 Each :py:class:`.Context` object is associated with a state;
-accessible by its processes.
+accessible by its Processes.
 
 Here's how you create a :py:class:`.Context`.
 
@@ -34,42 +33,37 @@ Lets launch a process that does nothing.
 
 The :py:meth:`~.Context.process` will launch a process, and provide it with ``state``.
 
-If you like to be cool, then you can use it as a decorator.
-(:py:meth:`~.Context.process` works both as a function, and decorator)
+---
+
+:py:meth:`~.Context.process` works both as a function, and decorator.
 
 .. code-block:: python
 
     @ctx.process
     def my_process(state):
-        pass
+        state['apples'] = 5
+        state.get('apples')
+        state.setdefault('apples', 10)
+        ...
 
+---
 
 The ``state`` is a *dict-like* object.
 
 *dict-like*, because it's not exactly a dict.
-It provides a ``dict`` interface, but is actually just passing messages.
 
 You *cannot* mutate the underlying ``dict`` directly.
-It's protected by a Process whose sole job is to manage it.
+It's guarded by a Process whose sole job is to manage it.
 
-You can also access it from the :py:class:`.Context` itself using ``ctx.state``.
+---
 
-
-.. code-block:: python
-
-    state['apples'] = 5
-
-    state.get('apples')
-
-    state.setdefault('apples', 10)
-
-    ...
+P.S. You may also access it from the :py:class:`.Context` itself using ``ctx.state``.
 
 
 Providing arguments to a Process
 --------------------------------
 
-To provide some initial values to a Process, you can use use \*args and \*\*kwargs.
+To provide some initial values to a Process, you can use use standard \*args and \*\*kwargs.
 
 .. code-block:: python
 
@@ -78,24 +72,25 @@ To provide some initial values to a Process, you can use use \*args and \*\*kwar
 
     ctx.process(my_process, args=[2], kwargs={'exp': 4})
 
+\*args is a sequence of arguments for the function; \*\*kwargs is a dict, which maps argument names to values.
+
 
 Waiting for a Process
 ---------------------
 
 Once you've launched a Process, you can wait for it to complete,
-and get it's return value like this:
+and obtain the return value.
 
 .. code-block:: python
 
     from time import sleep
 
 
-    @ctx.process
-    def my_process(state):
+    def sleeper(state):
         sleep(5)
         return 'Hello There!'
 
-
+    my_process = ctx.process(sleeper)
     print(my_process.wait())   # Hello There!
 
 
@@ -104,17 +99,26 @@ and get it's return value like this:
 Process Factory
 ---------------
 
+:py:meth:`~.Context.process_factory` let's you launch multiple processes at once.
+
+.. code-block:: python
+
+    def worker(state):
+        sleep(5)
+        return 'Task Complete!'
+
+    ctx.process_factory(worker, count=10)
+
+
 .. _process_map:
 
 Process Map
 ---------------
 
-Python's inbuilt ``multiprocessing.Pool`` let's you use the in-built `map()` function in a parallel way.
+:py:meth:`~.Context.process_map` let's you use the in-built `map()` function in a parallel way.
 
-However, it gets quite finicky to use for anything serious.
 
-That's why ZProc provides a more powerful construct, :py:meth:`~.Context.process_map` for mapping iterables to processes.
-
+Here is a quick run-down of what this can do :-
 
 .. code-block:: python
     :caption: Works similar to ``map()``
@@ -181,12 +185,12 @@ That's why ZProc provides a more powerful construct, :py:meth:`~.Context.process
     )
 
 
-What's really cool about the process map is that it returns a generator.
+What's interesting about :py:meth:`~.Context.process_map` is that it returns a generator.
 
 The moment you call it, it will distribute the task to "count" number of workers.
 
 It will then, return with a generator,
-which in-turn will do the job of pulling in the results from these workers,
+which in-turn will do the job of pulling out the results from these workers,
 and arranging them in order.
 
 
@@ -219,7 +223,7 @@ and arranging them in order.
 
 It is noteworthy, that computation continues in the background while the main process is running.
 
-As a result, the amount of time it takes for ``next(res)`` to return changes over time.
+Subsequently, the amount of time it takes for ``next(res)`` is variable (non-sequential).
 
 Reactive programming with zproc
 -------------------------------
@@ -231,7 +235,7 @@ I like to call it :ref:`state-watching`.
 
 ---
 
-State watching allows you to react to some change in the state in an efficient way.
+State watching allows you to "react" to some change in the state in an efficient way.
 
 Lets say, you want to wait for the number of "cookies" to be "5".
 
@@ -268,10 +272,12 @@ zproc provides an elegant, easy to use solution to this problem.
 
 This eats very little to no CPU, and is fast enough for almost everyone needs.
 
-You must realise that this doesn't do any of that expensive "busy" waiting.
-Under the covers, it's actually just a socket waiting for a request.
+---
 
-If you want, you can even provide a function:
+This doesn't do any expensive "busy" waiting.
+Under the covers, it's just a socket waiting for a request.
+
+If you want, you can also provide a function:
 
 .. code-block:: python
 
@@ -299,7 +305,7 @@ to check whether the return value is *truthy*.
 Mutating objects inside state
 -----------------------------
 
-You must remember that you can't mutate (update) objects deep inside the state.
+You must remember that you can't mutate (update) objects beyond one level inside the state.
 
 .. code-block:: python
 
@@ -307,11 +313,12 @@ You must remember that you can't mutate (update) objects deep inside the state.
 
     state['numbers'].append(4)  # doesn't work
 
+
 While this might look like a flaw of zproc (and it somewhat is),
 you can see this as a feature. It will avoid you from
 
-1. over-complicating your state. (Keeping the state as flat as possible is generally a good idea).
-2. avoiding race conditions. (Think about the atomicity of ``state['numbers'].append(4)``).
+1. over-complicating your state.
+2. avoiding race conditions.
 
 The correct way to mutate objects inside the state, is to do them atomically,
 which is to say using the :py:func:`~.atomic` decorator.
@@ -333,12 +340,37 @@ Read more about :ref:`atomicity`.
 Something to keep in mind
 -------------------------
 
-Absolutely none of the the classes in ZProc are Process/Thread safe.
-You must never attempt to share a Context/State between multiple processes.
+Absolutely none of the the classes in ZProc are Process or Thread safe.
+You must never attempt to share a objects between multiple processes.
 
-Create a new one for each Process/Thread.
+Create a new one for each Process.
 Communicate and synchronize using the State at all times.
 
-This is also, in-general *very* good practice.
+This is, in-general *very* good practice.
 
 Never attempt to directly share python objects between Processes, and the multitasking gods will reward you :).
+
+---
+
+You can ask ZProc to create new objects for you.
+
+.. code-block:: python
+
+    ctx = zproc.Context()
+
+    def my_process(inner_ctx):
+        print(inner_ctx)  # This context is different.
+
+    ctx.process(my_process, pass_context=True)  # Notice "pass_context"
+
+
+Just never attempt to share things directly.
+
+.. code-block:: python
+
+    ctx = zproc.Context()
+
+    def my_process():
+        print(ctx)  # This is not allowed!
+
+    ctx.process(my_process)

@@ -19,6 +19,14 @@ if not ipc_base_dir.exists():
     ipc_base_dir.mkdir(parents=True)
 
 
+def handle_remote_exc(response):
+    # if the reply is a remote Exception, re-raise it!
+    if isinstance(response, exceptions.RemoteException):
+        response.reraise()
+
+    return response
+
+
 class Serializer:
     @staticmethod
     def dumps(obj):
@@ -38,14 +46,6 @@ def get_serializer(secret_key: Optional[str] = None):
         return Serializer()
 
     return get_signed_serializer(secret_key)
-
-
-def handle_remote_exc(response):
-    # if the reply is a remote Exception, re-raise it!
-    if isinstance(response, exceptions.RemoteException):
-        response.reraise()
-
-    return response
 
 
 def send(obj: Any, sock: zmq.Socket, serializer):

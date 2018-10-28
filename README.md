@@ -1,6 +1,6 @@
 <img src="https://i.imgur.com/sJARxXD.png" />
 
-*ZProc lets you do shared-state multitasking without the perils of having shared-memory.*
+**ZProc lets you do shared-state multitasking without the perils of having shared-memory.**
 
 **Behold, the power of ZProc:**
 
@@ -82,22 +82,25 @@ eventually wanting to turn into a full-fledged framework for all things multitas
 
 ## Install
 
+From [PyPI](https://pypi.org/project/zproc/).
+
 (currently in aplha, please use `--pre`!)
 
 ```
 $ pip install zproc --pre
 ``` 
 
-[PyPI](https://pypi.org/project/zproc/).
+Python 3.5+  
+MIT License
 
-License: MIT License (MIT)<br>
-Requires: Python >= 3.5
 
-## Documentation ( [![Documentation Status](https://readthedocs.org/projects/zproc/badge/?version=latest)](https://zproc.readthedocs.io/) )
+## Documentation
 
-#### [Read the docs](http://zproc.readthedocs.io/en/latest/)
+[![Documentation Status](https://readthedocs.org/projects/zproc/badge/?version=latest)](https://zproc.readthedocs.io/)
 
-#### [Examples](examples)
+[**Read the docs**](http://zproc.readthedocs.io/en/latest/)
+
+[**Examples**](examples)
 
 
 ## Features
@@ -149,7 +152,7 @@ Requires: Python >= 3.5
 
 -   Stable?
 
-    -   Mostly. However, since it's still in the `0.x.x` stage, you can expect some API changes. 
+    -   Mostly. However, since it's still in the alpha stage, you can expect some API changes. 
 
 -   Production ready?
 
@@ -162,27 +165,33 @@ Requires: Python >= 3.5
 ## Local development
 
 ```
+# get the code
 git clone https://github.com/pycampers/zproc.git
 
+# install dependencies
 cd zproc
 pipenv install
 pipenv install -d
- 
+
+# activate virtualenv
 pipenv shell
 
+# install zproc, and run tests
 pip install -e .
 pytest 
 ```
 
 ## Build documentation
 
-Assuming you have sphinx installed (Linux)
-
 ```
 cd docs
 ./build.sh 
 
-./build.sh loop  # starts a build loop.
+# open docs
+google-chrome _build/index.html 
+
+# start a build loop
+./build.sh loop  
 ```
 
 ## ZProc in the wild
