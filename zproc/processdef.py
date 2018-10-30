@@ -45,7 +45,7 @@ def child_process(
         zmq_ctx = util.create_zmq_ctx()
     else:
         zmq_ctx = state._zmq_ctx
-    result_sock = zmq_ctx.socket(zmq.PUSH)
+    result_sock = zmq_ctx.socket(zmq.PAIR)
     result_sock.connect(result_address)
 
     serializer = util.get_serializer(secret_key)

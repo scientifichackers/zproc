@@ -20,7 +20,7 @@ class Server(util.SecretKeyHolder):
     _active_state = {}  # type:dict
 
     def __init__(
-        self, server_address: str, push_address: str, secret_key: str = None
+        self, server_address: str, result_address: str, secret_key: str = None
     ) -> None:
         super().__init__(secret_key)
 
@@ -30,8 +30,8 @@ class Server(util.SecretKeyHolder):
         self.pub_sock = self.zmq_ctx.socket(zmq.PUB)
         self.pull_sock = self.zmq_ctx.socket(zmq.PULL)
 
-        push_sock = self.zmq_ctx.socket(zmq.PUSH)
-        push_sock.connect(push_address)
+        result_sock = self.zmq_ctx.socket(zmq.PAIR)
+        result_sock.connect(result_address)
 
         try:
             if server_address:
@@ -49,12 +49,12 @@ class Server(util.SecretKeyHolder):
                 self.pub_sub_address = util.bind_to_random_address(self.pub_sock)
                 self.push_pull_address = util.bind_to_random_address(self.pull_sock)
         except Exception:
-            push_sock.send(self._serializer.dumps(exceptions.RemoteException()))
+            result_sock.send(self._serializer.dumps(exceptions.RemoteException()))
             self.close()
         else:
-            push_sock.send(self._serializer.dumps(self.req_rep_address))
-        finally:
-            push_sock.close()
+            result_sock.send(self._serializer.dumps(self.req_rep_address))
+        # finally:
+        #     result_sock.close()
 
         # see State._get_subscribe_sock() for more
         self.pub_sock.setsockopt(zmq.INVERT_MATCHING, 1)

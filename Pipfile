@@ -15,6 +15,7 @@ ipython = "*"
 sphinx = "*"
 twine = "*"
 pytest = "*"
+yappi = "*"
 
 [requires]
 python_version = "3.5.2"

@@ -189,5 +189,4 @@ def is_main_thread():
 def create_zmq_ctx() -> zmq.Context:
     ctx = zmq.Context()
     ctx.setsockopt(zmq.LINGER, 0)
-
     return ctx

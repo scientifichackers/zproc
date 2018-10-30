@@ -38,20 +38,19 @@ def start_server(
     :return: ``tuple``, containing a ``multiprocessing.Process`` object for server and the server address.
     """
     zmq_ctx = util.create_zmq_ctx()
-    sock = zmq_ctx.socket(zmq.PULL)
-    pull_address = util.bind_to_random_address(sock)
+    result_sock = zmq_ctx.socket(zmq.PAIR)
+    result_address = util.bind_to_random_address(result_sock)
 
     serializer = util.get_serializer(secret_key)
 
     server_process = backend(
-        target=lambda *args, **kwargs: Server(*args, **kwargs).main(),
-        args=[server_address, pull_address, secret_key],
+        target=lambda: Server(server_address, result_address, secret_key).main(),
         daemon=True,
     )
     server_process.start()
 
     try:
-        server_address = util.recv(sock, serializer)
+        server_address = util.recv(result_sock, serializer)
     except zmq.ZMQError as e:
         if e.errno == 98:
             raise ConnectionError(
@@ -64,9 +63,8 @@ def start_server(
             )
         raise
     finally:
-        sock.close()
+        result_sock.close()
         util.close_zmq_ctx(zmq_ctx)
-
     return server_process, server_address
 
 
@@ -119,12 +117,9 @@ def ping(
 
     sock = zmq_ctx.socket(zmq.DEALER)
     sock.connect(server_address)
-
     if timeout is not None:
         sock.setsockopt(zmq.RCVTIMEO, int(timeout * 1000))
-
     sock.send(serializer.dumps({Msgs.cmd: Commands.ping, Msgs.info: sent_payload}))
-
     try:
         response = serializer.loads(sock.recv())
     except zmq.error.Again:
@@ -137,3 +132,4 @@ def ping(
             return None
     finally:
         sock.close()
+        util.close_zmq_ctx(zmq_ctx)

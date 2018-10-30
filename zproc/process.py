@@ -173,7 +173,7 @@ class Process(util.SecretKeyHolder):
         self.target = target
 
         self._zmq_ctx = util.create_zmq_ctx()
-        self._result_sock = self._zmq_ctx.socket(zmq.PULL)
+        self._result_sock = self._zmq_ctx.socket(zmq.PAIR)
         # The result socket is meant to be used only after the process completes (after join()).
         # That implies -- we shouldn't need to wait for the result message.
         self._result_sock.setsockopt(zmq.RCVTIMEO, 0)
