@@ -37,20 +37,16 @@ def start_server(
 
     :return: ``tuple``, containing a ``multiprocessing.Process`` object for server and the server address.
     """
-    zmq_ctx = util.create_zmq_ctx()
-    result_sock = zmq_ctx.socket(zmq.PAIR)
-    result_address = util.bind_to_random_address(result_sock)
-
     serializer = util.get_serializer(secret_key)
+    recv_conn, send_conn = multiprocessing.Pipe()
 
     server_process = backend(
-        target=lambda: Server(server_address, result_address, secret_key).main(),
-        daemon=True,
+        target=lambda: Server(server_address, send_conn, secret_key).main(), daemon=True
     )
     server_process.start()
 
     try:
-        server_address = util.recv(result_sock, serializer)
+        server_address = serializer.loads(recv_conn.recv_bytes())
     except zmq.ZMQError as e:
         if e.errno == 98:
             raise ConnectionError(
@@ -63,8 +59,8 @@ def start_server(
             )
         raise
     finally:
-        result_sock.close()
-        util.close_zmq_ctx(zmq_ctx)
+        recv_conn.close()
+
     return server_process, server_address
 
 

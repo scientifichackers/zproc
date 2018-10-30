@@ -19,9 +19,7 @@ class Server(util.SecretKeyHolder):
     _active_namespace = b""
     _active_state = {}  # type:dict
 
-    def __init__(
-        self, server_address: str, result_address: str, secret_key: str = None
-    ) -> None:
+    def __init__(self, server_address: str, send_conn, secret_key: str = None) -> None:
         super().__init__(secret_key)
 
         self.zmq_ctx = util.create_zmq_ctx()
@@ -29,9 +27,6 @@ class Server(util.SecretKeyHolder):
         self.router_sock = self.zmq_ctx.socket(zmq.ROUTER)
         self.pub_sock = self.zmq_ctx.socket(zmq.PUB)
         self.pull_sock = self.zmq_ctx.socket(zmq.PULL)
-
-        result_sock = self.zmq_ctx.socket(zmq.PAIR)
-        result_sock.connect(result_address)
 
         try:
             if server_address:
@@ -49,12 +44,12 @@ class Server(util.SecretKeyHolder):
                 self.pub_sub_address = util.bind_to_random_address(self.pub_sock)
                 self.push_pull_address = util.bind_to_random_address(self.pull_sock)
         except Exception:
-            result_sock.send(self._serializer.dumps(exceptions.RemoteException()))
+            send_conn.send_bytes(self._serializer.dumps(exceptions.RemoteException()))
             self.close()
         else:
-            result_sock.send(self._serializer.dumps(self.req_rep_address))
-        # finally:
-        #     result_sock.close()
+            send_conn.send_bytes(self._serializer.dumps(self.req_rep_address))
+        finally:
+            send_conn.close()
 
         # see State._get_subscribe_sock() for more
         self.pub_sock.setsockopt(zmq.INVERT_MATCHING, 1)
