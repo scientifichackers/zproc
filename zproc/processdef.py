@@ -1,4 +1,5 @@
-from typing import Union, Callable, Optional
+from functools import wraps
+from typing import Callable
 
 import zmq
 from tblib import pickling_support
@@ -9,83 +10,97 @@ from .state import State
 pickling_support.install()
 
 
-def child_process(
-    server_address: str,
-    target: Callable,
-    process_repr: str,
-    namespace: str,
-    secret_key: Optional[str],
-    stateful: bool,
-    pass_context: bool,
-    args: tuple,
-    kwargs: dict,
-    retry_for: tuple,
-    retry_delay: Union[int, float],
-    max_retries: Optional[bool],
-    retry_args: Optional[tuple],
-    retry_kwargs: Optional[dict],
-    result_address: str,
-):
-    if args is None:
-        args = ()
-    if kwargs is None:
-        kwargs = {}
+class ChildProcess:
+    exitcode = 0
 
-    if pass_context:
-        from .context import Context
+    def __init__(self, **kwargs):
+        self.kwargs = kwargs
 
-        ctx = Context(server_address, namespace=namespace, secret_key=secret_key)
-        state = ctx.state  # type: Union[State, None]
-    elif stateful:
-        state = State(server_address, namespace=namespace, secret_key=secret_key)
-    else:
-        state = None
+        self.pass_context = self.kwargs["pass_context"]
+        self.pass_state = self.kwargs["pass_state"]
 
-    if state is None:
-        zmq_ctx = util.create_zmq_ctx()
-    else:
-        zmq_ctx = state._zmq_ctx
-    result_sock = zmq_ctx.socket(zmq.PAIR)
-    result_sock.connect(result_address)
+        self.target_args = self.kwargs["target_args"]
+        self.target_kwargs = self.kwargs["target_kwargs"]
+        if self.target_args is None:
+            self.target_args = {}
+        if self.target_kwargs is None:
+            self.target_kwargs = {}
 
-    serializer = util.get_serializer(secret_key)
+        self.main()
 
-    to_catch = tuple(util.convert_to_exceptions(retry_for))
-
-    retries = 0
-    while True:
-        retries += 1
-
+    def main(self):
         try:
-            if pass_context:
-                return_value = target(ctx, *args, **kwargs)
-            elif stateful:
-                return_value = target(state, *args, **kwargs)
-            else:
-                return_value = target(*args, **kwargs)
-        except exceptions.ProcessExit as e:
-            util.clean_process_tree(e.status)
-            return
-        except to_catch as e:
-            if (max_retries is not None) and (retries > max_retries):
-                raise e
-            else:
-                util.handle_process_crash(
-                    exc=e,
-                    retry_delay=retry_delay,
-                    retries=retries,
-                    max_retries=max_retries,
-                    process_repr=process_repr,
-                )
+            target = self.target_runner(self.kwargs["target"])
+            serializer = util.get_serializer(self.kwargs["secret_key"])
 
-                if retry_args is not None:
-                    args = retry_args
-                if retry_kwargs is not None:
-                    kwargs = retry_kwargs
-        else:
-            util.send(return_value, result_sock, serializer)
-            util.clean_process_tree(0)
-            return
+            if self.pass_context:
+                from .context import Context  # this helps avoid a circular import
+
+                return_value = target(
+                    Context(
+                        self.kwargs["server_address"],
+                        namespace=self.kwargs["namespace"],
+                        secret_key=self.kwargs["secret_key"],
+                    ),
+                    *self.target_args,
+                    **self.target_kwargs
+                )
+            elif self.pass_state:
+                return_value = target(
+                    State(
+                        self.kwargs["server_address"],
+                        namespace=self.kwargs["namespace"],
+                        secret_key=self.kwargs["secret_key"],
+                    ),
+                    *self.target_args,
+                    **self.target_kwargs
+                )
+            else:
+                return_value = target(*self.target_args, **self.target_kwargs)
+            # print(return_value)
+            with zmq.Context() as zmq_ctx:
+                with zmq_ctx.socket(zmq.PAIR) as result_sock:
+                    result_sock.connect(self.kwargs["result_address"])
+                    util.send(return_value, result_sock, serializer)
+        finally:
+            util.clean_process_tree(self.exitcode)
+
+    def target_runner(self, target: Callable) -> Callable:
+        @wraps(target)
+        def wrapper(*args, **kwargs):
+            to_catch = tuple(util.convert_to_exceptions(self.kwargs["retry_for"]))
+            max_retries = self.kwargs["max_retries"]
+            retry_delay = self.kwargs["retry_delay"]
+            process_repr = self.kwargs["process_repr"]
+            retry_args = self.kwargs["retry_args"]
+            retry_kwargs = self.kwargs["retry_kwargs"]
+
+            retries = 0
+            while True:
+                retries += 1
+                try:
+                    return target(*args, **kwargs)
+                except exceptions.ProcessExit as e:
+                    self.exitcode = e.exitcode
+                    return None
+                except to_catch as e:
+                    if max_retries is not None and retries > max_retries:
+                        raise e
+
+                    util.handle_process_crash(
+                        exc=e,
+                        retry_delay=retry_delay,
+                        retries=retries,
+                        max_retries=max_retries,
+                        process_repr=process_repr,
+                    )
+
+                    if retry_args is not None:
+                        self.target_args = retry_args
+                    if retry_kwargs is not None:
+                        self.target_kwargs = retry_kwargs
+
+        return wrapper
 
 
 def _stateful_worker(state, target, i, a, _a, k, _k):
@@ -129,35 +144,29 @@ def _stateless_worker(target, i, a, _a, k, _k):
 def process_map_worker(
     state: State, push_address: str, pull_address: str, secret_key: str
 ):
-    serializer = util.get_serializer(secret_key)
+    with zmq.Context() as zmq_ctx, zmq_ctx.socket(
+        zmq.PULL
+    ) as pull_sock, zmq_ctx.socket(zmq.PUSH) as push_sock:
+        pull_sock.connect(pull_address)
+        push_sock.connect(push_address)
 
-    ctx = state._zmq_ctx
-
-    pull_sock = ctx.socket(zmq.PULL)
-    pull_sock.connect(pull_address)
-
-    push_sock = ctx.socket(zmq.PUSH)
-    push_sock.connect(push_address)
-
-    while True:
-        try:
-            todo = util.recv(pull_sock, serializer)
-
-            if todo is None:  # time to close shop.
+        serializer = util.get_serializer(secret_key)
+        while True:
+            try:
+                todo = util.recv(pull_sock, serializer)
+                if todo is None:  # time to close shop.
+                    return
+                else:
+                    task_detail, chunk_id, pass_state, target, params = todo
+                if pass_state:
+                    result = _stateful_worker(state, target, *params)
+                else:
+                    result = _stateless_worker(target, *params)
+                util.send([task_detail, chunk_id, result], push_sock, serializer)
+            except KeyboardInterrupt:
+                pull_sock.close()
+                push_sock.close()
                 return
-            else:
-                task_detail, chunk_id, stateful, target, params = todo
-
-            if stateful:
-                result = _stateful_worker(state, target, *params)
-            else:
-                result = _stateless_worker(target, *params)
-
-            util.send([task_detail, chunk_id, result], push_sock, serializer)
-        except KeyboardInterrupt:
-            pull_sock.close()
-            push_sock.close()
-            return
-        except Exception:
-            # proxy the exception back to parent.
-            util.send(exceptions.RemoteException(), push_sock, serializer)
+            except Exception:
+                # proxy the exception back to parent.
+                util.send(exceptions.RemoteException(), push_sock, serializer)

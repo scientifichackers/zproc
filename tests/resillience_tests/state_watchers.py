@@ -1,15 +1,10 @@
-"""
-This is meant to test resilience and stability of state watchers.
-
-Its hard to test automatically, so we must inspect it ourselves.
-"""
 import random
 import time
 
 import zproc
 
-TIMEOUT = 10
-SLOW = True
+TIMEOUT = 0.5
+SLOW = False
 
 ctx = zproc.Context()
 ctx.state["foobar"] = 0
@@ -64,7 +59,7 @@ wait_and_stop()
 print("LIVE:")
 
 
-@ctx.call_when_change("foobar", stateful=False, live=True)
+@ctx.call_when_change("foobar", pass_state=False, live=True)
 def test_process(foobar):
     print(foobar, end=",", flush=True)
     if SLOW:
@@ -75,7 +70,7 @@ wait_and_stop()
 print("BUFFERED:")
 
 
-@ctx.call_when_change("foobar", live=False, stateful=False)
+@ctx.call_when_change("foobar", live=False, pass_state=False)
 def test_process(foobar):
     print(foobar, end=",", flush=True)
     if SLOW:

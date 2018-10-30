@@ -15,7 +15,10 @@ ipython = "*"
 sphinx = "*"
 twine = "*"
 pytest = "*"
-yappi = "*"
+zproc = {editable = true, path = "."}
 
 [requires]
 python_version = "3.5.2"
+
+[pipenv]
+allow_prereleases = true

@@ -13,11 +13,11 @@ from setuptools import find_packages, Command, setup
 
 # Package meta-data.
 NAME = "zproc"
-DESCRIPTION = "ZProc - Process on steroids"
+DESCRIPTION = "ZProc - Multi Processing on steroids"
 URL = "https://github.com/devxpy/zproc"
 EMAIL = "devxpy@gmail.com"
 AUTHOR = "Dev Aggarwal"
-REQUIRES_PYTHON = ">=3.5"
+REQUIRES_PYTHON = ">=3.5.2"
 VERSION = None
 
 # What packages are required for this module to be executed?

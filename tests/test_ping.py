@@ -16,9 +16,9 @@ def test_ping():
 
 
 def test_timeout():
-    assert zproc.ping(ctx.server_address, timeout=1) == pid
-    assert ctx.state.ping(timeout=1) == pid
-    assert ctx.ping(timeout=1) == pid
+    assert zproc.ping(ctx.server_address, timeout=0.5) == pid
+    assert ctx.state.ping(timeout=0.5) == pid
+    assert ctx.ping(timeout=0.5) == pid
 
 
 def test_timeout_error():
@@ -36,10 +36,10 @@ def test_ping_after_close():
     ctx.close()
 
     with pytest.raises(TimeoutError):
-        zproc.ping(ctx.server_address, timeout=1)
+        zproc.ping(ctx.server_address, timeout=0.5)
 
     with pytest.raises(TimeoutError):
-        ctx.ping(timeout=1)
+        ctx.ping(timeout=0.5)
 
     with pytest.raises(TimeoutError):
-        ctx.state.ping(timeout=1)
+        ctx.state.ping(timeout=0.5)

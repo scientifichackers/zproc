@@ -131,7 +131,7 @@ class Context(util.SecretKeyHolder):
             # i.e. first pull addr, then push addr.
             "args": (self._pull_address, self._push_address, self.secret_key),
             # worker can't work without the state!
-            "stateful": True,
+            "pass_state": True,
             "start": True,
         }
 
@@ -273,7 +273,7 @@ class Context(util.SecretKeyHolder):
         map_kwargs: Sequence[Mapping[str, Any]] = None,
         kwargs: Mapping = None,
         count: int = None,
-        stateful: bool = False,
+        pass_state: bool = False,
         new: bool = False,
         return_task: bool = False
     ) -> Union[TaskDetail, Generator[Any, None, None]]:
@@ -321,13 +321,13 @@ class Context(util.SecretKeyHolder):
             *Where:*
 
                 - ``state`` is a :py:class:`State` instance.
-                  (Disabled by default. Use the ``stateful`` Keyword Argument to enable)
+                  (Disabled by default. Use the ``pass_state`` Keyword Argument to enable)
 
                 - ``i`` is the index of n\ :sup:`th` element of the Iterable(s) provided in the ``map_*`` arguments.
 
                 - ``args`` and ``kwargs`` are passed from the ``**process_kwargs``.
 
-            P.S. The ``stateful`` Keyword Argument of :py:class:`Process` allows you to omit the ``state`` arg.
+            P.S. The ``pass_state`` Keyword Argument of :py:class:`Process` allows you to omit the ``state`` arg.
 
         :param map_iter:
             A sequence whose elements are supplied as the *first* positional argument (after ``state``) to the ``target``.
@@ -348,7 +348,7 @@ class Context(util.SecretKeyHolder):
 
             By default, it is an empty ``dict``.
 
-        :param stateful:
+        :param pass_state:
             Weather this process needs to access the state.
 
             If this is set to ``False``,
@@ -439,7 +439,7 @@ class Context(util.SecretKeyHolder):
                 None if chunks[2] is None else chunks[2][chunk_id],
                 kwargs,
             ]
-            batch = [task_detail, chunk_id, stateful, target, params]
+            batch = [task_detail, chunk_id, pass_state, target, params]
 
             util.send(batch, self._push_sock, self._serializer)
 
@@ -456,10 +456,10 @@ class Context(util.SecretKeyHolder):
         **state_watcher_kwargs
     ):
         # can't work without the state!
-        stateful = process_kwargs.pop("stateful", True)
+        pass_state = process_kwargs.pop("pass_state", True)
 
         def decorator(wrapped_fn):
-            if stateful:
+            if pass_state:
 
                 def watcher_process(state, *args, **kwargs):
                     get_when_xxx_fn = getattr(state, get_when_xxx_fn_name)

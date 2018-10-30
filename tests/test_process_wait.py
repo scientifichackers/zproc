@@ -8,44 +8,27 @@ TOLERANCE = 0.1
 
 @pytest.fixture
 def ctx():
-    return zproc.Context(stateful=False)
+    return zproc.Context(pass_state=False)
 
 
-def test_timeout_accuracy1(ctx):
+def test_timeout_accuracy(ctx):
     @ctx.process
     def test():
-        time.sleep(1.5)
+        time.sleep(0.5)
 
     start = time.time()
     try:
-        ctx.wait_all(1)
+        ctx.wait_all(0.1)
     except TimeoutError:
         end = time.time()
     else:
         raise ValueError("This should have raised TimeoutError!")
     diff = end - start
 
-    assert diff == pytest.approx(1, TOLERANCE)
+    assert diff == pytest.approx(0.1, TOLERANCE)
 
 
-def test_timeout_accuracy2(ctx):
-    @ctx.process
-    def test():
-        time.sleep(1.5)
-
-    start = time.time()
-    try:
-        test.wait(1)
-    except TimeoutError:
-        end = time.time()
-    else:
-        raise ValueError("This should have raised TimeoutError!")
-    diff = end - start
-
-    assert diff == pytest.approx(1, TOLERANCE)
-
-
-def test_timeout_accuracy3(ctx):
+def test_timeout_accuracy_parallel(ctx):
     @ctx.process
     def test1():
         time.sleep(0.5)
@@ -69,19 +52,19 @@ def test_timeout_accuracy3(ctx):
 def test_timeout1(ctx):
     @ctx.process
     def test():
-        time.sleep(1.5)
+        time.sleep(0.5)
 
     with pytest.raises(TimeoutError):
-        ctx.wait_all(1)
+        ctx.wait_all(0.1)
 
 
 def test_timeout2(ctx):
     @ctx.process
     def test():
-        time.sleep(1.5)
+        time.sleep(0.5)
 
     with pytest.raises(TimeoutError):
-        test.wait(1)
+        test.wait(0.1)
 
 
 def test_wait_all_timeout(ctx):

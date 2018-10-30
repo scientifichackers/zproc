@@ -6,7 +6,7 @@ import threading
 import time
 import traceback
 import uuid
-from typing import Optional, Any
+from typing import Optional, Any, Union, Sequence, Iterable, Generator
 
 import itsdangerous
 import psutil
@@ -27,24 +27,28 @@ def handle_remote_exc(response):
     return response
 
 
-class Serializer:
+class UnSignedSerializer:
     @staticmethod
-    def dumps(obj):
+    def dumps(obj: Any) -> bytes:
         return pickle.dumps(obj, protocol=pickle.HIGHEST_PROTOCOL)
 
     @staticmethod
-    def loads(bytes_obj):
+    def loads(bytes_obj: bytes) -> Any:
         return handle_remote_exc(pickle.loads(bytes_obj))
 
 
-def get_signed_serializer(secret_key, *args, **kwargs):
-    return itsdangerous.Serializer(secret_key, *args, **kwargs, serializer=Serializer)
+def get_signed_serializer(secret_key: str, *args, **kwargs) -> itsdangerous.Serializer:
+    return itsdangerous.Serializer(
+        secret_key, *args, **kwargs, serializer=UnSignedSerializer
+    )
 
 
-def get_serializer(secret_key: Optional[str] = None):
+SerializerType = Union[UnSignedSerializer, itsdangerous.Serializer]
+
+
+def get_serializer(secret_key: Optional[str] = None) -> SerializerType:
     if secret_key is None:
-        return Serializer()
-
+        return UnSignedSerializer()
     return get_signed_serializer(secret_key)
 
 
@@ -74,10 +78,12 @@ class SecretKeyHolder:
     @secret_key.setter
     def secret_key(self, secret_key: Optional[str]):
         self._secret_key = secret_key
-        self._serializer = get_serializer(self._secret_key)
+        self._serializer = get_serializer(self._secret_key)  # type:SerializerType
 
 
-def convert_to_exceptions(retry_for):
+def convert_to_exceptions(
+    retry_for: Iterable[Union[signal.Signals, Exception]]
+) -> Generator[Exception, None, None]:
     if retry_for is not None:
         yield exceptions.SignalException  # catches all signals converted using `signal_to_exception()`
 
@@ -88,9 +94,8 @@ def convert_to_exceptions(retry_for):
                 yield i
             else:
                 raise ValueError(
-                    'The items of "retry_for" MUST be a subclass of `BaseException` or of type `signal.Signals`, not `{}`.'.format(
-                        repr(i)
-                    )
+                    'The items of "retry_for" MUST be a subclass of `BaseException` '
+                    "or of type `signal.Signals`, not `{}`.".format(repr(i))
                 )
 
 
@@ -132,20 +137,28 @@ def clean_process_tree(*signal_handler_args):
         print("process {} terminated with exit code {}".format(proc, proc.returncode))
 
     procs = psutil.Process().children(recursive=True)
+    # print("trying to stop:", procs)
     # send SIGTERM
     for p in procs:
-        p.terminate()
+        try:
+            p.terminate()
+        except psutil.NoSuchProcess:
+            pass
     gone, alive = psutil.wait_procs(procs, timeout=1, callback=on_terminate)
     if alive:
         # send SIGKILL
         for p in alive:
             print("process {} survived SIGTERM; trying SIGKILL".format(p))
-            p.kill()
+            try:
+                p.kill()
+            except psutil.NoSuchProcess:
+                pass
         gone, alive = psutil.wait_procs(alive, timeout=1, callback=on_terminate)
         if alive:
             # give up
             for p in alive:
                 print("process {} survived SIGKILL; giving up".format(p))
+    # print("stopped everythin I could")
     try:
         signum = signal_handler_args[0]
     except IndexError:

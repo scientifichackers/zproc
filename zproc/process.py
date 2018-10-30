@@ -1,30 +1,33 @@
 import multiprocessing
 import os
 import signal
-from typing import Callable, Union, Sequence, Mapping, Any, Optional
+from typing import Callable, Union, Sequence, Mapping, Optional, Iterable
 
 import zmq
 
 from . import util, exceptions
-from .processdef import child_process
+from .processdef import ChildProcess
 
 
 class Process(util.SecretKeyHolder):
+    _return_value = None  # type:None
+    _has_returned = False
+
     def __init__(
         self,
         target: Callable,
         server_address: str,
         *,
-        stateful: bool = True,
+        start: bool = True,
+        pass_state: bool = True,
         pass_context: bool = False,
         args: Sequence = None,
         kwargs: Mapping = None,
-        retry_for: Sequence[Union[signal.Signals, Exception]] = (),
+        retry_for: Iterable[Union[signal.Signals, Exception]] = (),
         retry_delay: Union[int, float] = 5,
         max_retries: Optional[bool] = None,
         retry_args: Optional[tuple] = None,
         retry_kwargs: Optional[dict] = None,
-        start: bool = True,
         backend: Callable = multiprocessing.Process,
         namespace: str = "default",
         secret_key: Optional[str] = None
@@ -77,7 +80,7 @@ class Process(util.SecretKeyHolder):
                 The new :py:class:`Context` object can be used to create nested processes
                 that share the same state.
 
-        :param stateful:
+        :param pass_state:
             Weather this process needs to access the state.
 
             If this is set to ``False``,
@@ -173,34 +176,33 @@ class Process(util.SecretKeyHolder):
         self.target = target
 
         self._zmq_ctx = util.create_zmq_ctx()
+
         self._result_sock = self._zmq_ctx.socket(zmq.PAIR)
         # The result socket is meant to be used only after the process completes (after join()).
         # That implies -- we shouldn't need to wait for the result message.
         self._result_sock.setsockopt(zmq.RCVTIMEO, 0)
-
         result_address = util.bind_to_random_address(self._result_sock)
 
         self.child = backend(
-            target=child_process,
-            args=[
-                self.server_address,
-                self.target,
-                self.__repr__(),
-                self.namespace,
-                secret_key,
-                stateful,
-                pass_context,
-                args,
-                kwargs,
-                retry_for,
-                retry_delay,
-                max_retries,
-                retry_args,
-                retry_kwargs,
-                result_address,
-            ],
+            target=ChildProcess,
+            kwargs=dict(
+                target=self.target,
+                server_address=self.server_address,
+                process_repr=self.__repr__(),
+                namespace=self.namespace,
+                secret_key=self._secret_key,
+                pass_state=pass_state,
+                pass_context=pass_context,
+                target_args=args,
+                target_kwargs=kwargs,
+                retry_for=retry_for,
+                retry_delay=retry_delay,
+                max_retries=max_retries,
+                retry_args=retry_args,
+                retry_kwargs=retry_kwargs,
+                result_address=result_address,
+            ),
         )
-
         if start:
             self.child.start()
 
@@ -274,10 +276,8 @@ class Process(util.SecretKeyHolder):
         a :py:exc:`.ProcessWaitError` is raised.
         """
         # try to fetch the cached result.
-        try:
+        if self._has_returned:
             return self._return_value
-        except AttributeError:
-            pass
 
         self.child.join(timeout)
 
@@ -295,15 +295,15 @@ class Process(util.SecretKeyHolder):
             )
 
         try:
-            self._return_value = util.recv(
-                self._result_sock, self._serializer
-            )  # type: Any
+            self._return_value = util.recv(self._result_sock, self._serializer)
         except zmq.error.Again:
             raise exceptions.ProcessWaitError(
                 "The Process died before sending its return value. "
                 "It probably crashed, got killed, or exited without warning.",
                 exitcode,
             )
+        else:
+            self._has_returned = True
 
         self._result_sock.close()
         util.close_zmq_ctx(self._zmq_ctx)

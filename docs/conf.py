@@ -96,7 +96,8 @@ html_theme_options = {
     # "github_type": "star",
     # "fixed_sidebar": True,
     # "github_banner": True,
-    "analytics_id": "UA-119542427-1"
+    "analytics_id": "UA-119542427-1",
+    "navigation_depth": 4,
 }
 # Add any paths that contain custom static files (such as style sheets) here,
 # relative to this directory. They are copied after the builtin static files,

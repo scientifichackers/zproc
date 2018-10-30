@@ -1,34 +1,25 @@
 from functools import partial
 
+import pytest
+
 import zproc
 
-ctx = zproc.Context()
+
+@pytest.fixture
+def ctx():
+    return zproc.Context()
 
 
-def pow(base, exp):
-    return base ** exp
+def test1(ctx):
+    r1 = ctx.process_map(pow, range(10 ** 5), args=[10], count=4)
+    r2 = map(lambda x: pow(x, 10), range(10 ** 5))
+
+    assert list(r1) == list(r2)
 
 
-def test1():
-    r1 = list(ctx.process_map(pow, range(10 ** 6), args=[10], count=4))
-    r2 = list(map(partial(pow, exp=10), range(10 ** 6)))
+def test_nested_map(ctx):
+    @ctx.process(pass_context=True)
+    def my_process(ctx):
+        return list(ctx.process_map(pow, range(100), args=[2]))
 
-    assert r1 == r2
-
-
-def test2():
-    r1 = list(ctx.process_map(pow, range(10 ** 6), args=[10], count=4))
-    r2 = list(map(partial(pow, exp=10), range(10 ** 6)))
-
-    assert r1 == r2
-
-
-def test3():
-    r1 = list(ctx.process_map(pow, range(10 ** 6), args=[10], count=4))
-    r2 = list(map(partial(pow, exp=10), range(10 ** 6)))
-
-    assert r1 == r2
-
-
-if __name__ == "__main__":
-    test1()
+    assert my_process.wait() == list(map(lambda x: pow(x, 2), range(100)))

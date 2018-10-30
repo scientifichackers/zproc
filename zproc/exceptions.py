@@ -31,27 +31,32 @@ class SignalException(Exception):
         self.frame = frame
 
 
-class ProcessExit(Exception):
-    def __init__(self, status=0):
-        """
-        The analogue of inbuilt ``SystemExit``, but only for a single Process.
-
-        When raised inside a :py:class:`Process`,
-        this will cause the Process to immediately shut down,
-        with ``status``, without calling cleanup handlers, flushing stdio buffers, etc.
-
-        Useful for the ``Context.call_when_*`` functions, since they run in a never-ending infinite loop.
-        """
-        self.status = status
-
-
 def signal_to_exception(sig: signal.Signals):
     """
     Convert a ``signal.Signals`` to a ``SignalException``.
 
-    This allows for a natural, pythonic signal handing with the use of try-except blocks.
+    This allows for natural, pythonic signal handing with the use of try-except blocks.
     """
+
     def handler(sig, frame):
         raise SignalException(sig, frame)
 
     signal.signal(sig, handler)
+
+
+class ProcessExit(Exception):
+    def __init__(self, exitcode=0):
+        """
+        Indicates that a Process should exit.
+
+        When raised inside a :py:class:`Process`,
+        it will cause the Process to shut down and exit with ``exitcode``.
+
+        This is preferable to ``os._exit()``,
+        as it signals ZProc to properly cleanup resources.
+
+        Also useful for the ``Context.call_when_*`` decorators,
+        since they run in a never-ending infinite loop.
+        (making this the _right_ way to stop them from within the Process).
+        """
+        self.exitcode = exitcode

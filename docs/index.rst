@@ -1,5 +1,5 @@
-ZProc: Process on steroids
-=================================
+ZProc: Multi Processing on steroids
+===================================
 
 .. image:: https://img.shields.io/pypi/v/zproc.svg?style=for-the-badge
     :alt: PyPI
@@ -18,31 +18,22 @@ ZProc: Process on steroids
     :target: https://github.com/pycampers/zproc
 
 
+| Welcome to ZProc's docs! Glad that you made it here.
+| This is divided up into small, digestable pages, which you can naviagate easily.
 
-The User Guide
---------------
+Head over to the User Guide if you're new.
 
-This part of the documentation, which is mostly prose, begins with some
-background information about ZProc, then focuses on step-by-step
-instructions for getting the most out of ZProc.
+Or if you want information about something specific, the API docs are for you!
 
-.. toctree::
-
-    user/introduction
-    user/atomicity
-    user/state_watching
-    user/communication.rst
-    user/security.rst
-
-The API Documentation / Guide
------------------------------
-
-If you are looking for information on a specific function, class, or method,
-this part of the documentation is for you.
+Sections
+--------
 
 .. toctree::
+    :maxdepth: 1
 
+    user.rst
     api.rst
+
 
 Indicies
 --------

@@ -84,10 +84,8 @@ eventually wanting to turn into a full-fledged framework for all things multitas
 
 [![PyPI](https://img.shields.io/pypi/pyversions/zproc.svg?style=for-the-badge)](https://pypi.org/project/zproc/)
 
-(currently in aplha, please use `--pre`!)
-
 ```
-$ pip install zproc --pre
+$ pip install zproc
 ```
 
 MIT License<br>

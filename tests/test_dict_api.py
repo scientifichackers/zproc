@@ -5,7 +5,10 @@ import pytest
 
 import zproc
 
-ctx = zproc.Context()
+
+@pytest.fixture
+def ctx():
+    return zproc.Context()
 
 
 @pytest.fixture
@@ -14,7 +17,7 @@ def pydict() -> dict:
 
 
 @pytest.fixture
-def state(pydict) -> zproc.State:
+def state(pydict, ctx) -> zproc.State:
     ctx.state.set(pydict)
     return ctx.state
 
