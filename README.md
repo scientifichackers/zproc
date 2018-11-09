@@ -93,7 +93,7 @@ $ pip install zproc --pre
 License: MIT License (MIT)<br>
 Requires: Python >= 3.5
 
-## Documentation ( [![Documentation Status](https://readthedocs.org/projects/zproc/badge/?version=latest)](https://zproc.readthedocs.io/) )
+## Documentation ( [![Documentation Status](https://readthedocs.org/projects/zproc/badge/?version=latest)](https://zproc.readthedocs.io/) [![Join the chat at https://gitter.im/pycampers_zproc/Lobby](https://badges.gitter.im/pycampers_zproc/Lobby.svg)](https://gitter.im/pycampers_zproc/Lobby?utm_source=badge&utm_medium=badge&utm_campaign=pr-badge&utm_content=badge) )
 
 #### [Read the docs](http://zproc.readthedocs.io/en/latest/)
 
