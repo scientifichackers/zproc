@@ -36,10 +36,7 @@ class Commands:
     run_fn_atomically = 4
     run_dict_method = 5
 
-
-class WatcherCommands:
-    register = 0
-    unregister = 1
+    watch = 6
 
 
 class ServerMeta(NamedTuple):

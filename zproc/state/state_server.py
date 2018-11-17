@@ -1,6 +1,6 @@
 import os
 import time
-from collections import defaultdict
+from collections import defaultdict, deque
 from contextlib import contextmanager
 from copy import deepcopy
 from typing import Any, Dict
@@ -20,11 +20,8 @@ class StateServer:
     _namespace: bytes
     _state: dict
 
-    def __init__(
-        self, router: zmq.Socket, pair: zmq.Socket, server_meta: ServerMeta
-    ) -> None:
+    def __init__(self, router: zmq.Socket, server_meta: ServerMeta) -> None:
         self.router = router
-        self.pair = pair
         self.server_meta = server_meta
 
         self._dispatch_dict = {
@@ -34,8 +31,10 @@ class StateServer:
             Commands.set_state: self.set_state,
             Commands.get_server_meta: self.get_server_meta,
             Commands.ping: self.ping,
+            Commands.watch: self.watch,
         }
         self._state_store: Dict[bytes, dict] = defaultdict(dict)
+        self._watch_queue_store: Dict[bytes, deque] = defaultdict(deque)
 
     def recv_req(self):
         self._ident, req = self.router.recv_multipart()
@@ -72,13 +71,11 @@ class StateServer:
             self._state_store[self._namespace] = old
             raise
 
-        self.pair.send_multipart(
-            [
-                self._ident,
-                self._namespace,
-                util.dumps((old, self._state, old == self._state)),
-            ]
-        )
+        for ident in self._watch_queue_store[self._namespace]:
+            self.router.send_multipart(
+                [ident, util.dumps((old, self._state, old == self._state))]
+            )
+        self._watch_queue_store[self._namespace].clear()
 
     def set_state(self, request):
         new = request[Msgs.info]
@@ -104,6 +101,9 @@ class StateServer:
 
         with self.mutate_state():
             self.reply(fn(self._state, *args, **kwargs))
+
+    def watch(self, _):
+        self._watch_queue_store[self._namespace].append(self._ident)
 
     def _reset_req_state(self):
         self._ident = None

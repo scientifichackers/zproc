@@ -52,7 +52,7 @@ def start_server(
 def ping(
     server_address: str,
     *,
-    timeout: Union[float, int] = None,
+    timeout: float = None,
     send_payload: Union[bytes] = None
 ) -> Optional[int]:
     """

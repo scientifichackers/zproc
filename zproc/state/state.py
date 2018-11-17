@@ -1,21 +1,10 @@
 import os
 import time
-from contextlib import contextmanager, suppress
+from contextlib import contextmanager
 from functools import wraps
 from pprint import pformat
 from textwrap import indent
-from typing import (
-    Union,
-    Hashable,
-    Any,
-    Callable,
-    Optional,
-    Tuple,
-    Iterable,
-    Generator,
-    Dict,
-)
-
+from typing import Union, Hashable, Any, Callable, Tuple, Iterable, Generator, Dict
 
 import zmq
 
@@ -28,11 +17,8 @@ from zproc.consts import (
     DEFAULT_NAMESPACE,
 )
 from zproc.server import tools
-from . import state_type
-
-
-class _SubMsgDecodeError(Exception):
-    pass
+from zproc.state import state_type
+from zproc.state.watcher import Watcher
 
 
 class State(state_type.StateDictMethodStub, metaclass=state_type.StateType):
@@ -70,21 +56,13 @@ class State(state_type.StateDictMethodStub, metaclass=state_type.StateType):
 
         self._zmq_ctx = util.create_zmq_ctx()
         self._dealer = self._create_dealer()
-        self._server_meta = util.req_server_meta(self._dealer)
-        self._subscriber = self._create_subscriber()
+        self._watcher = Watcher(server_address)
 
     def _create_dealer(self) -> zmq.Socket:
         sock = self._zmq_ctx.socket(zmq.DEALER)
         self._identity = os.urandom(ZMQ_IDENTITY_LENGTH)
         sock.setsockopt(zmq.IDENTITY, self._identity)
         sock.connect(self.server_address)
-        return sock
-
-    def _create_subscriber(self) -> zmq.Socket:
-        sock = self._zmq_ctx.socket(zmq.SUB)
-        sock.setsockopt(zmq.INVERT_MATCHING, 1)
-        sock.setsockopt(zmq.SUBSCRIBE, self._identity)
-        sock.connect(self._server_meta.watcher_router)
         return sock
 
     def __str__(self):
@@ -210,62 +188,21 @@ class State(state_type.StateDictMethodStub, metaclass=state_type.StateType):
 
         Please read :ref:`live-events` for a detailed explanation.
         """
-        self._subscriber.close()
-        self._subscriber = self._create_subscriber()
+        self._watcher.go_live()
 
     @contextmanager
     def get_raw_update(
-        self,
-        live: bool = False,
-        timeout: Union[float, int] = None,
-        identical_okay: bool = False,
-    ) -> Generator[Callable[[], Tuple[dict, dict, bool]], None, None]:
+        self, live: bool = False, timeout: float = None, identical_okay: bool = False
+    ) -> Watcher:
         """
         A low-level hook that emits each and every state update.
         All other state watchers are built upon this only.
 
         .. include:: /api/state/get_raw_update.rst
         """
-        if live:
-            sub = self._create_subscriber()
-        else:
-            sub = self._subscriber
 
-        if timeout is None:
-
-            def _update_timeout() -> None:
-                pass
-
-        else:
-            final = time.time() + timeout
-
-            def _update_timeout() -> None:
-                sub.setsockopt(zmq.RCVTIMEO, int((final - time.time()) * 1000))
-
-        def get_update() -> Tuple[dict, dict, bool]:
-            while True:
-                _update_timeout()
-                msg = sub.recv()
-
-                msg = msg[ZMQ_IDENTITY_LENGTH:]
-                if not msg.startswith(self._namespace_bytes):
-                    continue
-
-                msg = msg[self._namespace_length :]
-                before, after, identical = util.loads(msg)
-                if identical and not identical_okay:
-                    continue
-
-                return before, after, identical
-
-        try:
-            yield get_update
-        except zmq.error.Again:
-            raise TimeoutError("Timed-out while waiting for a state update.")
-        finally:
-            sub.setsockopt(zmq.RCVTIMEO, DEFAULT_ZMQ_RECVTIMEO)
-            if live:
-                sub.close()
+        self._watcher.live = live
+        self._watcher.timeout = timeout
 
     @staticmethod
     def _create_dictkey_selector(
@@ -285,7 +222,7 @@ class State(state_type.StateDictMethodStub, metaclass=state_type.StateType):
         *keys: Hashable,
         exclude: bool = False,
         live: bool = False,
-        timeout: Union[float, int] = None,
+        timeout: float = None,
         identical_okay: bool = False
     ) -> dict:
         """
@@ -313,7 +250,7 @@ class State(state_type.StateDictMethodStub, metaclass=state_type.StateType):
         test_fn,
         *,
         live: bool = False,
-        timeout: Union[float, int] = None,
+        timeout: float = None,
         identical_okay: bool = False
     ) -> dict:
         """
@@ -342,7 +279,7 @@ class State(state_type.StateDictMethodStub, metaclass=state_type.StateType):
         value: Any,
         *,
         live: bool = False,
-        timeout: Union[float, int] = None,
+        timeout: float = None,
         identical_okay: bool = False
     ) -> dict:
         """
@@ -367,7 +304,7 @@ class State(state_type.StateDictMethodStub, metaclass=state_type.StateType):
         value: Any,
         *,
         live: bool = False,
-        timeout: Union[float, int] = None,
+        timeout: float = None,
         identical_okay: bool = False
     ) -> dict:
         """
@@ -391,7 +328,7 @@ class State(state_type.StateDictMethodStub, metaclass=state_type.StateType):
         key: Hashable,
         *,
         live: bool = False,
-        timeout: Union[float, int] = None,
+        timeout: float = None,
         identical_okay: bool = False
     ) -> dict:
         """
@@ -415,7 +352,7 @@ class State(state_type.StateDictMethodStub, metaclass=state_type.StateType):
         key: Hashable,
         *,
         live: bool = False,
-        timeout: Union[float, int] = None,
+        timeout: float = None,
         identical_okay: bool = False
     ) -> dict:
         """
@@ -439,7 +376,7 @@ class State(state_type.StateDictMethodStub, metaclass=state_type.StateType):
         key: Hashable,
         *,
         live: bool = False,
-        timeout: Union[float, int] = None,
+        timeout: float = None,
         identical_okay: bool = False
     ):
         """
