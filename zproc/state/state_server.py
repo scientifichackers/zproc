@@ -20,13 +20,11 @@ class StateServer:
     _namespace: bytes
     _state: dict
 
-    _state_store: Dict[bytes, dict] = defaultdict(dict)
-
     def __init__(
-        self, router: zmq.Socket, publisher: zmq.Socket, server_meta: ServerMeta
+        self, router: zmq.Socket, pair: zmq.Socket, server_meta: ServerMeta
     ) -> None:
         self.router = router
-        self.publisher = publisher
+        self.pair = pair
         self.server_meta = server_meta
 
         self._dispatch_dict = {
@@ -37,8 +35,9 @@ class StateServer:
             Commands.get_server_meta: self.get_server_meta,
             Commands.ping: self.ping,
         }
+        self._state_store: Dict[bytes, dict] = defaultdict(dict)
 
-    def _recv_req(self):
+    def recv_req(self):
         self._ident, req = self.router.recv_multipart()
         req = util.loads(req)
         try:
@@ -49,19 +48,19 @@ class StateServer:
             self._state = self._state_store[self._namespace]
         self._dispatch_dict[req[Msgs.cmd]](req)
 
-    def _reply(self, resp):
+    def reply(self, resp):
         # print("server rep:", self._active_ident, resp, time.time())
         self.router.send_multipart([self._ident, util.dumps(resp)])
 
     def send_state(self, _):
         """reply with state to the current client"""
-        self._reply(self._state)
+        self.reply(self._state)
 
     def get_server_meta(self, _):
-        self._reply(self.server_meta)
+        self.reply(self.server_meta)
 
     def ping(self, req):
-        self._reply({Msgs.info: [req[Msgs.info], os.getpid()]})
+        self.reply({Msgs.info: [req[Msgs.info], os.getpid()]})
 
     @contextmanager
     def mutate_state(self):
@@ -73,19 +72,19 @@ class StateServer:
             self._state_store[self._namespace] = old
             raise
 
-        self.publisher.send(
-            (
-                self._ident
-                + self._namespace
-                + util.dumps([old, self._state, old == self._state])
-            )
+        self.pair.send_multipart(
+            [
+                self._ident,
+                self._namespace,
+                util.dumps((old, self._state, old == self._state)),
+            ]
         )
 
     def set_state(self, request):
         new = request[Msgs.info]
         with self.mutate_state():
             self._state_store[self._namespace] = new
-            self._reply(True)
+            self.reply(True)
 
     def run_dict_method(self, request):
         """Execute a method on the state ``dict`` and reply with the result."""
@@ -96,7 +95,7 @@ class StateServer:
         )
         # print(method_name, args, kwargs)
         with self.mutate_state():
-            self._reply(getattr(self._state, state_method_name)(*args, **kwargs))
+            self.reply(getattr(self._state, state_method_name)(*args, **kwargs))
 
     def run_fn_atomically(self, req):
         """Execute a function, atomically and reply with the result."""
@@ -104,20 +103,23 @@ class StateServer:
         args, kwargs = req[Msgs.args], req[Msgs.kwargs]
 
         with self.mutate_state():
-            self._reply(fn(self._state, *args, **kwargs))
+            self.reply(fn(self._state, *args, **kwargs))
+
+    def _reset_req_state(self):
+        self._ident = None
+        self._namespace = None
+        self._state = None
 
     def main(self):
         while True:
             try:
-                self._recv_req()
+                self.recv_req()
             except KeyboardInterrupt:
                 raise
             except Exception:
                 try:
-                    self._reply(RemoteException())
+                    self.reply(RemoteException())
                 except TypeError:  # when active_ident is None
                     util.log_internal_crash("State server")
             finally:
-                self._ident = None
-                self._namespace = None
-                self._state = None
+                self._reset_req_state()

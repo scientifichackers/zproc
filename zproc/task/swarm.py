@@ -10,7 +10,7 @@ from .result import IterableTaskResult, TaskResult
 from .worker import worker_process
 
 
-class Workers:
+class Swarm:
     def __init__(self, server_address: str, *, namespace: str = DEFAULT_NAMESPACE):
         #: Passed on from the constructor.
         self.server_address = server_address

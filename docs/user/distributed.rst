@@ -23,7 +23,7 @@ send the task over,
 and then pull the results from them.
 
 
-:py:meth:`.Workers.map` runs across machines.
+:py:meth:`.Swarm.map` runs across machines.
 
 
 .. code-block:: python

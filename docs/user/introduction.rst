@@ -153,7 +153,7 @@ and sends them to ``count`` number of workers.
 
 ---
 
-You first, need a :py:class:`.Workers` object,
+You first, need a :py:class:`.Swarm` object,
 which is the front-end for using worker Processes.
 
 .. code-block:: python

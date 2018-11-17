@@ -37,13 +37,21 @@ class Commands:
     run_dict_method = 5
 
 
+class WatcherCommands:
+    register = 0
+    unregister = 1
+
+
 class ServerMeta(NamedTuple):
     version: str
+
     server_address: str
-    state_pub: str
+    watcher_router: str
+
     task_router: str
     task_result_pull: str
     task_pub_ready: str
+
     task_proxy_in: str
     task_proxy_out: str
 

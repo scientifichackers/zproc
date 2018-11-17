@@ -13,7 +13,7 @@ from .process import Process
 from .server import tools
 from .state.state import State
 from .task.map_plus import map_plus
-from .task.api import Workers
+from .task.swarm import Swarm
 
 
 class ProcessList(list):
@@ -180,9 +180,6 @@ class Context:
             "or pass `start_server=True`."
         )
 
-        self.state = State(self.server_address, namespace=self.namespace)
-        self.workers = Workers(self.server_address, namespace=self.namespace)
-
         # register cleanup before wait, so that wait runs before cleanup.
         # (order of execution is reversed)
         if cleanup:
@@ -201,6 +198,12 @@ class Context:
 
     def __repr__(self):
         return util.enclose_in_brackets(self.__str__())
+
+    def create_state(self):
+        return State(self.server_address, namespace=self.namespace)
+
+    def create_swarm(self):
+        return Swarm(self.server_address, namespace=self.namespace)
 
     def start_server(self) -> Tuple[multiprocessing.Process, str]:
         ret = tools.start_server(self.server_address, backend=self.backend)

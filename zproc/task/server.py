@@ -11,7 +11,6 @@ from zproc.exceptions import RemoteException
 
 class TaskResultServer:
     _active_identity = None  # type:bytes
-    _task_store = defaultdict(dict)  # type:Dict[bytes, Dict[int, Any]]
 
     def __init__(
         self, router: zmq.Socket, result_pull: zmq.Socket, publisher: zmq.Socket
@@ -33,10 +32,11 @@ class TaskResultServer:
         self.poller.register(self.result_pull, zmq.POLLIN)
         self.poller.register(self.router, zmq.POLLIN)
 
-    def _recv_req_rep(self):
+        self._task_store = defaultdict(dict)  # type:Dict[bytes, Dict[int, Any]]
+
+    def _recv_req(self):
         ident, chunk_id = self.router.recv_multipart()
         resp = b""
-
         try:
             task_id, index = util.deconstruct_chunk_id(chunk_id)
             # print("req for chunk->", task_id, index)
@@ -50,7 +50,7 @@ class TaskResultServer:
             resp = util.dumps(RemoteException())
         self.router.send_multipart([ident, resp])
 
-    def store_task_result(self):
+    def recv_task_result(self):
         chunk_id, result = self.result_pull.recv_multipart()
         task_id, index = util.deconstruct_chunk_id(chunk_id)
         self._task_store[task_id][index] = result
@@ -58,26 +58,23 @@ class TaskResultServer:
         self.publisher.send(chunk_id)
         # time.sleep(0.01)
 
-    def _recv_req(self):
+    def recv_req(self):
         while True:
             for sock, _ in self.poller.poll():
                 if sock is self.router:
-                    self._recv_req_rep()
+                    self._recv_req()
                 elif sock is self.result_pull:
-                    self.store_task_result()
+                    self.recv_task_result()
 
     def main(self):
-        try:
-            while True:
-                try:
-                    self._recv_req()
-                except KeyboardInterrupt:
-                    util.log_internal_crash("Task server")
-                    return
-                except Exception:
-                    util.log_internal_crash("Task server")
-        finally:
-            self.publisher.close()
+        while True:
+            try:
+                self.recv_req()
+            except KeyboardInterrupt:
+                util.log_internal_crash("Task server")
+                return
+            except Exception:
+                util.log_internal_crash("Task server")
 
 
 # fmt: off
@@ -103,14 +100,14 @@ def _task_server(_bind: Callable, send_conn: Connection):
             send_conn.close()
 
 
-def start_task_server(_bind: Callable) -> Tuple[multiprocessing.Process, List[str]]:
+def start_task_server(_bind: Callable) -> List[str]:
     recv_conn, send_conn = multiprocessing.Pipe()
     try:
         task_server = multiprocessing.Process(
             target=_task_server, args=[_bind, send_conn]
         )
         task_server.start()
-        return task_server, util.loads(recv_conn.recv_bytes())
+        return util.loads(recv_conn.recv_bytes())
     finally:
         recv_conn.close()
 
@@ -142,13 +139,13 @@ def _task_proxy(_bind: Callable, send_conn: Connection):
             send_conn.close()
 
 
-def start_task_proxy(_bind: Callable) -> Tuple[multiprocessing.Process, List[str]]:
+def start_task_proxy(_bind: Callable) -> List[str]:
     recv_conn, send_conn = multiprocessing.Pipe()
     try:
         proxy_server = multiprocessing.Process(
             target=_task_proxy, args=[_bind, send_conn]
         )
         proxy_server.start()
-        return proxy_server, util.loads(recv_conn.recv_bytes())
+        return util.loads(recv_conn.recv_bytes())
     finally:
         recv_conn.close()

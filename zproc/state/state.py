@@ -84,7 +84,7 @@ class State(state_type.StateDictMethodStub, metaclass=state_type.StateType):
         sock = self._zmq_ctx.socket(zmq.SUB)
         sock.setsockopt(zmq.INVERT_MATCHING, 1)
         sock.setsockopt(zmq.SUBSCRIBE, self._identity)
-        sock.connect(self._server_meta.state_pub)
+        sock.connect(self._server_meta.watcher_router)
         return sock
 
     def __str__(self):

@@ -2,8 +2,6 @@ import zproc
 
 ctx = zproc.Context()
 
-ctx.start()
-
 
 def my_proc(ctx):
     state = ctx.create_state()
@@ -12,11 +10,11 @@ def my_proc(ctx):
         pass
 
 
+ctx.start()
 ctx.spawn(my_proc)
 
 
 swarm = ctx.create_swarm()
-
 
 state = ctx.create_state()
 

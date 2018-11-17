@@ -12,5 +12,5 @@ from .exceptions import (
 from .process import Process
 from .server.tools import start_server, ping
 from .state.state import State, atomic
-from .task.api import Workers
+from .task.swarm import Swarm
 from .util import clean_process_tree
