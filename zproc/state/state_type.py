@@ -1,4 +1,4 @@
-from zproc.constants import Msgs, Commands
+from zproc.consts import Msgs, Commands
 
 STATE_DICT_METHODS = {
     "__contains__",
@@ -26,10 +26,11 @@ def _create_remote_dict_method(dict_method_name: str):
 
     Glorified RPC.
     """
+
     def remote_method(self, *args, **kwargs):
         return self._req_rep(
             {
-                Msgs.cmd: Commands.exec_dict_method,
+                Msgs.cmd: Commands.run_dict_method,
                 Msgs.info: dict_method_name,
                 Msgs.args: args,
                 Msgs.kwargs: kwargs,

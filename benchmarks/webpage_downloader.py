@@ -64,10 +64,10 @@ ctx.state.setdefault("results", [])
 
 
 @zproc.atomic
-def save(state, size, url):
+def save(snap, size, url):
     print(url, int(size / 1024), "KB")
 
-    state["results"].append((size, url))
+    snap["results"].append((size, url))
 
 
 def downloader(state, url):
@@ -82,8 +82,8 @@ def downloader(state, url):
 s = time()
 
 for url in sites:
-    ctx.process(downloader, args=[url])
-ctx.wait_all()
+    ctx.spawn(downloader, args=[url])
+ctx.wait()
 
 print_result(ctx.state["results"])
 
@@ -92,7 +92,7 @@ t = time() - s
 print("Pure ZProc took: {} sec".format(t))
 
 ##############
-# Process Map
+# Worker Map
 ##############
 
 
@@ -108,11 +108,11 @@ def map_downloader(url):
 
 s = time()
 
-print_result(ctx.process_map(map_downloader, sites, count=len(sites)))
+print_result(ctx.worker_map(map_downloader, sites, count=len(sites)))
 
 t = time() - s
 
-print("ZProc Process Map took: {} sec".format(t))
+print("ZProc Worker Map took: {} sec".format(t))
 
 
 ########

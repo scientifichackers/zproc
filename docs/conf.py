@@ -8,28 +8,31 @@
 
 # -- Path setup --------------------------------------------------------------
 
+import sys
+
 # If extensions (or modules to document with autodoc) are in another directory,
 # add these directories to sys.path here. If the directory is relative to the
 # documentation root, use os.path.abspath to make it absolute, like shown here.
 #
 import os
-import sys
-from datetime import datetime
 
 sys.path.insert(0, os.path.abspath(".."))
-sys.path.append(os.path.abspath("_themes"))
-html_theme_path = ["_themes"]
 
 # -- Project information -----------------------------------------------------
 
+
+import datetime
+
+import zproc
+
 project = "ZProc"
-copyright = "{}, dev aggarwal".format(datetime.now().year)
+copyright = "{}, Dev Aggarwal".format(datetime.datetime.now().year)
 author = "Dev Aggarwal"
 
 # The short X.Y version
-version = ""
+version = zproc.__version__
 # The full version, including alpha/beta/rc tags
-release = ""
+release = zproc.__version__
 
 # -- General configuration ---------------------------------------------------
 
@@ -40,7 +43,14 @@ release = ""
 # Add any Sphinx extension module names here, as strings. They can be
 # extensions coming with Sphinx (named 'sphinx.ext.*') or your custom
 # ones.
-extensions = ["sphinx.ext.autodoc", "sphinx.ext.viewcode"]
+extensions = [
+    "sphinx.ext.autodoc",
+    "sphinx.ext.doctest",
+    "sphinx.ext.intersphinx",
+    "sphinx.ext.todo",
+    "sphinx.ext.coverage",
+    "sphinx.ext.viewcode",
+]
 
 # Add any paths that contain templates here, relative to this directory.
 templates_path = ["_templates"]
@@ -67,7 +77,7 @@ language = None
 exclude_patterns = ["_build", "Thumbs.db", ".DS_Store"]
 
 # The name of the Pygments (syntax highlighting) style to use.
-pygments_style = "sphinx"
+pygments_style = "monokai"
 
 # -- Options for HTML output -------------------------------------------------
 
@@ -90,14 +100,9 @@ html_sidebars = {
     ]
 }
 html_theme_options = {
-    # "description": "Multi-Tasking how it should've been.",
-    # "github_user": "pycampers",
-    # "github_repo": "zproc",
-    # "github_type": "star",
-    # "fixed_sidebar": True,
-    # "github_banner": True,
-    "analytics_id": "UA-119542427-1",
     "navigation_depth": 4,
+    "sticky_navigation": False,
+    "prev_next_buttons_location": "both",
 }
 # Add any paths that contain custom static files (such as style sheets) here,
 # relative to this directory. They are copied after the builtin static files,
@@ -175,3 +180,5 @@ autodoc_member_order = "bysource"
 rst_prolog = """
 :github_url: https://github.com/pycampers/zproc
 """
+
+intersphinx_mapping = {"python": ("https://docs.python.org/3.5", None)}

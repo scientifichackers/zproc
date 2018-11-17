@@ -9,8 +9,8 @@
 :param timeout:
     .. include:: /api/state/params/timeout.rst
 
-:param duplicate_okay:
-    .. include:: /api/state/params/duplicate_okay.rst
+:param identical_okay:
+    .. include:: /api/state/params/identical_okay.rst
 
 :param \*\*process_kwargs:
     .. include:: /api/context/params/process_kwargs.rst

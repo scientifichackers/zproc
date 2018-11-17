@@ -72,7 +72,7 @@ However, if you use a static address, :py:class:`.Context` won't start that
 server itself, and you have to do it manually, using :py:func:`.start_server`
 (This behavior enables us to spawn multiple :py:class:`.Context` objects with the same address).
 
-*All the classes in ZProc take* ``server_address`` *as their first argument.*
+*All the classes in ZProc take* ``address`` *as their first argument.*
 
 
     >>> import zproc

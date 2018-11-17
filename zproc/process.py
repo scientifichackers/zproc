@@ -1,104 +1,118 @@
 import multiprocessing
 import os
 import signal
-from typing import Callable, Union, Sequence, Mapping, Optional, Iterable
+from typing import Callable, Union, Sequence, Mapping, Optional, Iterable, Type
 
 import zmq
 
 from . import util, exceptions
-from .processdef import ChildProcess
+from .child import ChildProcess
+from .consts import DEFAULT_NAMESPACE
 
 
-class Process(util.SecretKeyHolder):
-    _return_value = None  # type:None
+class Process:
+    _result = None  # type:None
     _has_returned = False
 
     def __init__(
         self,
-        target: Callable,
         server_address: str,
+        target: Callable,
         *,
+        args: Sequence = None,
+        kwargs: Mapping = None,
         start: bool = True,
         pass_state: bool = True,
         pass_context: bool = False,
-        args: Sequence = None,
-        kwargs: Mapping = None,
-        retry_for: Iterable[Union[signal.Signals, Exception]] = (),
+        retry_for: Iterable[Union[signal.Signals, Type[BaseException]]] = (),
         retry_delay: Union[int, float] = 5,
-        max_retries: Optional[bool] = None,
-        retry_args: Optional[tuple] = None,
-        retry_kwargs: Optional[dict] = None,
+        max_retries: Optional[int] = 0,
+        retry_args: tuple = None,
+        retry_kwargs: dict = None,
         backend: Callable = multiprocessing.Process,
-        namespace: str = "default",
-        secret_key: Optional[str] = None
+        namespace: str = DEFAULT_NAMESPACE
     ) -> None:
         """
-        Provides a higher level interface to ``multiprocessing.Process``.
+        Provides a higher level interface to :py:class:`multiprocessing.Process`.
 
         Please don't share a Process object between Processes / Threads.
         A Process object is not thread-safe.
 
         :param server_address:
-            The address of zproc server.
+            .. include:: /api/snippets/server_address.rst
 
             If you are using a :py:class:`Context`, then this is automatically provided.
-
-            Please read :ref:`server-address-spec` for a detailed explanation.
-
         :param target:
             The Callable to be invoked inside a new process.
 
-            *The ``target`` is invoked with the following signature:*
+            *The* ``target`` *is invoked with the following signature:*
 
-            ``target(state, *args, **kwargs)``
+            .. code-block:: python
+
+                target(state, *args, **kwargs)
 
             *Where:*
 
             - ``state`` is a :py:class:`State` instance.
             - ``args`` and ``kwargs`` are passed from the constructor.
+        :param args:
+            The argument tuple for ``target``.
 
-        :param pass_context:
-            Weather to pass a :py:class:`Context` to this process.
+            By default, it is an empty ``tuple``.
+        :param kwargs:
+            A dictionary of keyword arguments for ``target``.
 
-            If this is set to ``True``,
-            then the first argument to ``target`` will be a :py:class:`Context` object
-            in-place of the default - :py:class:`State`.
-
-            In other words, The ``target`` is invoked with the following signature:
-
-            ``target(ctx, *args, **kwargs)``
-
-            Where:
-
-            - ``ctx`` is a :py:class:`Context` object.
-            - ``args`` and ``kwargs`` are passed from the constructor.
-
-            .. note::
-                The :py:class:`Context` object provided here,
-                will be different than the one used to create this process.
-
-                The new :py:class:`Context` object can be used to create nested processes
-                that share the same state.
-
+            By default, it is an empty ``dict``.
         :param pass_state:
             Weather this process needs to access the state.
 
             If this is set to ``False``,
             then the ``state`` argument won't be provided to the ``target``.
 
-            In other words, The ``target`` is invoked with the following signature:
+            *If this is enabled, the* ``target`` *is invoked with the following signature:*
 
-            ``target(*args, **kwargs)``
+            .. code-block:: python
 
-            Where:
+                target(*args, **kwargs)
+
+            *Where:*
 
             - ``args`` and ``kwargs`` are passed from the constructor.
 
             Has no effect if ``pass_context`` is set to ``True``.
+        :param pass_context:
+            Weather to pass a :py:class:`Context` to this process.
+
+            If this is set to ``True``,
+            then the first argument to ``target`` will be a new :py:class:`Context` object
+
+            This will take the place of the default - :py:class:`State`.
+
+            *If this is enabled, the* ``target`` *is invoked with the following signature*:
+
+            .. code-block:: python
+
+                target(ctx, *args, **kwargs)
+
+            *Where:*
+
+            - ``ctx`` is a :py:class:`Context` object.
+            - ``args`` and ``kwargs`` are passed from the constructor.
+
+            .. note::
+                The :py:class:`Context` object provided here,
+                will be a new object, NOT the one used to create this process.
+
+                Such that,
+                this new :py:class:`Context` can be used to spwan new processes,
+                that share the same state.
+
+                **This is the recommended way to create nested processes
+                that share the same state.**
+
 
         :param start:
             Automatically call :py:meth:`.start()` on the process.
-
         :param retry_for:
             Retry only when one of these ``Exception``/``signal.Signals`` is raised.
 
@@ -108,7 +122,7 @@ class Process(util.SecretKeyHolder):
                 import signal
 
                 # retry if a ConnectionError, ValueError or signal.SIGTERM is received.
-                ctx.process(
+                ctx.spawn(
                     my_process,
                     retry_for=(ConnectionError, ValueError, signal.SIGTERM)
                 )
@@ -116,81 +130,50 @@ class Process(util.SecretKeyHolder):
             To retry for *any* Exception - ``retry_for=(Exception, )``
 
             The items of this sequence MUST be a subclass of ``BaseException`` or of type ``signal.Signals``.
-
         :param retry_delay:
             The delay in seconds, before retrying.
-
         :param max_retries:
-            Give up after this many attempts.
-
-            A value of ``None`` will result in an *infinite* number of retries.
+            Maximum number of retries before giving up.
+            If set to ``None``, the Process will never stop retrying.
 
             After "max_tries", any Exception / Signal will exhibit default behavior.
-
-        :param args:
-            The argument tuple for ``target``.
-
-            By default, it is an empty ``tuple``.
-
-        :param kwargs:
-            A dictionary of keyword arguments for ``target``.
-
-            By default, it is an empty ``dict``.
-
         :param retry_args:
             Used in place of ``args`` when retrying.
 
             If set to ``None``, then it has no effect.
-
         :param retry_kwargs:
             Used in place of ``kwargs`` when retrying.
 
             If set to ``None``, then it has no effect.
-
         :param backend:
-            The backend to use for launching the process(s).
-
-            For example, you may use ``threading.Thread`` as the backend.
-
-            .. warning::
-
-                Not guaranteed to work well with anything other than ``multiprocessing.Process``.
-
-        :ivar child:
-            A ``multiprocessing.Process`` instance for the child process.
-        :ivar server_address:
-            Passed on from the constructor.
-        :ivar target:
-            Passed on from the constructor.
-        :ivar namespace:
-            Passed on from the constructor. This is read-only.
+            .. include:: /api/snippets/backend.rst
         """
-        assert callable(target), '"target" must be a `Callable`, not `{}`'.format(
-            type(target)
-        )
-
-        super().__init__(secret_key)
-
+        #: Passed on from the constructor.
         self.server_address = server_address
+        #: Passed on from the constructor.
         self.namespace = namespace
+        #: Passed on from the constructor.
         self.target = target
+
+        if args is None:
+            args = ()
+        if kwargs is None:
+            kwargs = {}
 
         self._zmq_ctx = util.create_zmq_ctx()
 
         self._result_sock = self._zmq_ctx.socket(zmq.PAIR)
-        # The result socket is meant to be used only after the process completes (after join()).
+        # The result socket is meant to be used only after the process completes (after `join()`).
         # That implies -- we shouldn't need to wait for the result message.
         self._result_sock.setsockopt(zmq.RCVTIMEO, 0)
         result_address = util.bind_to_random_address(self._result_sock)
-
+        #: The :py:class:`multiprocessing.Process` instance for the child process.
         self.child = backend(
             target=ChildProcess,
             kwargs=dict(
                 target=self.target,
                 server_address=self.server_address,
-                process_repr=self.__repr__(),
                 namespace=self.namespace,
-                secret_key=self._secret_key,
                 pass_state=pass_state,
                 pass_context=pass_context,
                 target_args=args,
@@ -206,7 +189,7 @@ class Process(util.SecretKeyHolder):
         if start:
             self.child.start()
 
-    def __repr__(self):
+    def __str__(self):
         try:
             pid = self.pid
         except AttributeError:
@@ -220,14 +203,17 @@ class Process(util.SecretKeyHolder):
         except AttributeError:
             is_alive = False
 
-        return "<%s pid: %r target: %r ppid: %r is_alive: %r exitcode: %r>" % (
+        return "%s - pid: %r target: %s ppid: %r is_alive: %r exitcode: %r" % (
             Process.__qualname__,
             pid,
-            self.target.__module__ + "." + self.target.__qualname__,
+            util.callable_repr(self.target),
             os.getpid(),
             is_alive,
             exitcode,
         )
+
+    def __repr__(self):
+        return util.enclose_in_brackets(self.__str__())
 
     def start(self):
         """
@@ -240,6 +226,10 @@ class Process(util.SecretKeyHolder):
         self.child.start()
         return self.pid
 
+    def _cleanup(self):
+        self._result_sock.close()
+        util.close_zmq_ctx(self._zmq_ctx)
+
     def stop(self):
         """
         Stop this process.
@@ -249,16 +239,17 @@ class Process(util.SecretKeyHolder):
         :return: :py:attr:`~exitcode`.
         """
         self.child.terminate()
-
-        self._result_sock.close()
-        util.close_zmq_ctx(self._zmq_ctx)
-
+        self._cleanup()
         return self.child.exitcode
 
-    def wait(self, timeout: Optional[Union[int, float]] = None):
+    def wait(self, timeout: Union[int, float] = None):
         """
         Wait until this process finishes execution,
         then return the value returned by the ``target``.
+
+        This method raises a a :py:exc:`.ProcessWaitError`,
+        if the child Process exits with a non-zero exitcode,
+        or if something goes wrong while communicating with the child.
 
         :param timeout:
             The timeout in seconds.
@@ -266,26 +257,20 @@ class Process(util.SecretKeyHolder):
             If the value is ``None``, it will block until the zproc server replies.
 
             For all other values, it will wait for a reply,
-            for that amount of time before returning with a ``TimeoutError``.
+            for that amount of time before returning with a :py:class:`TimeoutError`.
 
         :return:
             The value returned by the ``target`` function.
-
-        If the child finishes with a non-zero exitcode,
-        or there is some error in retrieving the value returned by the ``target``,
-        a :py:exc:`.ProcessWaitError` is raised.
         """
         # try to fetch the cached result.
         if self._has_returned:
-            return self._return_value
+            return self._result
 
         self.child.join(timeout)
-
         if self.is_alive:
             raise TimeoutError(
                 "Timed-out while waiting for Process to return. -- %s" % repr(self)
             )
-
         exitcode = self.exitcode
         if exitcode != 0:
             raise exceptions.ProcessWaitError(
@@ -293,22 +278,18 @@ class Process(util.SecretKeyHolder):
                 exitcode,
                 self,
             )
-
         try:
-            self._return_value = util.recv(self._result_sock, self._serializer)
+            self._result = util.loads(self._result_sock.recv())
         except zmq.error.Again:
             raise exceptions.ProcessWaitError(
                 "The Process died before sending its return value. "
                 "It probably crashed, got killed, or exited without warning.",
                 exitcode,
             )
-        else:
-            self._has_returned = True
 
-        self._result_sock.close()
-        util.close_zmq_ctx(self._zmq_ctx)
-
-        return self._return_value
+        self._has_returned = True
+        self._cleanup()
+        return self._result
 
     @property
     def is_alive(self):

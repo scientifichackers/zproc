@@ -17,11 +17,11 @@ DESCRIPTION = "ZProc - Multi Processing on steroids"
 URL = "https://github.com/devxpy/zproc"
 EMAIL = "devxpy@gmail.com"
 AUTHOR = "Dev Aggarwal"
-REQUIRES_PYTHON = ">=3.5.2"
+REQUIRES_PYTHON = ">=3.6"
 VERSION = None
 
 # What packages are required for this module to be executed?
-REQUIRED = ["pyzmq", "tblib", "psutil", "itsdangerous"]
+REQUIRED = ["pyzmq", "tblib", "psutil", "cloudpickle"]
 
 # What packages are optional?
 EXTRA = {
@@ -109,7 +109,6 @@ setup(
         "License :: OSI Approved :: MIT License",
         "Programming Language :: Python",
         "Programming Language :: Python :: 3",
-        "Programming Language :: Python :: 3.5",
         "Programming Language :: Python :: 3.6",
         "Programming Language :: Python :: 3.7",
         "Programming Language :: Python :: Implementation :: CPython",

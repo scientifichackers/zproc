@@ -4,19 +4,20 @@ import zproc
 import multiprocessing
 
 ctx = zproc.Context()
+ctx.workers.start(2)
 
 
-def test(x):
+def sq(x):
     return x ** 2
 
 
 SAMPLES = 10000000
 
 s = perf_counter()
-list(ctx.process_map(test, range(SAMPLES)))
+list(ctx.workers.map(sq, range(SAMPLES)))
 print(perf_counter() - s)
 
-with multiprocessing.Pool() as p:
+with multiprocessing.Pool(2) as p:
     s = perf_counter()
-    p.map(test, range(SAMPLES))
+    p.map(sq, range(SAMPLES))
     print(perf_counter() - s)

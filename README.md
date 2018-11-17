@@ -1,4 +1,4 @@
-<img src="https://i.imgur.com/sJARxXD.png" />
+<img src="https://s3.ap-south-1.amazonaws.com/saral-data-bucket/misc/logo%2Btype%2Bnocatch.svg" />
 
 **ZProc lets you do shared-state multitasking without the perils of having shared-memory.**
 
@@ -17,17 +17,18 @@ ctx.state["cookies"] = 0
 # Define "atomic" operations
 
 @zproc.atomic
-def eat_cookie(state):
+def eat_cookie(snap):
     """Eat a cookie."""
     
-    state["cookies"] -= 1
+    snap["cookies"] -= 1
     print("nom nom nom")
 
 
 @zproc.atomic
-def bake_cookie(state):
+def bake_cookie(snap):
     """Bake a cookie."""
-    state["cookies"] += 1
+    
+    snap["cookies"] += 1
     print("Here's a cookie!")
 
 
@@ -40,7 +41,7 @@ def cookie_eater(_, state):
     eat_cookie(state)
 
 
-for i in range(5):
+for _ in range(5):
     bake_cookie(ctx.state)
 ```
 
@@ -75,10 +76,12 @@ ZProc's state tries to keep a track of who's doing what.
 
 ## The Goal
 
-ZProc aims to make building multi-taking applications easier and faster for everyone, in a pythonic way.
+ZProc aims to make building multi-taking applications easier
+ and faster for everyone, in a pythonic way.
 
 It started out from the core idea of having a *smart* state -- 
-eventually wanting to turn into a full-fledged framework for all things multitasking.
+eventually wanting to turn into a full-fledged framework for all things 
+multitasking.
 
 ## Install
 
@@ -105,13 +108,13 @@ Python 3.5+
 
 - 🌠 &nbsp; Process management
 
-    -   [Process Factory](https://zproc.readthedocs.io/en/latest/api.html#zproc.Context.process_factory)
+    -   [Process Factory](https://zproc.readthedocs.io/en/latest/api.html#zproc.Context.spawn)
     -   Remembers to kill processes when exiting, for general peace.
         (even when they're nested)
     -   Keeps a record of processes created using ZProc.
     -   [🔖](https://zproc.readthedocs.io/en/latest/api.html#context)
 
-- 🌠 &nbsp; Process Maps
+- 🌠 &nbsp; Worker and Process Maps
     
     - Automatically manages worker processes, and delegates tasks to them.
     -   [🔖](https://zproc.readthedocs.io/en/latest/api.html#context)    
@@ -127,6 +130,21 @@ Python 3.5+
     -   Perform an arbitrary number of operations on state as a single,
         atomic operation.
     -   [🔖](https://zproc.readthedocs.io/en/latest/user/atomicity.html)
+
+- 🌠 Detailed, humane error logging for proceeses.
+      
+   ```
+   Crash report:
+     For <Process pid: None target: '__main__.pow' ppid: 28395 is_alive: False exitcode: None>
+   
+     Traceback (most recent call last):
+       File "/home/dev/Projects/zproc/zproc/process_store.py", line 58, in main
+         **self.target_kwargs
+       File "/home/dev/Projects/zproc/zproc/process_store.py", line 85, in wrapper
+         return target(*args, **kwargs)
+     TypeError: pow() takes 2 positional arguments but 3 were given      
+   ```
+
 
 ## Caveats
 

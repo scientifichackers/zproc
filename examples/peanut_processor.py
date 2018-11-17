@@ -121,12 +121,12 @@ state["peanuts"] = 0
 
 
 @zproc.atomic
-def inc_peanuts(state):
-    state["peanuts"] += 1
-    print("PEANUT GEN:", state["peanuts"])
+def inc_peanuts(snap):
+    snap["peanuts"] += 1
+    print("PEANUT GEN:", snap["peanuts"])
 
 
-@ctx.process
+@ctx._process
 def peanut_gen(state):
     while True:
         inc_peanuts(state)

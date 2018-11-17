@@ -3,6 +3,7 @@
 rm -r _build/
 
 function build {
+    sphinx-apidoc -o _build ../zproc
     sphinx-build . _build
 }
 

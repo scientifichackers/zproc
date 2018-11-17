@@ -4,7 +4,6 @@ The magic of state watching
 ===========================
 **Watch the state for events, as-if you were watching a youtube video!**
 
-
 zproc allows you to *watch* the state using these methods, @ the :py:class:`.State` API.
 
 - :py:meth:`~.State.get_when_change`
@@ -13,6 +12,7 @@ zproc allows you to *watch* the state using these methods, @ the :py:class:`.Sta
 - :py:meth:`~.State.get_when_not_equal`
 - :py:meth:`~.State.get_when_none`
 - :py:meth:`~.State.get_when_not_none`
+- :py:meth:`~.State.get_when_available`
 
 For example, the following code will watch the state,
 and print out a message whenever the price of gold is below 40.
@@ -20,9 +20,9 @@ and print out a message whenever the price of gold is below 40.
 .. code-block:: python
 
     while True:
-        snapshot = state.get_when(lambda state: state['gold_price'] < 40)
+        snap = state.get_when(lambda snap: snap['gold_price'] < 40)
 
-        print('"gold_price" is below 40!!:', snapshot['gold_price'])
+        print('"gold_price" is below 40!!:', snap['gold_price'])
 
 ---
 
@@ -35,6 +35,7 @@ over their counterparts in :py:class:`.State`.
 - :py:meth:`~.Context.call_when_not_equal`
 - :py:meth:`~.Context.call_when_none`
 - :py:meth:`~.Context.call_when_not_none`
+- :py:meth:`~.Context.call_when_available`
 
 
 For example, the function ``want_pizza()`` will be called every-time the ``"num_pizza"`` key in the state changes.
@@ -42,8 +43,8 @@ For example, the function ``want_pizza()`` will be called every-time the ``"num_
 .. code-block:: python
 
     @ctx.call_when_change("num_pizza")
-    def want_pizza(snapshot, state):
-        print("pizza be tasty!", snapshot['num_pizza'])
+    def want_pizza(snap, state):
+        print("pizza be tasty!", snap['num_pizza'])
 
 
 .. note::
@@ -52,6 +53,8 @@ For example, the function ``want_pizza()`` will be called every-time the ``"num_
 
 Snapshots
 ---------
+
+Notice, the use of the name ``snap`` in these examples, instead of ``state``
 
 All watchers provide return with a *snapshot* of the state,
 corresponding to the state-change for which the state watcher was triggered.
@@ -65,6 +68,7 @@ In practice, this helps avoid race conditions -- especially in cases where state
 Duplicate-ness of events
 ------------------------
 
+#TODO
 
 
 .. _live-events:
@@ -97,8 +101,8 @@ First, let us create a :py:class:`~Process` that will generate some peanuts, per
 
 
     @zproc.atomic
-    def inc_peanuts(state):
-        state['peanuts'] += 1
+    def inc_peanuts(snap):
+        snap['peanuts'] += 1
 
 
     @ctx.process
@@ -145,7 +149,7 @@ so that your code **doesn't miss any events**.
 *like a normal youtube video, where you won't miss anything, since it's buffering.*
 
 Hybrid consumer
-+++++++++++++++
+++++++++++++++++
 
 *But a live youtube video can be buffered as well!*
 
@@ -196,7 +200,7 @@ Timeouts
 
 You can also provide timeouts while watching the state, using ``timeout`` parameter.
 
-If an update doesn't occur within the specified timeout, a ``TimeoutError`` is raised.
+If an update doesn't occur within the specified timeout, a :py:class:`TimeoutError` is raised.
 
 .. code-block:: python
 

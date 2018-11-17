@@ -20,11 +20,11 @@ def wait_and_stop():
 
 
 @zproc.atomic
-def inc(state):
-    state["foobar"] += 1
+def inc(snap):
+    snap["foobar"] += 1
 
 
-@ctx.process
+@ctx._process
 def generator(state):
     while True:
         inc(state)
@@ -35,7 +35,7 @@ def generator(state):
 print("LIVE:")
 
 
-@ctx.process
+@ctx._process
 def test_process(state):
     while True:
         print(state.get_when_change("foobar", live=True), end=",", flush=True)
@@ -47,7 +47,7 @@ wait_and_stop()
 print("BUFFERED:")
 
 
-@ctx.process
+@ctx._process
 def test_process(state):
     while True:
         print(state.get_when_change("foobar", live=False), end=",", flush=True)

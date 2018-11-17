@@ -10,7 +10,7 @@
 :param timeout:
     .. include:: /api/state/params/timeout.rst
 
-:param duplicate_okay:
-    .. include:: /api/state/params/duplicate_okay.rst
+:param identical_okay:
+    .. include:: /api/state/params/identical_okay.rst
 
 .. include:: /api/state/params/return.rst

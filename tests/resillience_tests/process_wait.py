@@ -5,7 +5,7 @@ ctx = zproc.Context()
 
 for i in range(250):
 
-    @ctx.process
+    @ctx._process
     def my_process(state):
         assert isinstance(state, zproc.State)
         print(i)

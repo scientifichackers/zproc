@@ -9,7 +9,7 @@ import zproc
 def state() -> zproc.State:
     ctx = zproc.Context()
 
-    @ctx.process
+    @ctx._process
     def mutator(state: zproc.State):
         for i in range(10):
             state["counter"] = i

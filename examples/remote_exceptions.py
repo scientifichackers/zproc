@@ -5,7 +5,7 @@ import zproc
 ctx = zproc.Context()
 
 
-@ctx.process(pass_state=False)
+@ctx.spawn(pass_state=False)
 def my_process():
     sleep(1)
 

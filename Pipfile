@@ -7,18 +7,17 @@ name = "pypi"
 pyzmq = "*"
 tblib = "*"
 psutil = "*"
-itsdangerous = "*"
+cloudpickle = "*"
 
 [dev-packages]
+zproc = {editable = true,path = "."}
 sphinx-rtd-theme = "*"
 ipython = "*"
 sphinx = "*"
 twine = "*"
 pytest = "*"
-zproc = {editable = true, path = "."}
+yappi = "*"
+pytest-repeat = "*"
 
 [requires]
-python_version = "3.5.2"
-
-[pipenv]
-allow_prereleases = true
+python_version = "3.6"

@@ -21,14 +21,14 @@ ctx.state["cookies"] = 0
 
 
 @zproc.atomic
-def eat_cookie(state):
-    state["cookies"] -= 1
+def eat_cookie(snap):
+    snap["cookies"] -= 1
     print("nom nom nom")
 
 
 @zproc.atomic
-def bake_cookie(state):
-    state["cookies"] += 1
+def bake_cookie(snap):
+    snap["cookies"] += 1
     print("Here's a cookie!")
 
 
@@ -37,7 +37,7 @@ def cookie_eater(_, state):
     eat_cookie(state)
 
 
-@ctx.process
+@ctx._process
 def cookie_baker(state):
     for i in range(5):
         bake_cookie(state)

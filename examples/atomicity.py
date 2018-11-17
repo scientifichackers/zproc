@@ -25,15 +25,17 @@ ctx.state["count"] = 0
 
 
 @zproc.atomic
-def increment(state: zproc.State):
-    count = state["count"]
-    sleep(random())  # this ensures that this operation is non-atomic
-    state["count"] = count + 1
-    print(state["count"])
+def increment(snap):
+    count = snap["count"]
+
+    sleep(random())
+
+    snap["count"] = count + 1
+    print(snap["count"])
 
 
 def child1(state):
     increment(state)
 
 
-ctx.process_factory(child1, count=50)
+ctx.spawn(child1, count=10)

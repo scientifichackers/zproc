@@ -1,3 +1,5 @@
+.. _security:
+
 Security considerations
 =======================
 
@@ -35,7 +37,7 @@ Here is an example demonstrating the usefulness of the this feature.
     import zproc
 
     home = zproc.Context(secret_key="muchsecret")
-    ADDRESS = home.server_address
+    ADDRESS = home.address
 
     home.state['gold'] = 5
 
