@@ -6,10 +6,9 @@ from typing import Any, Dict, Deque, Tuple
 
 import zmq
 
-from zproc import util, serializer
+from zproc import serializer
 from zproc.consts import Commands, ServerMeta
 from zproc.consts import Msgs
-from zproc.exceptions import RemoteException
 
 RequestType = Dict[Msgs, Any]
 
@@ -57,7 +56,7 @@ class StateServer:
             self._state = self._state_store[self._namespace]
         self._dispatch_dict[req[Msgs.cmd]](req)
 
-    def recv_req(self):
+    def tick(self):
         for sock, _ in self.poller.poll():
             if sock is self.state_router:
                 self._recv_req()
@@ -124,21 +123,7 @@ class StateServer:
         with self.mutate_state():
             self.reply(fn(self._state, *args, **kwargs))
 
-    def _reset_req_state(self):
+    def reset_state(self):
         self._ident = None
         self._namespace = None
         self._state = None
-
-    def main(self):
-        while True:
-            try:
-                self.recv_req()
-            except KeyboardInterrupt:
-                raise
-            except Exception:
-                try:
-                    self.reply(RemoteException())
-                except TypeError:  # when active_ident is None
-                    util.log_internal_crash("State server")
-            finally:
-                self._reset_req_state()

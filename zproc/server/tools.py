@@ -27,11 +27,13 @@ def start_server(
         containing a :py:class:`multiprocessing.Process` object for server and the server address.
     """
     recv_conn, send_conn = multiprocessing.Pipe()
+
     server_process = backend(target=main, args=[server_address, send_conn])
     server_process.start()
 
     try:
-        server_meta: ServerMeta = serializer.loads(recv_conn.recv_bytes())
+        with recv_conn:
+            server_meta: ServerMeta = serializer.loads(recv_conn.recv_bytes())
     except zmq.ZMQError as e:
         if e.errno == 98:
             raise ConnectionError(
@@ -43,8 +45,6 @@ def start_server(
                 % repr(e)
             )
         raise
-    finally:
-        recv_conn.close()
 
     return server_process, server_meta.server_address
 

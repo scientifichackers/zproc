@@ -32,9 +32,9 @@ class TaskResultServer:
         self.poller.register(self.result_pull, zmq.POLLIN)
         self.poller.register(self.router, zmq.POLLIN)
 
-        self._task_store = defaultdict(dict)  # type:Dict[bytes, Dict[int, Any]]
+        self._task_store: Dict[bytes, Dict[int, Any]] = defaultdict(dict)
 
-    def _recv_req(self):
+    def recv_req(self):
         ident, chunk_id = self.router.recv_multipart()
         resp = b""
         try:
@@ -58,55 +58,51 @@ class TaskResultServer:
         self.publisher.send(chunk_id)
         # time.sleep(0.01)
 
-    def recv_req(self):
+    def tick(self):
         for sock, _ in self.poller.poll():
             if sock is self.router:
-                self._recv_req()
+                self.recv_req()
             elif sock is self.result_pull:
                 self.recv_task_result()
 
-    def main(self):
+
+def _task_server(_bind: Callable, send_conn: Connection):
+    with util.socket_factory(zmq.ROUTER, zmq.PULL, zmq.PUB) as (
+        zmq_ctx,
+        router,
+        result_pull,
+        pub_ready,
+    ):
+        with send_conn:
+            try:
+                send_conn.send_bytes(
+                    serializer.dumps(
+                        [_bind(router), _bind(result_pull), _bind(pub_ready)]
+                    )
+                )
+                server = TaskResultServer(router, result_pull, pub_ready)
+            except Exception:
+                send_conn.send_bytes(serializer.dumps(RemoteException()))
+                return
         while True:
             try:
-                self.recv_req()
+                server.tick()
             except KeyboardInterrupt:
                 util.log_internal_crash("Task server")
                 return
             except Exception:
-                util.log_internal_crash("Task server")
-
-
-def _task_server(_bind: Callable, send_conn: Connection):
-    try:
-        with util.socket_factory(zmq.ROUTER, zmq.PULL, zmq.PUB) as (
-            zmq_ctx,
-            router,
-            result_pull,
-            pub_ready,
-        ):
-            send_conn.send_bytes(
-                serializer.dumps([_bind(router), _bind(result_pull), _bind(pub_ready)])
-            )
-            send_conn.close()
-            TaskResultServer(router, result_pull, pub_ready).main()
-    except Exception:
-        if send_conn.closed:
-            util.log_internal_crash("Task proxy")
-        else:
-            send_conn.send_bytes(serializer.dumps(RemoteException()))
-            send_conn.close()
+                util.log_internal_crash("Task proxy")
 
 
 def start_task_server(_bind: Callable) -> List[str]:
     recv_conn, send_conn = multiprocessing.Pipe()
-    try:
+
+    with recv_conn:
         task_server = multiprocessing.Process(
             target=_task_server, args=[_bind, send_conn]
         )
         task_server.start()
         return serializer.loads(recv_conn.recv_bytes())
-    finally:
-        recv_conn.close()
 
 
 # This proxy server is used to forwared task requests to the workers.
@@ -118,27 +114,26 @@ def start_task_server(_bind: Callable) -> List[str]:
 
 
 def _task_proxy(_bind: Callable, send_conn: Connection):
-    try:
-        with util.socket_factory(zmq.PULL, zmq.PUSH) as (zmq_ctx, proxy_in, proxy_out):
-            send_conn.send_bytes(serializer.dumps([_bind(proxy_in), _bind(proxy_out)]))
-            send_conn.close()
-
+    with util.socket_factory(zmq.PULL, zmq.PUSH) as (zmq_ctx, proxy_in, proxy_out):
+        with send_conn:
+            try:
+                send_conn.send_bytes(
+                    serializer.dumps([_bind(proxy_in), _bind(proxy_out)])
+                )
+            except Exception:
+                send_conn.send_bytes(serializer.dumps(RemoteException()))
+        try:
             zmq.proxy(proxy_in, proxy_out)
-    except Exception:
-        if send_conn.closed:
+        except Exception:
             util.log_internal_crash("Task proxy")
-        else:
-            send_conn.send_bytes(serializer.dumps(RemoteException()))
-            send_conn.close()
 
 
 def start_task_proxy(_bind: Callable) -> List[str]:
     recv_conn, send_conn = multiprocessing.Pipe()
-    try:
+
+    with recv_conn:
         proxy_server = multiprocessing.Process(
             target=_task_proxy, args=[_bind, send_conn]
         )
         proxy_server.start()
         return serializer.loads(recv_conn.recv_bytes())
-    finally:
-        recv_conn.close()

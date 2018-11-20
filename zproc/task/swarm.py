@@ -43,17 +43,18 @@ class Swarm:
         if value > 0:
             for _ in range(value):
                 recv_conn, send_conn = multiprocessing.Pipe()
-                try:
-                    wp = multiprocessing.Process(
-                        target=worker_process, args=[self.server_address, send_conn]
-                    )
-                    wp.start()
-                    ret = recv_conn.recv_bytes()
-                    if ret:
-                        serializer.loads(ret)
-                finally:
-                    recv_conn.close()
-                self.worker_list.append(wp)
+
+                process = multiprocessing.Process(
+                    target=worker_process, args=[self.server_address, send_conn]
+                )
+                process.start()
+
+                with recv_conn:
+                    rep = recv_conn.recv_bytes()
+                if rep:
+                    serializer.loads(rep)
+
+                self.worker_list.append(process)
         elif value < 0:
             # Notify remaining workers to finish up, and close shop.
             for _ in range(-value):

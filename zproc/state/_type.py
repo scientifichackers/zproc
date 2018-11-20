@@ -51,6 +51,6 @@ class StateType(type):
         return cls
 
 
-# See "state_type.pyi" for more
+# See "_type.pyi" for more
 class StateDictMethodStub:
     pass
