@@ -1,11 +1,11 @@
 import multiprocessing
 from collections import defaultdict, Callable
 from multiprocessing.connection import Connection
-from typing import Any, Dict, Tuple, List
+from typing import Any, Dict, List
 
 import zmq
 
-from zproc import util
+from zproc import util, serializer
 from zproc.exceptions import RemoteException
 
 
@@ -47,7 +47,7 @@ class TaskResultServer:
         except KeyboardInterrupt:
             raise
         except Exception:
-            resp = util.dumps(RemoteException())
+            resp = serializer.dumps(RemoteException())
         self.router.send_multipart([ident, resp])
 
     def recv_task_result(self):
@@ -59,12 +59,11 @@ class TaskResultServer:
         # time.sleep(0.01)
 
     def recv_req(self):
-        while True:
-            for sock, _ in self.poller.poll():
-                if sock is self.router:
-                    self._recv_req()
-                elif sock is self.result_pull:
-                    self.recv_task_result()
+        for sock, _ in self.poller.poll():
+            if sock is self.router:
+                self._recv_req()
+            elif sock is self.result_pull:
+                self.recv_task_result()
 
     def main(self):
         while True:
@@ -77,18 +76,16 @@ class TaskResultServer:
                 util.log_internal_crash("Task server")
 
 
-# fmt: off
 def _task_server(_bind: Callable, send_conn: Connection):
     try:
-        with \
-                util.create_zmq_ctx() as ctx, \
-                ctx.socket(zmq.ROUTER) as router, \
-                ctx.socket(zmq.PULL) as result_pull, \
-                ctx.socket(zmq.PUB) as pub_ready:
+        with util.socket_factory(zmq.ROUTER, zmq.PULL, zmq.PUB) as (
+            zmq_ctx,
+            router,
+            result_pull,
+            pub_ready,
+        ):
             send_conn.send_bytes(
-                util.dumps(
-                    [_bind(router), _bind(result_pull), _bind(pub_ready)]
-                )
+                serializer.dumps([_bind(router), _bind(result_pull), _bind(pub_ready)])
             )
             send_conn.close()
             TaskResultServer(router, result_pull, pub_ready).main()
@@ -96,7 +93,7 @@ def _task_server(_bind: Callable, send_conn: Connection):
         if send_conn.closed:
             util.log_internal_crash("Task proxy")
         else:
-            send_conn.send_bytes(util.dumps(RemoteException()))
+            send_conn.send_bytes(serializer.dumps(RemoteException()))
             send_conn.close()
 
 
@@ -107,7 +104,7 @@ def start_task_server(_bind: Callable) -> List[str]:
             target=_task_server, args=[_bind, send_conn]
         )
         task_server.start()
-        return util.loads(recv_conn.recv_bytes())
+        return serializer.loads(recv_conn.recv_bytes())
     finally:
         recv_conn.close()
 
@@ -119,23 +116,19 @@ def start_task_server(_bind: Callable) -> List[str]:
 # only needs to have knowlege about the server.
 # The workers are opaque to them.
 
-# fmt: off
+
 def _task_proxy(_bind: Callable, send_conn: Connection):
     try:
-        with \
-                util.create_zmq_ctx() as ctx, \
-                ctx.socket(zmq.PULL) as proxy_in, \
-                ctx.socket(zmq.PUSH) as proxy_out:
-            send_conn.send_bytes(util.dumps([_bind(proxy_in), _bind(proxy_out)]))
+        with util.socket_factory(zmq.PULL, zmq.PUSH) as (zmq_ctx, proxy_in, proxy_out):
+            send_conn.send_bytes(serializer.dumps([_bind(proxy_in), _bind(proxy_out)]))
             send_conn.close()
 
             zmq.proxy(proxy_in, proxy_out)
     except Exception:
-        print(">>>>", send_conn.closed)
         if send_conn.closed:
             util.log_internal_crash("Task proxy")
         else:
-            send_conn.send_bytes(util.dumps(RemoteException()))
+            send_conn.send_bytes(serializer.dumps(RemoteException()))
             send_conn.close()
 
 
@@ -146,6 +139,6 @@ def start_task_proxy(_bind: Callable) -> List[str]:
             target=_task_proxy, args=[_bind, send_conn]
         )
         proxy_server.start()
-        return util.loads(recv_conn.recv_bytes())
+        return serializer.loads(recv_conn.recv_bytes())
     finally:
         recv_conn.close()

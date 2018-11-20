@@ -1,6 +1,6 @@
 import zmq
 
-from zproc import util
+from zproc import util, serializer
 
 
 class _TaskResultBase:
@@ -32,7 +32,7 @@ class _TaskResultBase:
             self._dealer = self._create_dealer()
             raise
         if msg:
-            return util.loads(msg)
+            return serializer.loads(msg)
         self._subsciber.setsockopt(zmq.SUBSCRIBE, chunk_id)
         self._subsciber.recv()
         return self._req_chunk(chunk_id)

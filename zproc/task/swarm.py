@@ -1,9 +1,9 @@
 import multiprocessing
-import zmq
-from functools import wraps
 from typing import List, Mapping, Sequence, Any, Callable, Union
 
-from zproc import util
+import zmq
+
+from zproc import util, serializer
 from zproc.consts import DEFAULT_NAMESPACE, CLOSE_WORKER_MSG
 from zproc.server.tools import ping
 from .result import IterableTaskResult, TaskResult
@@ -50,7 +50,7 @@ class Swarm:
                     wp.start()
                     ret = recv_conn.recv_bytes()
                     if ret:
-                        util.loads(ret)
+                        serializer.loads(ret)
                 finally:
                     recv_conn.close()
                 self.worker_list.append(wp)
@@ -97,7 +97,7 @@ class Swarm:
         task = (target, params, pass_state, self.namespace)
 
         self._proxy_in.send_multipart(
-            [util.get_chunk_id(task_id, -1), util.dumps(task)]
+            [util.get_chunk_id(task_id, -1), serializer.dumps(task)]
         )
 
         res = TaskResult(self.server_address, task_id)
@@ -220,7 +220,7 @@ class Swarm:
         args_chunks = util.make_chunks(map_args, chunk_length, num_chunks)
         kwargs_chunks = util.make_chunks(map_kwargs, chunk_length, num_chunks)
 
-        target_bytes = util.dumps_fn(target)
+        target_bytes = serializer.dumps_fn(target)
 
         for index in range(num_chunks):
             params = (
@@ -233,7 +233,11 @@ class Swarm:
             task = (params, pass_state, self.namespace)
 
             self._proxy_in.send_multipart(
-                [util.get_chunk_id(task_id, index), target_bytes, util.dumps(task)]
+                [
+                    util.get_chunk_id(task_id, index),
+                    target_bytes,
+                    serializer.dumps(task),
+                ]
             )
 
         res = IterableTaskResult(self.server_address, task_id)

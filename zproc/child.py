@@ -7,7 +7,7 @@ from typing import Callable
 
 import zmq
 
-from zproc import exceptions, util
+from zproc import exceptions, util, serializer
 from zproc.state.state import State
 
 
@@ -24,7 +24,7 @@ class ChildProcess:
         self.retry_delay = self.kwargs["retry_delay"]
         self.retry_args = self.kwargs["retry_args"]
         self.retry_kwargs = self.kwargs["retry_kwargs"]
-        self.to_catch = tuple(util.convert_to_exceptions(self.kwargs["retry_for"]))
+        self.to_catch = tuple(util.to_catchable_exc(self.kwargs["retry_for"]))
         self.target = self.kwargs["target"]
 
         self.target_args = self.kwargs["target_args"]
@@ -89,7 +89,7 @@ class ChildProcess:
             with util.create_zmq_ctx(linger=True) as zmq_ctx:
                 with zmq_ctx.socket(zmq.PAIR) as result_sock:
                     result_sock.connect(self.kwargs["result_address"])
-                    result_sock.send(util.dumps(return_value))
+                    result_sock.send(serializer.dumps(return_value))
         except Exception as e:
             self._handle_exc(e)
         finally:

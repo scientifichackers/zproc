@@ -1,21 +1,14 @@
 import os
-import time
 from contextlib import contextmanager
 from functools import wraps
 from pprint import pformat
 from textwrap import indent
-from typing import Union, Hashable, Any, Callable, Tuple, Iterable, Generator, Dict
+from typing import Hashable, Any, Callable, Tuple, Generator, Dict
 
 import zmq
 
-from zproc import util
-from zproc.consts import (
-    Msgs,
-    Commands,
-    DEFAULT_ZMQ_RECVTIMEO,
-    ZMQ_IDENTITY_LENGTH,
-    DEFAULT_NAMESPACE,
-)
+from zproc import util, serializer
+from zproc.consts import Msgs, Commands, ZMQ_IDENTITY_LENGTH, DEFAULT_NAMESPACE
 from zproc.server import tools
 from zproc.state import state_type
 from zproc.state.watcher import Watcher
@@ -56,12 +49,13 @@ class State(state_type.StateDictMethodStub, metaclass=state_type.StateType):
 
         self._zmq_ctx = util.create_zmq_ctx()
         self._dealer = self._create_dealer()
-        self._watcher = Watcher(server_address)
+        self._server_meta = util.get_server_meta(self._zmq_ctx, server_address)
+        self._watcher = Watcher(self._server_meta.watch_router)
 
     def _create_dealer(self) -> zmq.Socket:
         sock = self._zmq_ctx.socket(zmq.DEALER)
-        self._identity = os.urandom(ZMQ_IDENTITY_LENGTH)
-        sock.setsockopt(zmq.IDENTITY, self._identity)
+        self._ident = os.urandom(ZMQ_IDENTITY_LENGTH)
+        sock.setsockopt(zmq.IDENTITY, self._ident)
         sock.connect(self.server_address)
         return sock
 
@@ -137,7 +131,7 @@ class State(state_type.StateDictMethodStub, metaclass=state_type.StateType):
 
     def _req_rep(self, req: Dict[int, Any]):
         req[Msgs.namespace] = self._namespace_bytes
-        msg = util.dumps(req)
+        msg = serializer.dumps(req)
 
         try:
             self._dealer.send(msg)
@@ -147,7 +141,7 @@ class State(state_type.StateDictMethodStub, metaclass=state_type.StateType):
             self._dealer = self._create_dealer()
             raise
 
-        return util.loads(msg)
+        return serializer.loads(msg)
 
     def set(self, value: dict):
         """
@@ -192,67 +186,59 @@ class State(state_type.StateDictMethodStub, metaclass=state_type.StateType):
 
     @contextmanager
     def get_raw_update(
-        self, live: bool = False, timeout: float = None, identical_okay: bool = False
-    ) -> Watcher:
+        self,
+        *,
+        live: bool = False,
+        timeout: float = None,
+        identical_okay: bool = False,
+        circular_okay: bool = False
+    ) -> Generator[Tuple[dict, dict, bool], None, None]:
         """
         A low-level hook that emits each and every state update.
         All other state watchers are built upon this only.
 
         .. include:: /api/state/get_raw_update.rst
         """
-
         self._watcher.live = live
         self._watcher.timeout = timeout
-
-    @staticmethod
-    def _create_dictkey_selector(
-        keys: Iterable[Hashable], exclude: bool
-    ) -> Callable[[dict, dict], Generator[Hashable, None, None]]:
-        if exclude:
-            return lambda before, after: (
-                key for key in [*before.keys(), *after.keys()] if key not in keys
-            )
-
-        return lambda before, after: (
-            key for key in [*before.keys(), *after.keys()] if key in keys
+        return self._watcher.main(
+            live,
+            timeout,
+            identical_okay,
+            circular_okay,
+            self._ident,
+            self._namespace_bytes,
         )
 
     def get_when_change(
-        self,
-        *keys: Hashable,
-        exclude: bool = False,
-        live: bool = False,
-        timeout: float = None,
-        identical_okay: bool = False
+        self, *keys: Hashable, exclude: bool = False, **watcher_kwargs
     ) -> dict:
         """
         Block until a change is observed, and then return a copy of the state.
 
         .. include:: /api/state/get_when_change.rst
         """
-        with self.get_raw_update(live, timeout, identical_okay) as get:
-            if not len(keys):
-                while True:
-                    return get()[1]
+        if len(keys):
+            keys = set(keys)
 
-            select_keys = self._create_dictkey_selector(keys, exclude)
-            while True:
-                before, after, _ = get()
-                for key in select_keys(before, after):
-                    try:
-                        if before[key] != after[key]:
-                            return after
-                    except KeyError:  # this indirectly implies that something changed
+            def select_keys():
+                selected = {*before.keys(), *after.keys()}
+                if exclude:
+                    return selected - keys
+                else:
+                    return selected & keys
+
+            for before, after, _, _ in self.get_raw_update(**watcher_kwargs):
+                try:
+                    if any(before[key] != after[key] for key in select_keys()):
                         return after
+                except KeyError:  # this indirectly implies that something changed
+                    return after
+        else:
+            for update in self.get_raw_update(**watcher_kwargs):
+                yield update[1]
 
-    def get_when(
-        self,
-        test_fn,
-        *,
-        live: bool = False,
-        timeout: float = None,
-        identical_okay: bool = False
-    ) -> dict:
+    def get_when(self, test_fn, **watcher_kwargs) -> dict:
         """
         Block until ``test_fn(snap)`` returns a "truthy" value,
         and then return a copy of the state.
@@ -267,21 +253,15 @@ class State(state_type.StateDictMethodStub, metaclass=state_type.StateType):
         if test_fn(snap):
             return snap
 
-        with self.get_raw_update(live, timeout, identical_okay) as get:
+        with self.get_raw_update(
+            live=live, timeout=timeout, identical_okay=identical_okay
+        ) as get:
             while True:
                 snap = get()[1]
                 if test_fn(snap):
                     return snap
 
-    def get_when_equal(
-        self,
-        key: Hashable,
-        value: Any,
-        *,
-        live: bool = False,
-        timeout: float = None,
-        identical_okay: bool = False
-    ) -> dict:
+    def get_when_equal(self, key: Hashable, value: Any, **watcher_kwargs) -> dict:
         """
         Block until ``state[key] == value``, and then return a copy of the state.
 
@@ -298,15 +278,7 @@ class State(state_type.StateDictMethodStub, metaclass=state_type.StateType):
             _, live=live, timeout=timeout, identical_okay=identical_okay
         )
 
-    def get_when_not_equal(
-        self,
-        key: Hashable,
-        value: Any,
-        *,
-        live: bool = False,
-        timeout: float = None,
-        identical_okay: bool = False
-    ) -> dict:
+    def get_when_not_equal(self, key: Hashable, value: Any, **watcher_kwargs) -> dict:
         """
         Block until ``state[key] != value``, and then return a copy of the state.
 
@@ -323,14 +295,7 @@ class State(state_type.StateDictMethodStub, metaclass=state_type.StateType):
             _, live=live, timeout=timeout, identical_okay=identical_okay
         )
 
-    def get_when_none(
-        self,
-        key: Hashable,
-        *,
-        live: bool = False,
-        timeout: float = None,
-        identical_okay: bool = False
-    ) -> dict:
+    def get_when_none(self, key: Hashable, **watcher_kwargs) -> dict:
         """
         Block until ``state[key] is None``, and then return a copy of the state.
 
@@ -347,14 +312,7 @@ class State(state_type.StateDictMethodStub, metaclass=state_type.StateType):
             _, live=live, timeout=timeout, identical_okay=identical_okay
         )
 
-    def get_when_not_none(
-        self,
-        key: Hashable,
-        *,
-        live: bool = False,
-        timeout: float = None,
-        identical_okay: bool = False
-    ) -> dict:
+    def get_when_not_none(self, key: Hashable, **watcher_kwargs) -> dict:
         """
         Block until ``state[key] is not None``, and then return a copy of the state.
 
@@ -371,14 +329,7 @@ class State(state_type.StateDictMethodStub, metaclass=state_type.StateType):
             _, live=live, timeout=timeout, identical_okay=identical_okay
         )
 
-    def get_when_available(
-        self,
-        key: Hashable,
-        *,
-        live: bool = False,
-        timeout: float = None,
-        identical_okay: bool = False
-    ):
+    def get_when_available(self, key: Hashable, **watcher_kwargs):
         """
         Block until ``key in state``, and then return a copy of the state.
 
@@ -449,7 +400,7 @@ def atomic(fn: Callable) -> Callable:
     1
     """
 
-    serialized = util.dumps_fn(fn)
+    serialized = serializer.dumps_fn(fn)
 
     @wraps(fn)
     def wrapper(state: State, *args, **kwargs):

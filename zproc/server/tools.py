@@ -5,7 +5,7 @@ from typing import Union, Optional, Tuple
 
 import zmq
 
-from zproc import util
+from zproc import util, serializer
 from zproc.consts import Msgs, Commands
 from zproc.consts import ServerMeta
 from zproc.server.main import main
@@ -31,7 +31,7 @@ def start_server(
     server_process.start()
 
     try:
-        server_meta: ServerMeta = util.loads(recv_conn.recv_bytes())
+        server_meta: ServerMeta = serializer.loads(recv_conn.recv_bytes())
     except zmq.ZMQError as e:
         if e.errno == 98:
             raise ConnectionError(
@@ -50,10 +50,7 @@ def start_server(
 
 
 def ping(
-    server_address: str,
-    *,
-    timeout: float = None,
-    send_payload: Union[bytes] = None
+    server_address: str, *, timeout: float = None, send_payload: Union[bytes] = None
 ) -> Optional[int]:
     """
     Ping the zproc server.
@@ -94,7 +91,7 @@ def ping(
                 dealer_sock.setsockopt(zmq.RCVTIMEO, int(timeout * 1000))
 
             dealer_sock.send(
-                util.dumps(
+                serializer.dumps(
                     {
                         Msgs.cmd: Commands.ping,
                         Msgs.info: send_payload,
@@ -104,7 +101,7 @@ def ping(
             )
 
             try:
-                response = util.loads(dealer_sock.recv())
+                response = serializer.loads(dealer_sock.recv())
             except zmq.error.Again:
                 raise TimeoutError(
                     "Timed-out waiting while for the ZProc server to respond."

@@ -1,33 +1,21 @@
 import os
 import pathlib
-import pickle
 import signal
 import struct
 import threading
 import uuid
-from contextlib import suppress
+from contextlib import suppress, contextmanager, ExitStack
 from textwrap import indent
 from traceback import format_exc
-from typing import (
-    Any,
-    Union,
-    Iterable,
-    Generator,
-    Callable,
-    Tuple,
-    Sequence,
-    Optional,
-    Dict,
-    Type,
-)
+from typing import Union, Iterable, Generator, Callable, Tuple, Sequence, Optional, Type
 
-import cloudpickle
 import psutil
 import zmq
 
-from . import exceptions
-from .__version__ import __version__
-from .consts import (
+from zproc import exceptions
+from zproc import serializer
+from zproc.__version__ import __version__
+from zproc.consts import (
     Msgs,
     Commands,
     ServerMeta,
@@ -43,35 +31,20 @@ if not IPC_BASE_DIR.exists():
     IPC_BASE_DIR.mkdir(parents=True)
 
 
-def capture_remote_exc(resp):
-    # if the reply is a remote Exception, re-raise it!
-    if isinstance(resp, exceptions.RemoteException):
-        resp.reraise()
-    return resp
-
-
-def dumps(obj: Any) -> bytes:
-    return pickle.dumps(obj, protocol=pickle.HIGHEST_PROTOCOL)
-
-
-def loads(bytes_obj: bytes) -> Any:
-    return capture_remote_exc(pickle.loads(bytes_obj))
-
-
-_server_meta_req = dumps(
-    {Msgs.cmd: Commands.get_server_meta, Msgs.namespace: DEFAULT_NAMESPACE}
-)
-
-
 def get_server_meta(zmq_ctx: zmq.Context, server_address: str) -> ServerMeta:
     with zmq_ctx.socket(zmq.DEALER) as dealer:
         dealer.connect(server_address)
         return req_server_meta(dealer)
 
 
+_server_meta_req_cache = serializer.dumps(
+    {Msgs.cmd: Commands.get_server_meta, Msgs.namespace: DEFAULT_NAMESPACE}
+)
+
+
 def req_server_meta(dealer: zmq.Socket) -> ServerMeta:
-    dealer.send(_server_meta_req)
-    server_meta = loads(dealer.recv())
+    dealer.send(_server_meta_req_cache)
+    server_meta = serializer.loads(dealer.recv())
     if server_meta.version != __version__:
         raise RuntimeError(
             "The server version didn't match. "
@@ -81,7 +54,7 @@ def req_server_meta(dealer: zmq.Socket) -> ServerMeta:
     return server_meta
 
 
-def convert_to_exceptions(
+def to_catchable_exc(
     retry_for: Iterable[Union[signal.Signals, Type[BaseException]]]
 ) -> Generator[Type[BaseException], None, None]:
     if retry_for is not None:
@@ -208,34 +181,9 @@ def log_internal_crash(subsystem: str):
     print(f"\n[ZProc] Internal crash report:\n{report}")
 
 
-_fn_dump_cache = {}  # type: Dict[int, bytes]
-
-
-def dumps_fn(fn: Callable) -> bytes:
-    try:
-        fn_hash = hash(fn.__code__)
-    except AttributeError:
-        fn_hash = hash(fn)
-
-    try:
-        fn_bytes = _fn_dump_cache[fn_hash]
-    except KeyError:
-        fn_bytes = cloudpickle.dumps(fn)
-        _fn_dump_cache[fn_hash] = fn_bytes
-
-    return fn_bytes
-
-
-_fn_load_cache = {}  # type: Dict[int, Callable]
-
-
-def loads_fn(fn_bytes: bytes) -> Callable:
-    fn_bytes_hash = hash(fn_bytes)
-
-    try:
-        fn = _fn_load_cache[fn_bytes_hash]
-    except KeyError:
-        fn = cloudpickle.loads(fn_bytes)
-        _fn_load_cache[fn_bytes_hash] = fn
-
-    return fn
+@contextmanager
+def socket_factory(*sock_types):
+    with ExitStack() as stack:
+        ctx = stack.enter_context(zmq.Context())
+        sockets = (stack.enter_context(ctx.socket(i)) for i in sock_types)
+        yield [ctx, *sockets]

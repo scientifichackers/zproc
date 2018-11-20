@@ -5,9 +5,9 @@ from typing import Callable, Union, Sequence, Mapping, Optional, Iterable, Type
 
 import zmq
 
-from . import util, exceptions
-from .child import ChildProcess
-from .consts import DEFAULT_NAMESPACE
+from zproc import util, exceptions, serializer
+from zproc.child import ChildProcess
+from zproc.consts import DEFAULT_NAMESPACE
 
 
 class Process:
@@ -279,7 +279,7 @@ class Process:
                 self,
             )
         try:
-            self._result = util.loads(self._result_sock.recv())
+            self._result = serializer.loads(self._result_sock.recv())
         except zmq.error.Again:
             raise exceptions.ProcessWaitError(
                 "The Process died before sending its return value. "

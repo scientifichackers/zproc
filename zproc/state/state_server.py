@@ -1,13 +1,12 @@
 import os
-import time
 from collections import defaultdict, deque
 from contextlib import contextmanager
 from copy import deepcopy
-from typing import Any, Dict
+from typing import Any, Dict, Deque, Tuple
 
 import zmq
 
-from zproc import util
+from zproc import util, serializer
 from zproc.consts import Commands, ServerMeta
 from zproc.consts import Msgs
 from zproc.exceptions import RemoteException
@@ -20,9 +19,19 @@ class StateServer:
     _namespace: bytes
     _state: dict
 
-    def __init__(self, router: zmq.Socket, server_meta: ServerMeta) -> None:
-        self.router = router
+    def __init__(
+        self,
+        state_router: zmq.Socket,
+        watch_router: zmq.Socket,
+        server_meta: ServerMeta,
+    ) -> None:
+        self.state_router = state_router
+        self.watch_router = watch_router
         self.server_meta = server_meta
+
+        self.poller = zmq.Poller()
+        self.poller.register(self.state_router)
+        self.poller.register(self.watch_router)
 
         self._dispatch_dict = {
             Commands.run_fn_atomically: self.run_fn_atomically,
@@ -31,14 +40,15 @@ class StateServer:
             Commands.set_state: self.set_state,
             Commands.get_server_meta: self.get_server_meta,
             Commands.ping: self.ping,
-            Commands.watch: self.watch,
         }
         self._state_store: Dict[bytes, dict] = defaultdict(dict)
-        self._watch_queue_store: Dict[bytes, deque] = defaultdict(deque)
+        self._watch_queue_store: Dict[bytes, Deque[Tuple[bytes, bytes]]] = defaultdict(
+            deque
+        )
 
-    def recv_req(self):
-        self._ident, req = self.router.recv_multipart()
-        req = util.loads(req)
+    def _recv_req(self):
+        self._ident, req = self.state_router.recv_multipart()
+        req = serializer.loads(req)
         try:
             self._namespace = req[Msgs.namespace]
         except KeyError:
@@ -47,9 +57,17 @@ class StateServer:
             self._state = self._state_store[self._namespace]
         self._dispatch_dict[req[Msgs.cmd]](req)
 
+    def recv_req(self):
+        for sock, _ in self.poller.poll():
+            if sock is self.state_router:
+                self._recv_req()
+            elif sock is self.watch_router:
+                ident, sender, namespace = sock.recv_multipart()
+                self._watch_queue_store[namespace].append((ident, sender))
+
     def reply(self, resp):
         # print("server rep:", self._active_ident, resp, time.time())
-        self.router.send_multipart([self._ident, util.dumps(resp)])
+        self.state_router.send_multipart([self._ident, serializer.dumps(resp)])
 
     def send_state(self, _):
         """reply with state to the current client"""
@@ -71,10 +89,14 @@ class StateServer:
             self._state_store[self._namespace] = old
             raise
 
-        for ident in self._watch_queue_store[self._namespace]:
-            self.router.send_multipart(
-                [ident, util.dumps((old, self._state, old == self._state))]
+        identical = bytes(self._state == old)
+        update = serializer.dumps((old, self._state))
+
+        for ident, sender in self._watch_queue_store[self._namespace]:
+            self.watch_router.send_multipart(
+                [ident, identical, bytes(self._ident == sender), update]
             )
+
         self._watch_queue_store[self._namespace].clear()
 
     def set_state(self, request):
@@ -96,14 +118,11 @@ class StateServer:
 
     def run_fn_atomically(self, req):
         """Execute a function, atomically and reply with the result."""
-        fn = util.loads_fn(req[Msgs.info])
+        fn = serializer.loads_fn(req[Msgs.info])
         args, kwargs = req[Msgs.args], req[Msgs.kwargs]
 
         with self.mutate_state():
             self.reply(fn(self._state, *args, **kwargs))
-
-    def watch(self, _):
-        self._watch_queue_store[self._namespace].append(self._ident)
 
     def _reset_req_state(self):
         self._ident = None

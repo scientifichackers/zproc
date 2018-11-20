@@ -7,50 +7,56 @@ from zproc.consts import DEFAULT_ZMQ_RECVTIMEO
 
 
 class Watcher:
-    live = False
-
     def __init__(self, server_address: str):
         self._zmq_ctx = zmq.Context()
         self._server_meta = util.get_server_meta(self._zmq_ctx, server_address)
         self._dealer = self._create_dealer()
 
     def _create_dealer(self) -> zmq.Socket:
-        dealer = self._zmq_ctx.socket(zmq.DEALER)
-        dealer.connect(self._server_meta.watcher_router)
-        return dealer
+        sock = self._zmq_ctx.socket(zmq.DEALER)
+        sock.connect(self._server_meta.watch_router)
+        return sock
 
     def go_live(self):
         self._dealer.close()
         self._dealer = self._create_dealer()
 
-    def _main(
-        self, live: bool = False, timeout: float = None, identical_okay: bool = False
+    def main(
+        self,
+        live: bool,
+        timeout: float,
+        identical_okay: bool,
+        circular_okay: bool,
+        ident: bytes,
+        namespace_bytes: bytes,
     ):
+        print("wtf?")
         if timeout is None:
-
-            def _update_timeout() -> None:
-                pass
-
+            self._dealer.setsockopt(zmq.RCVTIMEO, DEFAULT_ZMQ_RECVTIMEO)
         else:
             final = time.time() + timeout
 
-            def _update_timeout() -> None:
-                self._dealer.setsockopt(zmq.RCVTIMEO, int((final - time.time()) * 1000))
-
-        if live:
-            self.go_live()
-
-        while True:
-            _update_timeout()
-            before, after, identical = util.loads(self._dealer.recv())
-            if identical and not identical_okay:
-                continue
-            return before, after, identical
-
-    def main(self):
         try:
-            return self._main()
+            while True:
+                if live:
+                    self.go_live()
+                if timeout is not None:
+                    self._dealer.setsockopt(
+                        zmq.RCVTIMEO, int((final - time.time()) * 1000)
+                    )
+
+                self._dealer.send(namespace_bytes)
+                identical, circular, update = self._dealer.recv_multipart()
+
+                identical = bool(identical)
+                circular = bool(circular)
+
+                if identical and not identical_okay:
+                    continue
+
+                if circular and not circular_okay:
+                    continue
+
+                yield update, identical, circular
         except zmq.error.Again:
             raise TimeoutError("Timed-out while waiting for a state update.")
-        finally:
-            self._dealer.setsockopt(zmq.RCVTIMEO, DEFAULT_ZMQ_RECVTIMEO)

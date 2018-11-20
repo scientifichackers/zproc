@@ -43,7 +43,7 @@ class ServerMeta(NamedTuple):
     version: str
 
     server_address: str
-    watcher_router: str
+    watch_router: str
 
     task_router: str
     task_result_pull: str

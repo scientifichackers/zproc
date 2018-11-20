@@ -4,7 +4,7 @@ from typing import Union, Callable
 
 import zmq
 
-from zproc import util
+from zproc import util, serializer
 from zproc.consts import CLOSE_WORKER_MSG
 from zproc.exceptions import RemoteException
 from zproc.state.state import State
@@ -26,13 +26,13 @@ def run_task(
     return map_plus(target, *params)
 
 
-# fmt: off
 def worker_process(server_address: str, send_conn: Connection):
     try:
-        with \
-                util.create_zmq_ctx() as zmq_ctx, \
-                zmq_ctx.socket(zmq.PULL) as proxy_out, \
-                zmq_ctx.socket(zmq.PUSH) as result_pull:
+        with util.socket_factory(zmq.PULL, zmq.PUSH) as (
+            zmq_ctx,
+            proxy_out,
+            result_pull,
+        ):
             server_meta = util.get_server_meta(zmq_ctx, server_address)
 
             try:
@@ -40,7 +40,7 @@ def worker_process(server_address: str, send_conn: Connection):
                 result_pull.connect(server_meta.task_result_pull)
                 state = State(server_address)
             except Exception:
-                send_conn.send_bytes(util.dumps(RemoteException()))
+                send_conn.send_bytes(serializer.dumps(RemoteException()))
             else:
                 send_conn.send_bytes(b"")
             finally:
@@ -53,14 +53,14 @@ def worker_process(server_address: str, send_conn: Connection):
                 chunk_id, target_bytes, task_bytes = msg
 
                 try:
-                    task = util.loads(task_bytes)
-                    target = util.loads_fn(target_bytes)
+                    task = serializer.loads(task_bytes)
+                    target = serializer.loads_fn(target_bytes)
 
                     result = run_task(target, task, state)
                 except KeyboardInterrupt:
                     raise
                 except Exception:
                     result = RemoteException()
-                result_pull.send_multipart([chunk_id, util.dumps(result)])
+                result_pull.send_multipart([chunk_id, serializer.dumps(result)])
     except Exception:
         util.log_internal_crash("Worker process")

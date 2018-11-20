@@ -5,7 +5,7 @@ from typing import Union
 
 from tblib.pickling_support import unpickle_traceback, pickle_traceback
 
-from . import util
+from zproc import util
 
 
 class ProcessWaitError(Exception):
