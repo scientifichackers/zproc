@@ -10,11 +10,11 @@ import zmq
 from zproc import util, serializer
 from zproc.consts import Msgs, Commands, ZMQ_IDENTITY_LENGTH, DEFAULT_NAMESPACE
 from zproc.server import tools
-from zproc.state import state_type
+from zproc.state import _type
 from zproc.state.watcher import Watcher
 
 
-class State(state_type.StateDictMethodStub, metaclass=state_type.StateType):
+class State(_type.StateDictMethodStub, metaclass=_type.StateType):
     def __init__(
         self, server_address: str, *, namespace: str = DEFAULT_NAMESPACE
     ) -> None:

@@ -28,10 +28,6 @@ class StateServer:
         self.watch_router = watch_router
         self.server_meta = server_meta
 
-        self.poller = zmq.Poller()
-        self.poller.register(self.state_router)
-        self.poller.register(self.watch_router)
-
         self._dispatch_dict = {
             Commands.run_fn_atomically: self.run_fn_atomically,
             Commands.run_dict_method: self.run_dict_method,
@@ -45,7 +41,7 @@ class StateServer:
             deque
         )
 
-    def _recv_req(self):
+    def recv_req(self):
         self._ident, req = self.state_router.recv_multipart()
         req = serializer.loads(req)
         try:
@@ -57,16 +53,16 @@ class StateServer:
         self._dispatch_dict[req[Msgs.cmd]](req)
 
     def tick(self):
-        for sock, _ in self.poller.poll():
+        for sock in zmq.select([self.state_router, self.watch_router], [], [])[0]:
             if sock is self.state_router:
-                self._recv_req()
+                self.recv_req()
             elif sock is self.watch_router:
                 ident, sender, namespace = sock.recv_multipart()
                 self._watch_queue_store[namespace].append((ident, sender))
 
-    def reply(self, resp):
-        # print("server rep:", self._active_ident, resp, time.time())
-        self.state_router.send_multipart([self._ident, serializer.dumps(resp)])
+    def reply(self, rep):
+        # print("server rep:", self._active_ident, rep, time.time())
+        self.state_router.send_multipart([self._ident, serializer.dumps(rep)])
 
     def send_state(self, _):
         """reply with state to the current client"""

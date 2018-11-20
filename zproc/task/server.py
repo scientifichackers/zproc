@@ -10,7 +10,7 @@ from zproc.exceptions import RemoteException
 
 
 class TaskResultServer:
-    _active_identity = None  # type:bytes
+    _active_identity: bytes = None
 
     def __init__(
         self, router: zmq.Socket, result_pull: zmq.Socket, publisher: zmq.Socket
@@ -28,27 +28,23 @@ class TaskResultServer:
         self.result_pull = result_pull
         self.publisher = publisher
 
-        self.poller = zmq.Poller()
-        self.poller.register(self.result_pull, zmq.POLLIN)
-        self.poller.register(self.router, zmq.POLLIN)
-
         self._task_store: Dict[bytes, Dict[int, Any]] = defaultdict(dict)
 
     def recv_req(self):
         ident, chunk_id = self.router.recv_multipart()
-        resp = b""
+        rep = b""
         try:
             task_id, index = util.deconstruct_chunk_id(chunk_id)
             # print("req for chunk->", task_id, index)
             try:
-                resp = self._task_store[task_id][index]
+                rep = self._task_store[task_id][index]
             except KeyError:
                 pass
         except KeyboardInterrupt:
             raise
         except Exception:
-            resp = serializer.dumps(RemoteException())
-        self.router.send_multipart([ident, resp])
+            rep = serializer.dumps(RemoteException())
+        self.router.send_multipart([ident, rep])
 
     def recv_task_result(self):
         chunk_id, result = self.result_pull.recv_multipart()
@@ -59,14 +55,14 @@ class TaskResultServer:
         # time.sleep(0.01)
 
     def tick(self):
-        for sock, _ in self.poller.poll():
+        for sock in zmq.select([self.result_pull, self.router], [], [])[0]:
             if sock is self.router:
                 self.recv_req()
             elif sock is self.result_pull:
                 self.recv_task_result()
 
 
-def _task_server(_bind: Callable, send_conn: Connection):
+def _task_server(send_conn: Connection, _bind: Callable):
     with util.socket_factory(zmq.ROUTER, zmq.PULL, zmq.PUB) as (
         zmq_ctx,
         router,
@@ -94,26 +90,15 @@ def _task_server(_bind: Callable, send_conn: Connection):
                 util.log_internal_crash("Task proxy")
 
 
-def start_task_server(_bind: Callable) -> List[str]:
-    recv_conn, send_conn = multiprocessing.Pipe()
-
-    with recv_conn:
-        task_server = multiprocessing.Process(
-            target=_task_server, args=[_bind, send_conn]
-        )
-        task_server.start()
-        return serializer.loads(recv_conn.recv_bytes())
-
-
 # This proxy server is used to forwared task requests to the workers.
 #
 # This way,
 # any client who wishes to get some task done on the workers,
 # only needs to have knowlege about the server.
-# The workers are opaque to them.
+# Clients never need to talk to a worker directly.
 
 
-def _task_proxy(_bind: Callable, send_conn: Connection):
+def _task_proxy(send_conn: Connection, _bind: Callable):
     with util.socket_factory(zmq.PULL, zmq.PUSH) as (zmq_ctx, proxy_in, proxy_out):
         with send_conn:
             try:
@@ -128,12 +113,21 @@ def _task_proxy(_bind: Callable, send_conn: Connection):
             util.log_internal_crash("Task proxy")
 
 
-def start_task_proxy(_bind: Callable) -> List[str]:
-    recv_conn, send_conn = multiprocessing.Pipe()
+#
+# Helper functions to start servers, and get return values.
+#
 
+
+def _start_server(fn, _bind: Callable):
+    recv_conn, send_conn = multiprocessing.Pipe()
+    multiprocessing.Process(target=fn, args=[send_conn, _bind]).start()
     with recv_conn:
-        proxy_server = multiprocessing.Process(
-            target=_task_proxy, args=[_bind, send_conn]
-        )
-        proxy_server.start()
         return serializer.loads(recv_conn.recv_bytes())
+
+
+def start_task_server(_bind: Callable) -> List[str]:
+    return _start_server(_task_server, _bind)
+
+
+def start_task_proxy(_bind: Callable) -> List[str]:
+    return _start_server(_task_proxy, _bind)

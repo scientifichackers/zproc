@@ -11,10 +11,10 @@ def dumps(obj: Any) -> bytes:
 
 
 def loads(bytes_obj: bytes) -> Any:
-    resp = pickle.loads(bytes_obj)
-    if isinstance(resp, exceptions.RemoteException):
-        resp.reraise()
-    return resp
+    rep = pickle.loads(bytes_obj)
+    if isinstance(rep, exceptions.RemoteException):
+        rep.reraise()
+    return rep
 
 
 _fn_dump_cache: Dict[int, bytes] = {}
