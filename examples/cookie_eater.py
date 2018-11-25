@@ -1,8 +1,7 @@
 """
 Expected output:
 
-<Process pid: 2555 target: <function cookie_eater at 0x7f5b4542c9d8> uuid: e74521ae-76ca-11e8-bd1f-7c7a912e12b5>
-<Process pid: 2556 target: <function cookie_baker at 0x7f5b4542c950> uuid: e74521ae-76ca-11e8-bd1f-7c7a912e12b5>
+Process - pid: 10815 target: '__main__.cookie_eater' ppid: 10802 is_alive: True exitcode: None
 Here's a cookie!
 Here's a cookie!
 Here's a cookie!
@@ -16,32 +15,41 @@ nom nom nom
 """
 import zproc
 
-ctx = zproc.Context(wait=True)  # background waits for all processes to finish
-ctx.state["cookies"] = 0
-
 
 @zproc.atomic
 def eat_cookie(snap):
+    """Eat a cookie."""
     snap["cookies"] -= 1
     print("nom nom nom")
 
 
 @zproc.atomic
 def bake_cookie(snap):
+    """Bake a cookie."""
     snap["cookies"] += 1
     print("Here's a cookie!")
 
 
-@ctx.call_when_change("cookies")
-def cookie_eater(_, state):
-    eat_cookie(state)
+ctx = zproc.Context(wait=True)
+state = ctx.create_state()
+state["cookies"] = 0
 
 
-@ctx._process
-def cookie_baker(state):
-    for i in range(5):
-        bake_cookie(state)
+@ctx.spawn
+def cookie_eater(ctx):
+    """Eat cookies as they're baked."""
+    state = ctx.create_state()
+    state["ready"] = True
+
+    for _ in state.get_when_change("cookies"):
+        eat_cookie(state)
 
 
+# wait for that process
+next(state.get_when_available("ready"))
+
+# finally, get to work.
 print(cookie_eater)
-print(cookie_baker)
+for _ in range(5):
+    bake_cookie(state)
+

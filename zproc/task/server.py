@@ -30,12 +30,12 @@ class TaskResultServer:
 
         self._task_store: Dict[bytes, Dict[int, Any]] = defaultdict(dict)
 
-    def recv_req(self):
+    def recv_request(self):
         ident, chunk_id = self.router.recv_multipart()
         rep = b""
         try:
             task_id, index = util.deconstruct_chunk_id(chunk_id)
-            # print("req for chunk->", task_id, index)
+            # print("request for chunk->", task_id, index)
             try:
                 rep = self._task_store[task_id][index]
             except KeyError:
@@ -57,7 +57,7 @@ class TaskResultServer:
     def tick(self):
         for sock in zmq.select([self.result_pull, self.router], [], [])[0]:
             if sock is self.router:
-                self.recv_req()
+                self.recv_request()
             elif sock is self.result_pull:
                 self.recv_task_result()
 

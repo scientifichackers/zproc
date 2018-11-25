@@ -6,13 +6,13 @@ from typing import Union, Optional, Tuple
 import zmq
 
 from zproc import util, serializer
-from zproc.consts import Msgs, Commands
+from zproc.consts import Msgs, Cmds
 from zproc.consts import ServerMeta
 from zproc.server.main import main
 
 
 def start_server(
-    server_address: str = None, *, backend: Callable = multiprocessing.Process
+        server_address: str = None, *, backend: Callable = multiprocessing.Process
 ) -> Tuple[multiprocessing.Process, str]:
     """
     Start a new zproc server.
@@ -50,8 +50,8 @@ def start_server(
 
 
 def ping(
-    server_address: str, *, timeout: float = None, send_payload: Union[bytes] = None
-) -> Optional[int]:
+        server_address: str, *, timeout: float = None, payload: Union[bytes] = None
+) -> int:
     """
     Ping the zproc server.
 
@@ -68,7 +68,7 @@ def ping(
         for that amount of time before returning with a :py:class:`TimeoutError`.
 
         By default it is set to ``None``.
-    :param send_payload:
+    :param payload:
         payload that will be sent to the server.
 
         If it is set to None, then ``os.urandom(56)`` (56 random bytes) will be used.
@@ -76,13 +76,10 @@ def ping(
         (No real reason for the ``56`` magic number.)
 
     :return:
-        The zproc server's **pid** if the ping was successful, else ``None``
-
-        If this returns ``None``,
-        then it probably means there is some fault in communication with the server.
+        The zproc server's **pid**.
     """
-    if send_payload is None:
-        send_payload = os.urandom(56)
+    if payload is None:
+        payload = os.urandom(56)
 
     with util.create_zmq_ctx() as zmq_ctx:
         with zmq_ctx.socket(zmq.DEALER) as dealer_sock:
@@ -92,23 +89,19 @@ def ping(
 
             dealer_sock.send(
                 serializer.dumps(
-                    {
-                        Msgs.cmd: Commands.ping,
-                        Msgs.info: send_payload,
-                        Msgs.namespace: b"",
-                    }
+                    {Msgs.cmd: Cmds.ping, Msgs.info: payload}
                 )
             )
 
             try:
-                response = serializer.loads(dealer_sock.recv())
+                recv_payload, pid = serializer.loads(dealer_sock.recv())
             except zmq.error.Again:
                 raise TimeoutError(
                     "Timed-out waiting while for the ZProc server to respond."
                 )
 
-            recv_payload, pid = response[Msgs.info]
-            if recv_payload == send_payload:
-                return pid
-            else:
-                return None
+            assert (
+                    recv_payload == payload
+            ), "Payload doesn't match! The server connection may be compromised, or unstable."
+
+            return pid

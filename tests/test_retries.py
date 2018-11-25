@@ -10,14 +10,13 @@ def ctx():
 
 @pytest.fixture
 def state(ctx):
-    state = ctx.state
-    state["times"] = 0
-    return state
+    return ctx.create_state({"times": 0})
 
 
 def test_retry(ctx, state):
     @ctx.spawn(retry_for=[ValueError], max_retries=5, retry_delay=0)
-    def p(state):
+    def p(ctx):
+        state = ctx.create_state()
         try:
             raise ValueError
         finally:
@@ -30,7 +29,8 @@ def test_retry(ctx, state):
 
 def test_infinite_retry(ctx, state):
     @ctx.spawn(retry_for=[ValueError], max_retries=None, retry_delay=0.005)
-    def p(state):
+    def p(ctx):
+        state = ctx.create_state()
         try:
             raise ValueError
         finally:

@@ -18,8 +18,7 @@ def pydict() -> dict:
 
 @pytest.fixture
 def state(pydict, ctx) -> zproc.State:
-    ctx.state.set(pydict)
-    return ctx.state
+    return ctx.create_state(pydict)
 
 
 def test_update(state, pydict):

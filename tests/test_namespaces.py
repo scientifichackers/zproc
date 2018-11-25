@@ -2,7 +2,7 @@ import zproc
 
 
 def test_namespaces():
-    state = zproc.Context().state
+    state = zproc.Context().create_state()
 
     state.namespace = "test1"
     state["foo"] = 10

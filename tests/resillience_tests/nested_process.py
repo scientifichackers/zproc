@@ -4,18 +4,17 @@ import zproc
 
 ctx = zproc.Context()
 
-
 for i in range(250):
 
-    @ctx.spawn(pass_context=True)
+    @ctx.spawn
     def p1(ctx):
-        @ctx.spawn(pass_context=True)
+        @ctx.spawn
         def p2(ctx):
-            @ctx.spawn(pass_state=False)
+            @ctx.spawn
             def p3(ctx):
-                @ctx.spawn(pass_state=False)
+                @ctx.spawn
                 def p4(ctx):
-                    @ctx.spawn(pass_state=False)
+                    @ctx.spawn(pass_context=False)
                     def pn():
                         time.sleep(1)
 

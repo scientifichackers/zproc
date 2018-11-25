@@ -12,19 +12,24 @@ def ctx():
     return zproc.Context()
 
 
-def test_exception_contract(ctx):
+@pytest.fixture
+def state(ctx):
+    return ctx.create_state()
+
+
+def test_exception_contract(ctx, state):
     @zproc.atomic
     def mutator(snap):
         snap["x"] = 5
         raise ValueError
 
     with pytest.raises(ValueError):
-        mutator(ctx.state)
+        mutator(state)
 
-    assert ctx.state == {}
+    assert state == {}
 
 
-def test_signal_contract(ctx):
+def test_signal_contract(ctx, state):
     @zproc.atomic
     def mutator(snap):
         snap["x"] = 5
@@ -32,7 +37,7 @@ def test_signal_contract(ctx):
 
     curpid = os.getpid()
 
-    @ctx.spawn(pass_state=False)
+    @ctx.spawn(pass_context=False)
     def p():
         time.sleep(0.05)
         zproc.send_signal(signal.SIGINT, curpid)
@@ -40,6 +45,6 @@ def test_signal_contract(ctx):
     zproc.signal_to_exception(signal.SIGINT)
 
     with pytest.raises(zproc.SignalException):
-        mutator(ctx.state)
+        mutator(state)
 
-    assert ctx.state == {"x": 5}
+    assert state == {"x": 5}

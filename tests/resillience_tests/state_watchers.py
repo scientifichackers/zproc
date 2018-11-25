@@ -3,20 +3,11 @@ import time
 
 import zproc
 
-TIMEOUT = 0.5
+MAX_ITER = 100
 SLOW = False
 
 ctx = zproc.Context()
-ctx.state["foobar"] = 0
-
-
-def wait_and_stop():
-    try:
-        test_process.wait(TIMEOUT)
-    except TimeoutError:
-        test_process.stop()
-    print("\n" * 5, "-" * 10, "\n" * 5)
-    time.sleep(1)
+state = ctx.create_state({"foobar": 0})
 
 
 @zproc.atomic
@@ -24,8 +15,9 @@ def inc(snap):
     snap["foobar"] += 1
 
 
-@ctx._process
-def generator(state):
+@ctx.spawn
+def generator(ctx):
+    state = ctx.create_state()
     while True:
         inc(state)
         if SLOW:
@@ -35,46 +27,33 @@ def generator(state):
 print("LIVE:")
 
 
-@ctx._process
-def test_process(state):
-    while True:
-        print(state.get_when_change("foobar", live=True), end=",", flush=True)
+@ctx.spawn
+def test_process(ctx):
+    state = ctx.create_state()
+
+    for snap in state.get_when_change("foobar", live=True, count=MAX_ITER):
+        print(snap, end=",", flush=True)
+
         if SLOW:
             time.sleep(random.random())
+    print()
 
 
-wait_and_stop()
+test_process.wait()
 print("BUFFERED:")
 
 
-@ctx._process
-def test_process(state):
-    while True:
-        print(state.get_when_change("foobar", live=False), end=",", flush=True)
+@ctx.spawn
+def test_process(ctx):
+    state = ctx.create_state()
+
+    for snap in state.get_when_change("foobar", live=False, count=MAX_ITER):
+        print(snap, end=",", flush=True)
+
         if SLOW:
             time.sleep(random.random())
 
-
-wait_and_stop()
-print("LIVE:")
+    print()
 
 
-@ctx.call_when_change("foobar", pass_state=False, live=True)
-def test_process(foobar):
-    print(foobar, end=",", flush=True)
-    if SLOW:
-        time.sleep(random.random())
-
-
-wait_and_stop()
-print("BUFFERED:")
-
-
-@ctx.call_when_change("foobar", live=False, pass_state=False)
-def test_process(foobar):
-    print(foobar, end=",", flush=True)
-    if SLOW:
-        time.sleep(random.random())
-
-
-wait_and_stop()
+test_process.wait()

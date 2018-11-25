@@ -4,7 +4,7 @@ from typing import List, Mapping, Sequence, Any, Callable, Union
 import zmq
 
 from zproc import util, serializer
-from zproc.consts import DEFAULT_NAMESPACE, CLOSE_WORKER_MSG
+from zproc.consts import DEFAULT_NAMESPACE, EMPTY_MULTIPART
 from zproc.server.tools import ping
 from .result import IterableTaskResult, TaskResult
 from .worker import worker_process
@@ -58,7 +58,7 @@ class Swarm:
         elif value < 0:
             # Notify remaining workers to finish up, and close shop.
             for _ in range(-value):
-                self._proxy_in.send_multipart(CLOSE_WORKER_MSG)
+                self._proxy_in.send_multipart(EMPTY_MULTIPART)
 
     def start(self, count: int = None):
         if count is None:

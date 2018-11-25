@@ -5,21 +5,12 @@
 **Behold, the power of ZProc:**
 
 ```python
-
-# Some initialization
 import zproc
 
-
-ctx = zproc.Context(wait=True)  # wait for processes in this context
-ctx.state["cookies"] = 0
-
-
-# Define "atomic" operations
 
 @zproc.atomic
 def eat_cookie(snap):
     """Eat a cookie."""
-    
     snap["cookies"] -= 1
     print("nom nom nom")
 
@@ -27,27 +18,36 @@ def eat_cookie(snap):
 @zproc.atomic
 def bake_cookie(snap):
     """Bake a cookie."""
-    
     snap["cookies"] += 1
     print("Here's a cookie!")
 
 
-# Fire up processes
+ctx = zproc.Context(wait=True)
+state = ctx.create_state()
+state["cookies"] = 0
 
-@ctx.call_when_change('cookies')
-def cookie_eater(_, state):
+
+@ctx.spawn
+def cookie_eater(ctx):
     """Eat cookies as they're baked."""
-    
-    eat_cookie(state)
+    state = ctx.create_state()
+    state["ready"] = True
 
+    for _ in state.get_when_change("cookies"):
+        eat_cookie(state)
+
+
+next(state.get_when_available("ready"))
+print(cookie_eater)
 
 for _ in range(5):
-    bake_cookie(ctx.state)
+    bake_cookie(state)
 ```
 
 **Result:**
 
 ```
+Process - pid: 10815 target: '__main__.cookie_eater' ppid: 10802 is_alive: True exitcode: None
 Here's a cookie!
 Here's a cookie!
 nom nom nom
@@ -106,44 +106,52 @@ Python 3.5+
 
 ## Features
 
-- 🌠 &nbsp; Process management
-
-    -   [Process Factory](https://zproc.readthedocs.io/en/latest/api.html#zproc.Context.spawn)
-    -   Remembers to kill processes when exiting, for general peace.
-        (even when they're nested)
-    -   Keeps a record of processes created using ZProc.
-    -   [🔖](https://zproc.readthedocs.io/en/latest/api.html#context)
-
-- 🌠 &nbsp; Worker and Process Maps
-    
+- 🌠 &nbsp; Process management   
+    - Remembers to cleanup processes when exiting, for general peace. (even when they're nested)
+    - Keeps a record of processes created using ZProc.
+    - [🔖](https://zproc.readthedocs.io/en/latest/api.html#context)
+       
+    ```
+    [ZProc] Cleaning up 'python' (13652)...
+    ```
+       
+- 🌠 &nbsp; Worker/Process Maps   
     - Automatically manages worker processes, and delegates tasks to them.
-    -   [🔖](https://zproc.readthedocs.io/en/latest/api.html#context)    
+    - [🔖](https://zproc.readthedocs.io/en/latest/api.html#context)    
 
-- 🌠 &nbsp; Asynchronous paradigms without `async def`
+- 🌠 &nbsp; [Communicating sequential processes](https://en.wikipedia.org/wiki/Communicating_sequential_processes), at the core.
+    - No need for manual message passing.     
+    - _Watch_ for changes in state, without [busy waiting](https://en.wikipedia.org/wiki/Busy_waiting).
+    - [🔖](https://zproc.readthedocs.io/en/latest/api.html#state).
 
-    -   Build a combination of synchronous and asynchronous systems, with ease.
-    -   By _watching_ for changes in state, without
-        [Busy Waiting](https://en.wikipedia.org/wiki/Busy_waiting).
-    -   [🔖](https://zproc.readthedocs.io/en/latest/api.html#state)
+- Deterministic state updates. 
+    - Ships with a event messaging system that doesn't rely on flaky PUB/SUB.
+    - Go back in time, with a `TimeMachine`!. 
+    
+- Distributed, by default.
+    - Scalable to multiple computers, with minimal refactoring.    
     
 - 🌠 &nbsp; Atomic Operations
-    -   Perform an arbitrary number of operations on state as a single,
-        atomic operation.
-    -   [🔖](https://zproc.readthedocs.io/en/latest/user/atomicity.html)
+    - Perform an arbitrary number of operations on state as a single, atomic operation.
+    - [🔖](https://zproc.readthedocs.io/en/latest/user/atomicity.html)
 
-- 🌠 Detailed, humane error logging for proceeses.
+- 🌠 Detailed, humane error logging for Proceeses.
       
-   ```
-   Crash report:
-     For <Process pid: None target: '__main__.pow' ppid: 28395 is_alive: False exitcode: None>
-   
-     Traceback (most recent call last):
-       File "/home/dev/Projects/zproc/zproc/process_store.py", line 58, in main
-         **self.target_kwargs
-       File "/home/dev/Projects/zproc/zproc/process_store.py", line 85, in wrapper
-         return target(*args, **kwargs)
-     TypeError: pow() takes 2 positional arguments but 3 were given      
-   ```
+    ```
+    [ZProc] Crash report:
+      target: '__main__.p1'
+      pid: 8959
+      ppid: 8944
+    
+      Traceback (most recent call last):
+        File "/home/dev/Projects/zproc/zproc/child.py", line 88, in main
+          **self.target_kwargs
+        File "/home/dev/Projects/zproc/zproc/child.py", line 65, in target_wrapper
+          return self.target(*args, **kwargs)
+        File "test.py", line 12, in p1
+          raise ValueError
+      ValueError 
+    ```
 
 
 ## Caveats
@@ -164,11 +172,10 @@ Python 3.5+
 
     -   Above all, ZProc is written for safety and the ease of use.
     -   However, since its written using ZMQ, it's plenty fast for most stuff.
-    -   Run -> [🔖](eamples/async_vs_zproc.py) for a taste.
-
+    
 -   Stable?
 
-    -   Mostly. However, since it's still in the alpha stage, you can expect some API changes. 
+    -   Mostly. However, since it's still in its development stage, you should expect some API changes. 
 
 -   Production ready?
 

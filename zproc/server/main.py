@@ -37,6 +37,7 @@ def main(server_address: str, send_conn: Connection):
                 *start_task_server(_bind),
                 *start_task_proxy(_bind)
             )
+
             state_server = StateServer(state_router, watch_router, server_meta)
         except Exception:
             with send_conn:
@@ -53,9 +54,9 @@ def main(server_address: str, send_conn: Connection):
                 util.log_internal_crash("State Server")
                 return
             except Exception:
-                try:
-                    state_server.reply(RemoteException())
-                except TypeError:  # when active_ident is None
+                if state_server.identity is None:
                     util.log_internal_crash("State server")
+                else:
+                    state_server.reply(RemoteException())
             finally:
-                state_server.reset_state()
+                state_server.reset_internal_state()

@@ -1,20 +1,33 @@
+import itertools
+import math
 import os
-from contextlib import contextmanager
+import struct
+import time
+from collections import deque
 from functools import wraps
 from pprint import pformat
 from textwrap import indent
-from typing import Hashable, Any, Callable, Tuple, Generator, Dict
+from typing import Hashable, Any, Callable, Dict, List, Optional, Iterator, Deque
 
 import zmq
 
 from zproc import util, serializer
-from zproc.consts import Msgs, Commands, ZMQ_IDENTITY_LENGTH, DEFAULT_NAMESPACE
+from zproc.consts import (
+    Msgs,
+    Cmds,
+    DEFAULT_NAMESPACE,
+    DEFAULT_ZMQ_RECVTIMEO,
+    StateUpdate,
+    ZMQ_IDENTITY_LENGTH,
+    ServerMeta,
+)
 from zproc.server import tools
 from zproc.state import _type
-from zproc.state.watcher import Watcher
 
 
 class State(_type.StateDictMethodStub, metaclass=_type.StateType):
+    _server_meta: ServerMeta
+
     def __init__(
         self, server_address: str, *, namespace: str = DEFAULT_NAMESPACE
     ) -> None:
@@ -43,21 +56,13 @@ class State(_type.StateDictMethodStub, metaclass=_type.StateType):
 
             If you are using a :py:class:`Context`, then this is automatically provided.
         """
-        #: Passed on from constructor.
+        #: Passed on from constructor. This is read-only
         self.server_address = server_address
         self.namespace = namespace
 
         self._zmq_ctx = util.create_zmq_ctx()
-        self._dealer = self._create_dealer()
-        self._server_meta = util.get_server_meta(self._zmq_ctx, server_address)
-        self._watcher = Watcher(self._server_meta.watch_router)
-
-    def _create_dealer(self) -> zmq.Socket:
-        sock = self._zmq_ctx.socket(zmq.DEALER)
-        self._ident = os.urandom(ZMQ_IDENTITY_LENGTH)
-        sock.setsockopt(zmq.IDENTITY, self._ident)
-        sock.connect(self.server_address)
-        return sock
+        self._s_dealer = self._create_state_dealer()
+        self._w_dealer = self._create_watcher_dealer()
 
     def __str__(self):
         return "\n".join(
@@ -99,7 +104,6 @@ class State(_type.StateDictMethodStub, metaclass=_type.StateType):
         return self.__class__(server_address, namespace=namespace)
 
     _namespace_bytes: bytes
-    _namespace_length: int
 
     @property
     def namespace(self) -> str:
@@ -127,21 +131,23 @@ class State(_type.StateDictMethodStub, metaclass=_type.StateType):
         assert len(namespace) > 0, "'namespace' cannot be empty!"
 
         self._namespace_bytes = namespace.encode()
-        self._namespace_length = len(self._namespace_bytes)
 
-    def _req_rep(self, req: Dict[int, Any]):
-        req[Msgs.namespace] = self._namespace_bytes
-        msg = serializer.dumps(req)
+    #
+    # state access
+    #
 
-        try:
-            self._dealer.send(msg)
-            msg = self._dealer.recv()
-        except Exception:
-            self._dealer.close()
-            self._dealer = self._create_dealer()
-            raise
+    def _create_state_dealer(self) -> zmq.Socket:
+        sock = self._zmq_ctx.socket(zmq.DEALER)
+        self._identity = os.urandom(ZMQ_IDENTITY_LENGTH)
+        sock.setsockopt(zmq.IDENTITY, self._identity)
+        sock.connect(self.server_address)
+        self._server_meta = util.req_server_meta(sock)
+        return sock
 
-        return serializer.loads(msg)
+    def _request_reply(self, request: Dict[int, Any]):
+        request[Msgs.namespace] = self._namespace_bytes
+        self._s_dealer.send(serializer.dumps(request))
+        return serializer.loads(self._s_dealer.recv())
 
     def set(self, value: dict):
         """
@@ -155,7 +161,7 @@ class State(_type.StateDictMethodStub, metaclass=_type.StateType):
 
             Use the :py:func:`atomic` deocrator if you're feeling anxious.
         """
-        self._req_rep({Msgs.cmd: Commands.set_state, Msgs.info: value})
+        self._request_reply({Msgs.cmd: Cmds.set_state, Msgs.info: value})
 
     def copy(self) -> dict:
         """
@@ -163,7 +169,7 @@ class State(_type.StateDictMethodStub, metaclass=_type.StateType):
 
         (Unlike the shallow-copy returned by the inbuilt :py:meth:`dict.copy`).
         """
-        return self._req_rep({Msgs.cmd: Commands.get_state})
+        return self._request_reply({Msgs.cmd: Cmds.get_state})
 
     def keys(self):
         return self.copy().keys()
@@ -174,71 +180,144 @@ class State(_type.StateDictMethodStub, metaclass=_type.StateType):
     def items(self):
         return self.copy().items()
 
-    def go_live(self):
+    def ping(self, **kwargs):
         """
-        Clear the outstanding queue (or buffer), thus clearing any past events that were stored.
+        Ping the zproc server corresponding to this State's Context
 
-        Internally, this re-opens a socket, which in-turn clears the queue.
-
-        Please read :ref:`live-events` for a detailed explanation.
+        :param kwargs: Keyword arguments that :py:func:`ping` takes, except ``server_address``.
+        :return: Same as :py:func:`ping`
         """
-        self._watcher.go_live()
+        return tools.ping(self.server_address, **kwargs)
 
-    @contextmanager
+    #
+    # state watcher
+    #
+
+    def _create_watcher_dealer(self) -> zmq.Socket:
+        sock = self._zmq_ctx.socket(zmq.DEALER)
+        sock.connect(self._server_meta.watcher_router)
+        return sock
+
+    def _watcher_request_reply(
+        self, request: List[bytes], only_after: float
+    ) -> List[bytes]:
+        request[-1] = struct.pack("d", only_after)
+        self._w_dealer.send_multipart(request)
+        return self._w_dealer.recv_multipart()
+
     def get_raw_update(
         self,
         *,
         live: bool = False,
         timeout: float = None,
         identical_okay: bool = False,
-        circular_okay: bool = False
-    ) -> Generator[Tuple[dict, dict, bool], None, None]:
+        start_time: bool = None,
+        count: int = None,
+    ) -> Iterator[StateUpdate]:
         """
         A low-level hook that emits each and every state update.
         All other state watchers are built upon this only.
 
         .. include:: /api/state/get_raw_update.rst
         """
-        self._watcher.live = live
-        self._watcher.timeout = timeout
-        return self._watcher.main(
-            live,
-            timeout,
-            identical_okay,
-            circular_okay,
-            self._ident,
+        if timeout is None:
+            time_limit = None
+            self._w_dealer.setsockopt(zmq.RCVTIMEO, DEFAULT_ZMQ_RECVTIMEO)
+        else:
+            time_limit = time.time() + timeout
+
+        only_after = start_time
+        if only_after is None:
+            only_after = self._request_reply({Msgs.cmd: Cmds.time})
+
+        if count is None:
+            count = itertools.count()
+        else:
+            count = range(count)
+
+        request_msg = [
+            self._identity,
             self._namespace_bytes,
-        )
+            bytes(identical_okay),
+            None,
+        ]
+
+        def _(only_after):
+            for _ in count:
+                if time_limit is not None:
+                    self._w_dealer.setsockopt(
+                        zmq.RCVTIMEO, int((time_limit - time.time()) * 1000)
+                    )
+                if live:
+                    only_after = time.time()
+
+                try:
+                    response = self._watcher_request_reply(request_msg, only_after)
+                except zmq.error.Again:
+                    raise TimeoutError("Timed-out while waiting for a state update.")
+
+                state_update = StateUpdate(
+                    *serializer.loads(response[0]), bool(response[1])
+                )
+                if not live:
+                    only_after = state_update.timestamp
+
+                yield state_update
+
+        return _(only_after)
 
     def get_when_change(
         self, *keys: Hashable, exclude: bool = False, **watcher_kwargs
-    ) -> dict:
+    ) -> Iterator[dict]:
         """
         Block until a change is observed, and then return a copy of the state.
 
         .. include:: /api/state/get_when_change.rst
         """
-        if len(keys):
-            keys = set(keys)
+        count = watcher_kwargs.pop("count", None)
+        it = self.get_raw_update(**watcher_kwargs)
 
-            def select_keys():
+        if not keys:
+            if count is None:
+                return (i.after for i in it)
+            else:
+                return (next(it).after for _ in range(count))
+
+        keys = set(keys)
+        identical_okay = watcher_kwargs.get("identical_okay", False)
+        if identical_okay:
+            raise ValueError(
+                "Passing both `identical_okay` and `keys` is not possible. "
+                "(Hint: Omit `keys`)"
+            )
+
+        if not count:
+            count = math.inf
+
+        def _():
+            def select():
                 selected = {*before.keys(), *after.keys()}
                 if exclude:
                     return selected - keys
                 else:
                     return selected & keys
 
-            for before, after, _, _ in self.get_raw_update(**watcher_kwargs):
+            i = 0
+            while i < count:
+                update = next(it)
+                before, after = update.before, update.after
                 try:
-                    if any(before[key] != after[key] for key in select_keys()):
-                        return after
-                except KeyError:  # this indirectly implies that something changed
-                    return after
-        else:
-            for update in self.get_raw_update(**watcher_kwargs):
-                yield update[1]
+                    if not any(before[key] != after[key] for key in select()):
+                        continue
+                except KeyError:  # this indirectly implies that something has changed
+                    pass
 
-    def get_when(self, test_fn, **watcher_kwargs) -> dict:
+                i += 1
+                yield update.after
+
+        return _()
+
+    def get_when(self, test_fn, **watcher_kwargs) -> Iterator[dict]:
         """
         Block until ``test_fn(snap)`` returns a "truthy" value,
         and then return a copy of the state.
@@ -251,17 +330,24 @@ class State(_type.StateDictMethodStub, metaclass=_type.StateType):
         """
         snap = self.copy()
         if test_fn(snap):
-            return snap
+            return iter([snap])
 
-        with self.get_raw_update(
-            live=live, timeout=timeout, identical_okay=identical_okay
-        ) as get:
-            while True:
-                snap = get()[1]
+        count = watcher_kwargs.pop("count", math.inf)
+        it = self.get_raw_update(**watcher_kwargs)
+
+        def _():
+            i = 0
+            while i < count:
+                snap = next(it).after
                 if test_fn(snap):
-                    return snap
+                    i += 1
+                    yield snap
 
-    def get_when_equal(self, key: Hashable, value: Any, **watcher_kwargs) -> dict:
+        return _()
+
+    def get_when_equal(
+        self, key: Hashable, value: Any, **watcher_kwargs
+    ) -> Iterator[dict]:
         """
         Block until ``state[key] == value``, and then return a copy of the state.
 
@@ -274,11 +360,11 @@ class State(_type.StateDictMethodStub, metaclass=_type.StateType):
             except KeyError:
                 return False
 
-        return self.get_when(
-            _, live=live, timeout=timeout, identical_okay=identical_okay
-        )
+        return self.get_when(_, **watcher_kwargs)
 
-    def get_when_not_equal(self, key: Hashable, value: Any, **watcher_kwargs) -> dict:
+    def get_when_not_equal(
+        self, key: Hashable, value: Any, **watcher_kwargs
+    ) -> Iterator[dict]:
         """
         Block until ``state[key] != value``, and then return a copy of the state.
 
@@ -291,11 +377,9 @@ class State(_type.StateDictMethodStub, metaclass=_type.StateType):
             except KeyError:
                 return False
 
-        return self.get_when(
-            _, live=live, timeout=timeout, identical_okay=identical_okay
-        )
+        return self.get_when(_, **watcher_kwargs)
 
-    def get_when_none(self, key: Hashable, **watcher_kwargs) -> dict:
+    def get_when_none(self, key: Hashable, **watcher_kwargs) -> Iterator[dict]:
         """
         Block until ``state[key] is None``, and then return a copy of the state.
 
@@ -308,11 +392,9 @@ class State(_type.StateDictMethodStub, metaclass=_type.StateType):
             except KeyError:
                 return False
 
-        return self.get_when(
-            _, live=live, timeout=timeout, identical_okay=identical_okay
-        )
+        return self.get_when(_, **watcher_kwargs)
 
-    def get_when_not_none(self, key: Hashable, **watcher_kwargs) -> dict:
+    def get_when_not_none(self, key: Hashable, **watcher_kwargs) -> Iterator[dict]:
         """
         Block until ``state[key] is not None``, and then return a copy of the state.
 
@@ -325,9 +407,7 @@ class State(_type.StateDictMethodStub, metaclass=_type.StateType):
             except KeyError:
                 return False
 
-        return self.get_when(
-            _, live=live, timeout=timeout, identical_okay=identical_okay
-        )
+        return self.get_when(_, **watcher_kwargs)
 
     def get_when_available(self, key: Hashable, **watcher_kwargs):
         """
@@ -335,26 +415,11 @@ class State(_type.StateDictMethodStub, metaclass=_type.StateType):
 
         .. include:: /api/state/get_when_equality.rst
         """
-        return self.get_when(
-            lambda snap: key in snap,
-            live=live,
-            timeout=timeout,
-            identical_okay=identical_okay,
-        )
-
-    def ping(self, **kwargs):
-        """
-        Ping the zproc server corresponding to this State's Context
-
-        :param kwargs: Keyword arguments that :py:func:`ping` takes, except ``server_address``.
-        :return: Same as :py:func:`ping`
-        """
-        return tools.ping(self.server_address, **kwargs)
+        return self.get_when(lambda snap: key in snap, **watcher_kwargs)
 
     def __del__(self):
         try:
-            self._dealer.close()
-            self._subscriber.close()
+            self._s_dealer.close()
             util.close_zmq_ctx(self._zmq_ctx)
         except Exception:
             pass
@@ -375,6 +440,7 @@ def atomic(fn: Callable) -> Callable:
         - The first argument to the wrapped function *must* be a :py:class:`State` object.
         - The wrapped ``fn`` receives a frozen version (snap) of state,
           which is a ``dict`` object, not a :py:class:`State` object.
+        - It is not possible to call one atomic function from other.
 
     Please read :ref:`atomicity` for a detailed explanation.
 
@@ -404,9 +470,9 @@ def atomic(fn: Callable) -> Callable:
 
     @wraps(fn)
     def wrapper(state: State, *args, **kwargs):
-        return state._req_rep(
+        return state._request_reply(
             {
-                Msgs.cmd: Commands.run_fn_atomically,
+                Msgs.cmd: Cmds.run_fn_atomically,
                 Msgs.info: serialized,
                 Msgs.args: args,
                 Msgs.kwargs: kwargs,

@@ -1,4 +1,4 @@
-from zproc.consts import Msgs, Commands
+from zproc.consts import Msgs, Cmds
 
 STATE_DICT_METHODS = {
     "__contains__",
@@ -28,9 +28,9 @@ def _create_remote_dict_method(dict_method_name: str):
     """
 
     def remote_method(self, *args, **kwargs):
-        return self._req_rep(
+        return self._request_reply(
             {
-                Msgs.cmd: Commands.run_dict_method,
+                Msgs.cmd: Cmds.run_dict_method,
                 Msgs.info: dict_method_name,
                 Msgs.args: args,
                 Msgs.kwargs: kwargs,

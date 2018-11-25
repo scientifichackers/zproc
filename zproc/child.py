@@ -3,12 +3,10 @@ import textwrap
 import time
 import traceback
 from functools import wraps
-from typing import Callable
 
 import zmq
 
 from zproc import exceptions, util, serializer
-from zproc.state.state import State
 
 
 class ChildProcess:
@@ -19,7 +17,6 @@ class ChildProcess:
         self.kwargs = kwargs
 
         self.pass_context = self.kwargs["pass_context"]
-        self.pass_state = self.kwargs["pass_state"]
         self.max_retries = self.kwargs["max_retries"]
         self.retry_delay = self.kwargs["retry_delay"]
         self.retry_args = self.kwargs["retry_args"]
@@ -60,48 +57,12 @@ class ChildProcess:
             time.sleep(self.retry_delay)
 
     def main(self):
-        try:
-            target_runner = self.wrap_target(self.target)
-            if self.pass_context:
-                from .context import Context  # this helps avoid a circular import
-
-                return_value = target_runner(
-                    Context(
-                        self.kwargs["server_address"],
-                        namespace=self.kwargs["namespace"],
-                        start_server=False,
-                    ),
-                    *self.target_args,
-                    **self.target_kwargs
-                )
-            elif self.pass_state:
-                return_value = target_runner(
-                    State(
-                        self.kwargs["server_address"],
-                        namespace=self.kwargs["namespace"],
-                    ),
-                    *self.target_args,
-                    **self.target_kwargs
-                )
-            else:
-                return_value = target_runner(*self.target_args, **self.target_kwargs)
-            # print(return_value)
-            with util.create_zmq_ctx(linger=True) as zmq_ctx:
-                with zmq_ctx.socket(zmq.PAIR) as result_sock:
-                    result_sock.connect(self.kwargs["result_address"])
-                    result_sock.send(serializer.dumps(return_value))
-        except Exception as e:
-            self._handle_exc(e)
-        finally:
-            util.clean_process_tree(self.exitcode)
-
-    def wrap_target(self, target: Callable) -> Callable:
-        @wraps(target)
-        def wrapper(*args, **kwargs):
+        @wraps(self.target)
+        def target_wrapper(*args, **kwargs):
             while True:
                 self.retries += 1
                 try:
-                    return target(*args, **kwargs)
+                    return self.target(*args, **kwargs)
                 except exceptions.ProcessExit as e:
                     self.exitcode = e.exitcode
                     return None
@@ -113,4 +74,27 @@ class ChildProcess:
                     if self.retry_kwargs is not None:
                         self.target_kwargs = self.retry_kwargs
 
-        return wrapper
+        try:
+            if self.pass_context:
+                from .context import Context  # this helps avoid a circular import
+
+                return_value = target_wrapper(
+                    Context(
+                        self.kwargs["server_address"],
+                        namespace=self.kwargs["namespace"],
+                        start_server=False,
+                    ),
+                    *self.target_args,
+                    **self.target_kwargs
+                )
+            else:
+                return_value = target_wrapper(*self.target_args, **self.target_kwargs)
+            # print(return_value)
+            with util.create_zmq_ctx(linger=True) as zmq_ctx:
+                with zmq_ctx.socket(zmq.PAIR) as result_sock:
+                    result_sock.connect(self.kwargs["result_address"])
+                    result_sock.send(serializer.dumps(return_value))
+        except Exception as e:
+            self._handle_exc(e)
+        finally:
+            util.clean_process_tree(self.exitcode)

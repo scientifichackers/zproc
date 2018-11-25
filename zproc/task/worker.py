@@ -5,7 +5,7 @@ from typing import Union, Callable
 import zmq
 
 from zproc import util, serializer
-from zproc.consts import CLOSE_WORKER_MSG
+from zproc.consts import EMPTY_MULTIPART
 from zproc.exceptions import RemoteException
 from zproc.state.state import State
 from .map_plus import map_plus
@@ -44,7 +44,7 @@ def worker_process(server_address: str, send_conn: Connection):
         try:
             while True:
                 msg = proxy_out.recv_multipart()
-                if msg == CLOSE_WORKER_MSG:
+                if msg == EMPTY_MULTIPART:
                     return
                 chunk_id, target_bytes, task_bytes = msg
 

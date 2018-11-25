@@ -3,8 +3,11 @@ import pathlib
 import signal
 import struct
 import threading
+import time
 import uuid
+from collections import deque
 from contextlib import suppress, contextmanager, ExitStack
+from itertools import islice
 from textwrap import indent
 from traceback import format_exc
 from typing import Union, Iterable, Generator, Callable, Tuple, Sequence, Optional, Type
@@ -17,7 +20,7 @@ from zproc import serializer
 from zproc.__version__ import __version__
 from zproc.consts import (
     Msgs,
-    Commands,
+    Cmds,
     ServerMeta,
     DEFAULT_NAMESPACE,
     TASK_NONCE_LENGTH,
@@ -38,7 +41,7 @@ def get_server_meta(zmq_ctx: zmq.Context, server_address: str) -> ServerMeta:
 
 
 _server_meta_req_cache = serializer.dumps(
-    {Msgs.cmd: Commands.get_server_meta, Msgs.namespace: DEFAULT_NAMESPACE}
+    {Msgs.cmd: Cmds.get_server_meta, Msgs.namespace: DEFAULT_NAMESPACE}
 )
 
 
@@ -55,7 +58,7 @@ def req_server_meta(dealer: zmq.Socket) -> ServerMeta:
 
 
 def to_catchable_exc(
-    retry_for: Iterable[Union[signal.Signals, Type[BaseException]]]
+        retry_for: Iterable[Union[signal.Signals, Type[BaseException]]]
 ) -> Generator[Type[BaseException], None, None]:
     if retry_for is not None:
         yield exceptions.SignalException  # catches all signals converted using `signal_to_exception()`
@@ -127,7 +130,7 @@ def make_chunks(seq: Optional[Sequence], length: int, num_chunks: int):
     if seq is None:
         return [None] * num_chunks
     else:
-        return [seq[i * length : (i + 1) * length] for i in range(num_chunks)]
+        return [seq[i * length: (i + 1) * length] for i in range(num_chunks)]
 
 
 def is_main_thread() -> bool:
@@ -187,3 +190,25 @@ def socket_factory(*sock_types):
         ctx = stack.enter_context(zmq.Context())
         sockets = (stack.enter_context(ctx.socket(i)) for i in sock_types)
         yield [ctx, *sockets]
+
+
+@contextmanager
+def counter():
+    s = time.perf_counter()
+    e = time.perf_counter()
+    fr = e - s
+    s = time.perf_counter()
+    yield
+    e = time.perf_counter()
+    print((e - s),  (e - s) / fr)
+
+
+def consume(iterator, n=None):
+    """Advance the iterator n-steps ahead. If n is None, consume entirely."""
+    # Use functions that consume iterators at C speed.
+    if n is None:
+        # feed the entire iterator into a zero-length deque
+        deque(iterator, maxlen=0)
+    else:
+        # advance to the empty slice starting at position n
+        next(islice(iterator, n, n), None)

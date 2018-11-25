@@ -2,7 +2,7 @@ import signal
 import struct
 from typing import NamedTuple
 
-TASK_NONCE_LENGTH = ZMQ_IDENTITY_LENGTH = 8
+TASK_NONCE_LENGTH = ZMQ_IDENTITY_LENGTH = 5
 
 TASK_INFO_FMT = ">III"
 TASK_ID_LENGTH = TASK_NONCE_LENGTH + struct.calcsize(TASK_INFO_FMT)
@@ -15,7 +15,7 @@ DEFAULT_NAMESPACE = "default"
 
 ALL_SIGNALS = set(signal.Signals) - {signal.SIGKILL, signal.SIGSTOP}
 
-CLOSE_WORKER_MSG = [b""]
+EMPTY_MULTIPART = [b""]
 
 
 class Msgs:
@@ -26,7 +26,7 @@ class Msgs:
     kwargs = 4
 
 
-class Commands:
+class Cmds:
     ping = 0
     get_server_meta = 1
 
@@ -36,14 +36,14 @@ class Commands:
     run_fn_atomically = 4
     run_dict_method = 5
 
-    watch = 6
+    time = 6
 
 
 class ServerMeta(NamedTuple):
     version: str
 
     server_address: str
-    watch_router: str
+    watcher_router: str
 
     task_router: str
     task_result_pull: str
@@ -53,16 +53,8 @@ class ServerMeta(NamedTuple):
     task_proxy_out: str
 
 
-# ServerMeta = NamedTuple(
-#     "ServerMeta",
-#     [
-#         ("version", str),
-#         ("state_router", str),
-#         ("state_pub", str),
-#         ("task_router", str),
-#         ("task_result_pull", str),
-#         ("task_pub_ready", str),
-#         ("task_proxy_in", str),
-#         ("task_proxy_out", str),
-#     ],
-# )
+class StateUpdate(NamedTuple):
+    before: dict
+    after: dict
+    timestamp: float
+    is_identical: bool

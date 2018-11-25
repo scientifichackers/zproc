@@ -8,11 +8,11 @@ TOLERANCE = 0.1
 
 @pytest.fixture
 def ctx():
-    return zproc.Context(pass_state=False)
+    return zproc.Context(pass_context=False)
 
 
 def test_timeout_accuracy(ctx):
-    @ctx._process
+    @ctx.spawn
     def test():
         time.sleep(0.5)
 
@@ -29,11 +29,11 @@ def test_timeout_accuracy(ctx):
 
 
 def test_timeout_accuracy_parallel(ctx):
-    @ctx._process
+    @ctx.spawn
     def test1():
         time.sleep(0.5)
 
-    @ctx._process
+    @ctx.spawn
     def test2():
         time.sleep(1)
 
@@ -50,7 +50,7 @@ def test_timeout_accuracy_parallel(ctx):
 
 
 def test_timeout1(ctx):
-    @ctx._process
+    @ctx.spawn
     def test():
         time.sleep(0.5)
 
@@ -59,7 +59,7 @@ def test_timeout1(ctx):
 
 
 def test_timeout2(ctx):
-    @ctx._process
+    @ctx.spawn
     def test():
         time.sleep(0.5)
 
@@ -68,11 +68,11 @@ def test_timeout2(ctx):
 
 
 def test_wait_timeout(ctx):
-    @ctx._process
+    @ctx.spawn
     def test1():
         time.sleep(0.5)
 
-    @ctx._process
+    @ctx.spawn
     def test2():
         time.sleep(1)
 
@@ -82,11 +82,11 @@ def test_wait_timeout(ctx):
 
 
 def test_wait_timeout_dumb(ctx):
-    @ctx._process
+    @ctx.spawn
     def test1():
         time.sleep(0.5)
 
-    @ctx._process
+    @ctx.spawn
     def test2():
         time.sleep(1)
 
@@ -96,7 +96,7 @@ def test_wait_timeout_dumb(ctx):
 
 
 def test_wait_error(ctx):
-    @ctx._process
+    @ctx.spawn
     def test():
         raise ValueError
 
@@ -108,7 +108,7 @@ def test_wait_error(ctx):
 
 
 def test_exit(ctx):
-    @ctx._process
+    @ctx.spawn
     def test():
         raise zproc.ProcessExit(1)
 
