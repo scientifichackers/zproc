@@ -6,7 +6,7 @@ import zmq
 from zproc import util, serializer
 from zproc.consts import DEFAULT_NAMESPACE, EMPTY_MULTIPART
 from zproc.server.tools import ping
-from .result import IterableTaskResult, TaskResult
+from .result import SequenceTaskResult, SimpleTaskResult
 from .worker import worker_process
 
 
@@ -21,8 +21,8 @@ class Swarm:
 
         self._zmq_ctx = util.create_zmq_ctx()
         self._server_meta = util.get_server_meta(self._zmq_ctx, server_address)
-        self._proxy_in = self._zmq_ctx.socket(zmq.PUSH)
-        self._proxy_in.connect(self._server_meta.task_proxy_in)
+        self._task_push = self._zmq_ctx.socket(zmq.PUSH)
+        self._task_push.connect(self._server_meta.task_proxy_in)
 
     def ping(self, **kwargs):
         return ping(self.server_address, **kwargs)
@@ -58,7 +58,7 @@ class Swarm:
         elif value < 0:
             # Notify remaining workers to finish up, and close shop.
             for _ in range(-value):
-                self._proxy_in.send_multipart(EMPTY_MULTIPART)
+                self._task_push.send_multipart(EMPTY_MULTIPART)
 
     def start(self, count: int = None):
         if count is None:
@@ -80,7 +80,7 @@ class Swarm:
         kwargs: Mapping = None,
         *,
         pass_state: bool = False,
-        lazy: bool = False
+        lazy: bool = False,
     ):
         if target is None:
 
@@ -97,16 +97,16 @@ class Swarm:
         params = (None, None, args, None, kwargs)
         task = (target, params, pass_state, self.namespace)
 
-        self._proxy_in.send_multipart(
-            [util.get_chunk_id(task_id, -1), serializer.dumps(task)]
+        self._task_push.send_multipart(
+            [util.encode_chunk_id(task_id, -1), serializer.dumps(task)]
         )
 
-        res = TaskResult(self.server_address, task_id)
+        res = SimpleTaskResult(self.server_address, task_id)
         if lazy:
             return res
         return res.value
 
-    def map(
+    def map_lazy(
         self,
         target: Callable,
         map_iter: Sequence[Any] = None,
@@ -117,9 +117,8 @@ class Swarm:
         kwargs: Mapping = None,
         pass_state: bool = False,
         num_chunks: int = None,
-        lazy: bool = False
-    ) -> Union[list, IterableTaskResult]:
-        """
+    ) -> SequenceTaskResult:
+        r"""
         Functional equivalent of ``map()`` in-built function,
         but executed in a parallel fashion.
 
@@ -233,22 +232,22 @@ class Swarm:
             )
             task = (params, pass_state, self.namespace)
 
-            self._proxy_in.send_multipart(
+            self._task_push.send_multipart(
                 [
-                    util.get_chunk_id(task_id, index),
+                    util.encode_chunk_id(task_id, index),
                     target_bytes,
                     serializer.dumps(task),
                 ]
             )
 
-        res = IterableTaskResult(self.server_address, task_id)
-        if lazy:
-            return res
-        return res.as_list
+        return SequenceTaskResult(self.server_address, task_id)
+
+    def map(self, *args, **kwargs) -> list:
+        return self.map_lazy(*args, **kwargs).as_list
 
     def __del__(self):
         try:
-            self._proxy_in.close()
+            self._task_push.close()
             util.close_zmq_ctx(self._zmq_ctx)
         except Exception:
             pass

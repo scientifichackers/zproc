@@ -3,11 +3,10 @@ import math
 import os
 import struct
 import time
-from collections import deque
 from functools import wraps
 from pprint import pformat
 from textwrap import indent
-from typing import Hashable, Any, Callable, Dict, List, Optional, Iterator, Deque
+from typing import Hashable, Any, Callable, Dict, List, Iterator
 
 import zmq
 
@@ -222,7 +221,6 @@ class State(_type.StateDictMethodStub, metaclass=_type.StateType):
         """
         if timeout is None:
             time_limit = None
-            self._w_dealer.setsockopt(zmq.RCVTIMEO, DEFAULT_ZMQ_RECVTIMEO)
         else:
             time_limit = time.time() + timeout
 
@@ -244,10 +242,16 @@ class State(_type.StateDictMethodStub, metaclass=_type.StateType):
 
         def _(only_after):
             for _ in count:
-                if time_limit is not None:
+                if time_limit is None:
+                    self._w_dealer.setsockopt(zmq.RCVTIMEO, DEFAULT_ZMQ_RECVTIMEO)
+                else:
+                    if time_limit < time.time():
+                        raise TimeoutError("Timed-out while waiting for a state update.")
+
                     self._w_dealer.setsockopt(
                         zmq.RCVTIMEO, int((time_limit - time.time()) * 1000)
                     )
+
                 if live:
                     only_after = time.time()
 
@@ -420,6 +424,7 @@ class State(_type.StateDictMethodStub, metaclass=_type.StateType):
     def __del__(self):
         try:
             self._s_dealer.close()
+            self._w_dealer.close()
             util.close_zmq_ctx(self._zmq_ctx)
         except Exception:
             pass
@@ -460,9 +465,9 @@ def atomic(fn: Callable) -> Callable:
     ...
     >>>
     >>> ctx = zproc.Context()
-    >>> ctx.state['count'] = 0
+    >>> state = ctx.create_state({'count': 0})
     >>>
-    >>> increment(ctx.state)
+    >>> increment(state)
     1
     """
 

@@ -166,11 +166,11 @@ def deconstruct_task_id(task_id: bytes) -> Optional[tuple]:
     return struct.unpack(TASK_INFO_FMT, task_id[TASK_NONCE_LENGTH:])
 
 
-def get_chunk_id(task_id: bytes, index: int) -> bytes:
+def encode_chunk_id(task_id: bytes, index: int) -> bytes:
     return task_id + struct.pack(CHUNK_INFO_FMT, index)
 
 
-def deconstruct_chunk_id(chunk: bytes) -> Tuple[bytes, int]:
+def decode_chunk_id(chunk: bytes) -> Tuple[bytes, int]:
     return (
         chunk[:TASK_ID_LENGTH],
         struct.unpack(CHUNK_INFO_FMT, chunk[TASK_ID_LENGTH:])[0],

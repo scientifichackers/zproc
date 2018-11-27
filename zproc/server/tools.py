@@ -46,7 +46,7 @@ def start_server(
             )
         raise
 
-    return server_process, server_meta.server_address
+    return server_process, server_meta.state_router
 
 
 def ping(

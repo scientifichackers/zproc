@@ -1,5 +1,5 @@
 import multiprocessing
-from collections import defaultdict, Callable
+from collections import defaultdict, Callable, deque
 from multiprocessing.connection import Connection
 from typing import Any, Dict, List
 
@@ -10,11 +10,10 @@ from zproc.exceptions import RemoteException
 
 
 class TaskResultServer:
-    _active_identity: bytes = None
+    result_store: Dict[bytes, Dict[int, bytes]]
+    pending: Dict[bytes, deque]
 
-    def __init__(
-        self, router: zmq.Socket, result_pull: zmq.Socket, publisher: zmq.Socket
-    ):
+    def __init__(self, router: zmq.Socket, result_pull: zmq.Socket):
         """
         The task server serves the results acquired from the workers.
 
@@ -26,57 +25,59 @@ class TaskResultServer:
         """
         self.router = router
         self.result_pull = result_pull
-        self.publisher = publisher
 
-        self._task_store: Dict[bytes, Dict[int, Any]] = defaultdict(dict)
+        self.result_store = defaultdict(dict)
+        self.pending = defaultdict(deque)
 
     def recv_request(self):
         ident, chunk_id = self.router.recv_multipart()
-        rep = b""
         try:
-            task_id, index = util.deconstruct_chunk_id(chunk_id)
-            # print("request for chunk->", task_id, index)
+            task_id, index = util.decode_chunk_id(chunk_id)
+            # print("request->", task_id, index)
+            task_store = self.result_store[task_id]
             try:
-                rep = self._task_store[task_id][index]
+                chunk_result = task_store[index]
             except KeyError:
-                pass
+                self.pending[chunk_id].appendleft(ident)
+            else:
+                self.router.send_multipart([ident, chunk_result])
         except KeyboardInterrupt:
             raise
         except Exception:
-            rep = serializer.dumps(RemoteException())
-        self.router.send_multipart([ident, rep])
+            self.router.send_multipart([ident, serializer.dumps(RemoteException())])
 
-    def recv_task_result(self):
-        chunk_id, result = self.result_pull.recv_multipart()
-        task_id, index = util.deconstruct_chunk_id(chunk_id)
-        self._task_store[task_id][index] = result
-        # print("stored->", task_id, index, time.time())
-        self.publisher.send(chunk_id)
-        # time.sleep(0.01)
+    def resolve_pending(self, chunk_id: bytes, chunk_result: bytes):
+        pending = self.pending[chunk_id]
+        send = self.router.send_multipart
+        msg = [None, chunk_result]
+
+        while pending:
+            msg[0] = pending.pop()
+            send(msg)
+
+    def recv_chunk_result(self):
+        chunk_id, chunk_result = self.result_pull.recv_multipart()
+        task_id, index = util.decode_chunk_id(chunk_id)
+        self.result_store[task_id][index] = chunk_result
+        self.resolve_pending(chunk_id, chunk_result)
+        # print("stored->", task_id, index)
 
     def tick(self):
         for sock in zmq.select([self.result_pull, self.router], [], [])[0]:
             if sock is self.router:
                 self.recv_request()
             elif sock is self.result_pull:
-                self.recv_task_result()
+                self.recv_chunk_result()
 
 
 def _task_server(send_conn: Connection, _bind: Callable):
-    with util.socket_factory(zmq.ROUTER, zmq.PULL, zmq.PUB) as (
-        zmq_ctx,
-        router,
-        result_pull,
-        pub_ready,
-    ):
+    with util.socket_factory(zmq.ROUTER, zmq.PULL) as (zmq_ctx, router, result_pull):
         with send_conn:
             try:
                 send_conn.send_bytes(
-                    serializer.dumps(
-                        [_bind(router), _bind(result_pull), _bind(pub_ready)]
-                    )
+                    serializer.dumps([_bind(router), _bind(result_pull)])
                 )
-                server = TaskResultServer(router, result_pull, pub_ready)
+                server = TaskResultServer(router, result_pull)
             except Exception:
                 send_conn.send_bytes(serializer.dumps(RemoteException()))
                 return

@@ -5,7 +5,7 @@ from bisect import bisect
 from collections import defaultdict
 from contextlib import contextmanager
 from copy import deepcopy
-from typing import Any, Dict, List, Tuple, Generator, Optional
+from typing import Any, Dict, List, Tuple
 
 import zmq
 
@@ -124,7 +124,7 @@ class StateServer:
         )
         self.resolve_pending()
 
-    def roundrobin_history(
+    def resolve_watcher(
         self,
         w_ident: bytes,
         s_ident: bytes,
@@ -155,7 +155,7 @@ class StateServer:
         if not pending:
             return
         for w_ident in list(pending):
-            if self.roundrobin_history(w_ident, *pending[w_ident]):
+            if self.resolve_watcher(w_ident, *pending[w_ident]):
                 del pending[w_ident]
 
     def recv_watcher(self):

@@ -27,12 +27,12 @@ def run_task(
 
 
 def worker_process(server_address: str, send_conn: Connection):
-    with util.socket_factory(zmq.PULL, zmq.PUSH) as (zmq_ctx, proxy_out, result_pull):
+    with util.socket_factory(zmq.PULL, zmq.PUSH) as (zmq_ctx, task_pull, result_push):
         server_meta = util.get_server_meta(zmq_ctx, server_address)
 
         try:
-            proxy_out.connect(server_meta.task_proxy_out)
-            result_pull.connect(server_meta.task_result_pull)
+            task_pull.connect(server_meta.task_proxy_out)
+            result_push.connect(server_meta.task_result_pull)
             state = State(server_address)
         except Exception:
             with send_conn:
@@ -43,7 +43,7 @@ def worker_process(server_address: str, send_conn: Connection):
 
         try:
             while True:
-                msg = proxy_out.recv_multipart()
+                msg = task_pull.recv_multipart()
                 if msg == EMPTY_MULTIPART:
                     return
                 chunk_id, target_bytes, task_bytes = msg
@@ -57,6 +57,6 @@ def worker_process(server_address: str, send_conn: Connection):
                     raise
                 except Exception:
                     result = RemoteException()
-                result_pull.send_multipart([chunk_id, serializer.dumps(result)])
+                result_push.send_multipart([chunk_id, serializer.dumps(result)])
         except Exception:
             util.log_internal_crash("Worker process")

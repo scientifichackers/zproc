@@ -13,4 +13,5 @@ from .process import Process
 from .server.tools import start_server, ping
 from .state.state import State, atomic
 from .task.swarm import Swarm
+from .task.result import SequenceTaskResult, SimpleTaskResult
 from .util import clean_process_tree, consume

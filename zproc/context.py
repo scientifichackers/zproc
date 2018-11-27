@@ -205,8 +205,10 @@ class Context:
             state.set(value)
         return state
 
-    def create_swarm(self):
-        return Swarm(self.server_address, namespace=self.namespace)
+    def create_swarm(self, count: int = None):
+        swarm = Swarm(self.server_address, namespace=self.namespace)
+        swarm.start(count)
+        return swarm
 
     def start_server(self) -> Tuple[multiprocessing.Process, str]:
         ret = tools.start_server(self.server_address, backend=self.backend)
