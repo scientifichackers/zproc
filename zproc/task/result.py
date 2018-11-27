@@ -19,8 +19,9 @@ class _TaskResultBase:
 
     def _get_chunk(self, index: int):
         chunk_id = util.encode_chunk_id(self.task_id, index)
-        self._dealer.send(chunk_id)
-        return serializer.loads(self._dealer.recv())
+        return serializer.loads(
+            util.strict_request_reply(chunk_id, self._dealer.send, self._dealer.recv)
+        )
 
     def __del__(self):
         try:

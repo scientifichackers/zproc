@@ -99,18 +99,18 @@ class StateServer:
         self.dispatch_dict[request[Msgs.cmd]](request)
 
     def reply(self, response):
-        # print("server rep:", self._active_ident, rep, time.time())
+        # print("server rep:", self.identity, response, time.time())
         self.state_router.send_multipart([self.identity, serializer.dumps(response)])
 
     @contextmanager
     def mutate_safely(self):
-        stamp = time.time()
         old = deepcopy(self.state)
+        stamp = time.time()
 
         try:
             yield
         except Exception:
-            self.state_map[self.namespace] = old
+            self.state = self.state_map[self.namespace] = old
             raise
 
         slot = self.history[self.namespace]

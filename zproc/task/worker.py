@@ -1,5 +1,4 @@
 from collections import Iterable
-from multiprocessing.connection import Connection
 from typing import Union, Callable
 
 import zmq
@@ -26,7 +25,7 @@ def run_task(
     return map_plus(target, *params)
 
 
-def worker_process(server_address: str, send_conn: Connection):
+def worker_process(server_address: str, send_conn):
     with util.socket_factory(zmq.PULL, zmq.PUSH) as (zmq_ctx, task_pull, result_push):
         server_meta = util.get_server_meta(zmq_ctx, server_address)
 

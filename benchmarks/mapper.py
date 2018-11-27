@@ -1,7 +1,7 @@
+import multiprocessing
 from time import perf_counter
 
 import zproc
-import multiprocessing
 
 ctx = zproc.Context()
 ctx.workers.start(2)

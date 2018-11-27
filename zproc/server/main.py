@@ -1,5 +1,4 @@
 import atexit
-from multiprocessing.connection import Connection
 
 import zmq
 
@@ -11,7 +10,7 @@ from zproc.state.server import StateServer
 from zproc.task.server import start_task_server, start_task_proxy
 
 
-def main(server_address: str, send_conn: Connection):
+def main(server_address: str, send_conn):
     with util.socket_factory(zmq.ROUTER, zmq.ROUTER) as (
         zmq_ctx,
         state_router,

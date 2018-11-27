@@ -10,7 +10,17 @@ from contextlib import suppress, contextmanager, ExitStack
 from itertools import islice
 from textwrap import indent
 from traceback import format_exc
-from typing import Union, Iterable, Generator, Callable, Tuple, Sequence, Optional, Type
+from typing import (
+    Union,
+    Iterable,
+    Generator,
+    Callable,
+    Tuple,
+    Sequence,
+    Optional,
+    Type,
+    List,
+)
 
 import psutil
 import zmq
@@ -58,21 +68,24 @@ def req_server_meta(dealer: zmq.Socket) -> ServerMeta:
 
 
 def to_catchable_exc(
-        retry_for: Iterable[Union[signal.Signals, Type[BaseException]]]
+    retry_for: Iterable[Union[signal.Signals, Type[BaseException]]]
 ) -> Generator[Type[BaseException], None, None]:
-    if retry_for is not None:
-        yield exceptions.SignalException  # catches all signals converted using `signal_to_exception()`
+    if retry_for is None:
+        return
 
-        for e in retry_for:
-            if isinstance(e, signal.Signals):
-                exceptions.signal_to_exception(e)
-            elif issubclass(e, BaseException):
-                yield e
-            else:
-                raise ValueError(
-                    "The items of `retry_for` must either be a sub-class of `BaseException`, "
-                    "or an instance of `signal.Signals`. Not `%r`." % e
-                )
+    # catches all signals converted using `signal_to_exception()`
+    yield exceptions.SignalException
+
+    for e in retry_for:
+        if isinstance(e, signal.Signals):
+            exceptions.signal_to_exception(e)
+        elif issubclass(e, BaseException):
+            yield e
+        else:
+            raise ValueError(
+                "The items of `retry_for` must either be a sub-class of `BaseException`, "
+                "or an instance of `signal.Signals`. Not `%r`." % e
+            )
 
 
 def bind_to_random_ipc(sock: zmq.Socket) -> str:
@@ -101,10 +114,6 @@ def close_zmq_ctx(ctx: zmq.Context):
 
 def clean_process_tree(*signal_handler_args):
     """Stop all Processes in the current Process tree, recursively."""
-
-    def on_terminate(proc: psutil.Process):
-        pass
-
     parent = psutil.Process()
     procs = parent.children(recursive=True)
     if procs:
@@ -113,7 +122,7 @@ def clean_process_tree(*signal_handler_args):
     for p in procs:
         with suppress(psutil.NoSuchProcess):
             p.terminate()
-    _, alive = psutil.wait_procs(procs, timeout=0.5, callback=on_terminate)
+    _, alive = psutil.wait_procs(procs, timeout=0.5)  # 0.5 seems to work
     for p in alive:
         with suppress(psutil.NoSuchProcess):
             p.kill()
@@ -130,7 +139,7 @@ def make_chunks(seq: Optional[Sequence], length: int, num_chunks: int):
     if seq is None:
         return [None] * num_chunks
     else:
-        return [seq[i * length: (i + 1) * length] for i in range(num_chunks)]
+        return [seq[i * length : (i + 1) * length] for i in range(num_chunks)]
 
 
 def is_main_thread() -> bool:
@@ -189,7 +198,7 @@ def socket_factory(*sock_types):
     with ExitStack() as stack:
         ctx = stack.enter_context(zmq.Context())
         sockets = (stack.enter_context(ctx.socket(i)) for i in sock_types)
-        yield [ctx, *sockets]
+        yield (ctx, *sockets)
 
 
 @contextmanager
@@ -200,7 +209,7 @@ def counter():
     s = time.perf_counter()
     yield
     e = time.perf_counter()
-    print((e - s),  (e - s) / fr)
+    print((e - s), (e - s) / fr)
 
 
 def consume(iterator, n=None):
@@ -212,3 +221,21 @@ def consume(iterator, n=None):
     else:
         # advance to the empty slice starting at position n
         next(islice(iterator, n, n), None)
+
+
+def strict_request_reply(msg, send: Callable, recv: Callable):
+    """
+    Ensures a strict req-reply loop,
+    so that clients dont't receive out-of-order messages,
+    if an exception occurs between request-reply.
+    """
+    try:
+        send(msg)
+    except Exception:
+        raise
+    try:
+        return recv()
+    except Exception:
+        with suppress(zmq.error.Again):
+            recv()
+        raise

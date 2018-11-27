@@ -1,11 +1,10 @@
 import atexit
-import functools
 import multiprocessing
 import pprint
 import signal
 import time
 from contextlib import suppress
-from typing import Callable, Union, Hashable, Any, List, Mapping, Sequence, Tuple, cast
+from typing import Callable, Union, Any, List, Mapping, Sequence, Tuple, cast
 
 from . import util
 from .consts import DEFAULT_NAMESPACE

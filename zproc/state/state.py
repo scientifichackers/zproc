@@ -6,7 +6,7 @@ import time
 from functools import wraps
 from pprint import pformat
 from textwrap import indent
-from typing import Hashable, Any, Callable, Dict, List, Iterator
+from typing import Hashable, Any, Callable, Dict, List, Generator
 
 import zmq
 
@@ -145,8 +145,10 @@ class State(_type.StateDictMethodStub, metaclass=_type.StateType):
 
     def _request_reply(self, request: Dict[int, Any]):
         request[Msgs.namespace] = self._namespace_bytes
-        self._s_dealer.send(serializer.dumps(request))
-        return serializer.loads(self._s_dealer.recv())
+        msg = serializer.dumps(request)
+        return serializer.loads(
+            util.strict_request_reply(msg, self._s_dealer.send, self._s_dealer.recv)
+        )
 
     def set(self, value: dict):
         """
@@ -201,8 +203,9 @@ class State(_type.StateDictMethodStub, metaclass=_type.StateType):
         self, request: List[bytes], only_after: float
     ) -> List[bytes]:
         request[-1] = struct.pack("d", only_after)
-        self._w_dealer.send_multipart(request)
-        return self._w_dealer.recv_multipart()
+        return util.strict_request_reply(
+            request, self._w_dealer.send_multipart, self._w_dealer.recv_multipart
+        )
 
     def get_raw_update(
         self,
@@ -212,7 +215,7 @@ class State(_type.StateDictMethodStub, metaclass=_type.StateType):
         identical_okay: bool = False,
         start_time: bool = None,
         count: int = None,
-    ) -> Iterator[StateUpdate]:
+    ) -> Generator[StateUpdate, None, None]:
         """
         A low-level hook that emits each and every state update.
         All other state watchers are built upon this only.
@@ -229,9 +232,9 @@ class State(_type.StateDictMethodStub, metaclass=_type.StateType):
             only_after = self._request_reply({Msgs.cmd: Cmds.time})
 
         if count is None:
-            count = itertools.count()
+            counter = itertools.count()
         else:
-            count = range(count)
+            counter = iter(range(count))
 
         request_msg = [
             self._identity,
@@ -241,12 +244,14 @@ class State(_type.StateDictMethodStub, metaclass=_type.StateType):
         ]
 
         def _(only_after):
-            for _ in count:
+            for _ in counter:
                 if time_limit is None:
                     self._w_dealer.setsockopt(zmq.RCVTIMEO, DEFAULT_ZMQ_RECVTIMEO)
                 else:
                     if time_limit < time.time():
-                        raise TimeoutError("Timed-out while waiting for a state update.")
+                        raise TimeoutError(
+                            "Timed-out while waiting for a state update."
+                        )
 
                     self._w_dealer.setsockopt(
                         zmq.RCVTIMEO, int((time_limit - time.time()) * 1000)
@@ -272,7 +277,7 @@ class State(_type.StateDictMethodStub, metaclass=_type.StateType):
 
     def get_when_change(
         self, *keys: Hashable, exclude: bool = False, **watcher_kwargs
-    ) -> Iterator[dict]:
+    ) -> Generator[dict, None, None]:
         """
         Block until a change is observed, and then return a copy of the state.
 
@@ -287,7 +292,7 @@ class State(_type.StateDictMethodStub, metaclass=_type.StateType):
             else:
                 return (next(it).after for _ in range(count))
 
-        keys = set(keys)
+        key_set = set(keys)
         identical_okay = watcher_kwargs.get("identical_okay", False)
         if identical_okay:
             raise ValueError(
@@ -302,9 +307,9 @@ class State(_type.StateDictMethodStub, metaclass=_type.StateType):
             def select():
                 selected = {*before.keys(), *after.keys()}
                 if exclude:
-                    return selected - keys
+                    return selected - key_set
                 else:
-                    return selected & keys
+                    return selected & key_set
 
             i = 0
             while i < count:
@@ -321,7 +326,7 @@ class State(_type.StateDictMethodStub, metaclass=_type.StateType):
 
         return _()
 
-    def get_when(self, test_fn, **watcher_kwargs) -> Iterator[dict]:
+    def get_when(self, test_fn, **watcher_kwargs) -> Generator[dict, None, None]:
         """
         Block until ``test_fn(snap)`` returns a "truthy" value,
         and then return a copy of the state.
@@ -334,24 +339,28 @@ class State(_type.StateDictMethodStub, metaclass=_type.StateType):
         """
         snap = self.copy()
         if test_fn(snap):
-            return iter([snap])
 
-        count = watcher_kwargs.pop("count", math.inf)
-        it = self.get_raw_update(**watcher_kwargs)
+            def _():
+                yield snap
 
-        def _():
-            i = 0
-            while i < count:
-                snap = next(it).after
-                if test_fn(snap):
-                    i += 1
-                    yield snap
+        else:
+            count = watcher_kwargs.pop("count", math.inf)
+            it = self.get_raw_update(**watcher_kwargs)
+
+            def _():
+                i = 0
+                while i < count:
+                    snap = next(it).after
+
+                    if test_fn(snap):
+                        i += 1
+                        yield snap
 
         return _()
 
     def get_when_equal(
         self, key: Hashable, value: Any, **watcher_kwargs
-    ) -> Iterator[dict]:
+    ) -> Generator[dict, None, None]:
         """
         Block until ``state[key] == value``, and then return a copy of the state.
 
@@ -368,7 +377,7 @@ class State(_type.StateDictMethodStub, metaclass=_type.StateType):
 
     def get_when_not_equal(
         self, key: Hashable, value: Any, **watcher_kwargs
-    ) -> Iterator[dict]:
+    ) -> Generator[dict, None, None]:
         """
         Block until ``state[key] != value``, and then return a copy of the state.
 
@@ -383,7 +392,9 @@ class State(_type.StateDictMethodStub, metaclass=_type.StateType):
 
         return self.get_when(_, **watcher_kwargs)
 
-    def get_when_none(self, key: Hashable, **watcher_kwargs) -> Iterator[dict]:
+    def get_when_none(
+        self, key: Hashable, **watcher_kwargs
+    ) -> Generator[dict, None, None]:
         """
         Block until ``state[key] is None``, and then return a copy of the state.
 
@@ -398,7 +409,9 @@ class State(_type.StateDictMethodStub, metaclass=_type.StateType):
 
         return self.get_when(_, **watcher_kwargs)
 
-    def get_when_not_none(self, key: Hashable, **watcher_kwargs) -> Iterator[dict]:
+    def get_when_not_none(
+        self, key: Hashable, **watcher_kwargs
+    ) -> Generator[dict, None, None]:
         """
         Block until ``state[key] is not None``, and then return a copy of the state.
 

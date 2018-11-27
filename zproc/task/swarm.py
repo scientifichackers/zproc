@@ -1,5 +1,5 @@
 import multiprocessing
-from typing import List, Mapping, Sequence, Any, Callable, Union
+from typing import List, Mapping, Sequence, Any, Callable
 
 import zmq
 

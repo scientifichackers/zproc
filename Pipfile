@@ -18,6 +18,7 @@ twine = "*"
 pytest = "*"
 yappi = "*"
 pytest-repeat = "*"
+mypy = "*"
 
 [requires]
 python_version = "3.6"

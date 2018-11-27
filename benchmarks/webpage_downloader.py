@@ -7,8 +7,6 @@ Prints out the time taken by different frameworks to complete the task
 import asyncio
 from time import time
 
-import grequests
-
 import zproc
 
 SAMPLES = 1

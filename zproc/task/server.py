@@ -1,7 +1,6 @@
 import multiprocessing
 from collections import defaultdict, Callable, deque
-from multiprocessing.connection import Connection
-from typing import Any, Dict, List
+from typing import Dict, List
 
 import zmq
 
@@ -70,7 +69,7 @@ class TaskResultServer:
                 self.recv_chunk_result()
 
 
-def _task_server(send_conn: Connection, _bind: Callable):
+def _task_server(send_conn, _bind: Callable):
     with util.socket_factory(zmq.ROUTER, zmq.PULL) as (zmq_ctx, router, result_pull):
         with send_conn:
             try:
@@ -99,7 +98,7 @@ def _task_server(send_conn: Connection, _bind: Callable):
 # Clients never need to talk to a worker directly.
 
 
-def _task_proxy(send_conn: Connection, _bind: Callable):
+def _task_proxy(send_conn, _bind: Callable):
     with util.socket_factory(zmq.PULL, zmq.PUSH) as (zmq_ctx, proxy_in, proxy_out):
         with send_conn:
             try:

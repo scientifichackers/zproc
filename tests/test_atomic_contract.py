@@ -31,7 +31,7 @@ def test_exception_contract(ctx, state):
 
 def test_signal_contract(ctx, state):
     @zproc.atomic
-    def mutator(snap):
+    def atomic_fn(snap):
         snap["x"] = 5
         time.sleep(0.1)
 
@@ -45,6 +45,7 @@ def test_signal_contract(ctx, state):
     zproc.signal_to_exception(signal.SIGINT)
 
     with pytest.raises(zproc.SignalException):
-        mutator(state)
+        atomic_fn(state)
 
+    print(state.copy())
     assert state == {"x": 5}

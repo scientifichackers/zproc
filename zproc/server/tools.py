@@ -1,7 +1,7 @@
 import multiprocessing
 import os
 from collections import Callable
-from typing import Union, Optional, Tuple
+from typing import Union, Tuple
 
 import zmq
 

@@ -112,6 +112,7 @@ Example output:
     ...
 """
 from time import sleep
+
 import zproc
 
 ctx = zproc.Context()
