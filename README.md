@@ -1,6 +1,9 @@
 <img src="https://s3.ap-south-1.amazonaws.com/saral-data-bucket/misc/logo%2Btype%2Bnocatch.svg" />
 
-**ZProc lets you do shared-state multitasking without the perils of having shared-memory.**
+ZProc is a though experiment, to make multi-tasking easier and accessible to everyone.
+
+It focuses on automating various tasks related to message passing systems, for Pythonistas.
+The eventual goal is to make Python a first-class language for doing multi-tasking.
 
 **Behold, the power of ZProc:**
 
@@ -10,36 +13,40 @@ import zproc
 
 @zproc.atomic
 def eat_cookie(snap):
-    """Eat a cookie."""
     snap["cookies"] -= 1
     print("nom nom nom")
 
 
 @zproc.atomic
 def bake_cookie(snap):
-    """Bake a cookie."""
     snap["cookies"] += 1
     print("Here's a cookie!")
 
 
-ctx = zproc.Context(wait=True)
-state = ctx.create_state()
-state["cookies"] = 0
-
-
-@ctx.spawn
 def cookie_eater(ctx):
-    """Eat cookies as they're baked."""
     state = ctx.create_state()
-    state["ready"] = True
-
-    for _ in state.get_when_change("cookies"):
+    it = state.get_when_change("cookies", count=5)
+    state['ready'] = True
+    
+    for _ in it:
         eat_cookie(state)
 
 
-next(state.get_when_available("ready"))
-print(cookie_eater)
+# boilerplate
+ctx = zproc.Context(wait=True)
+state = ctx.create_state({"cookies": 0})
 
+# create a ready handle
+ready = state.get_when_available("ready")
+
+# spwan the process
+proc = ctx.spawn(cookie_eater)
+print(proc)
+
+# wait for ready
+next(ready)
+
+# bake some!
 for _ in range(5):
     bake_cookie(state)
 ```
@@ -64,24 +71,26 @@ nom nom nom
 
 ## The core idea
 
-ZProc tries to breathe new life into the archaic idea of shared-state multitasking by 
-protecting application state with logic and reason. 
+Message passing is cumbersome, error prone, and tedius --
+ because there is a lot of manual wiring involved. 
 
-Shared state is frowned upon by almost everyone, 
-(mostly) due to the fact that memory is inherently dumb.
+The idea behind this project is to provide a pythonic API over widely accepted models in the multi-tasking realm. 
 
-Like memory doesn't really care who's writing to it.
+It started out with embracing shared state (but not shared memory).
 
-ZProc's state tries to keep a track of who's doing what.
+Shared state is frowned upon by almost everyone, due to the fact that memory is inherently dumb.
+Memory doesn't really care who's writing to it.
+ZProc's state keeps a track of who's doing what.
 
-## The Goal
+It then evolved to do handle exceptions across processes, failover, worker swarms, event sourcing and other very useful features realated to multi-tasking. 
 
-ZProc aims to make building multi-taking applications easier
- and faster for everyone, in a pythonic way.
+Finally, this one quote from Joe Armstrong,
 
-It started out from the core idea of having a *smart* state -- 
-eventually wanting to turn into a full-fledged framework for all things 
-multitasking.
+> I want one way to program computers, not two.
+
+Inspired me to keep the underlying architecture 100% message passing based,
+and hence scalable across many computers, 
+with minimal modifications to the user code.
 
 ## Install
 
@@ -103,6 +112,15 @@ Python 3.5+
 
 [**Examples**](examples)
 
+
+## Wishlist
+
+Here are some of the ideas that I wish were implemented in ZProc, but currently aren't.
+
+- Redundant state-servers -- automatic selection/fallback.
+- Green, Erlang-style processes. (requires Cpython internals)
+- Process *links*, that automatically propagate errors across processes.
+- Make namespaces horizontally scalable. 
 
 ## Features
 
@@ -165,6 +183,8 @@ Python 3.5+
 -   It runs an extra Process for managing the state.<br>
     Its fairly lightweight though, and shouldn't add too
     much weight to your application.
+    
+
 
 ## FAQ
 

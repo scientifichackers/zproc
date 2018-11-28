@@ -1,6 +1,7 @@
 import multiprocessing
 import os
 import signal
+import time
 from typing import Callable, Union, Sequence, Mapping, Optional, Iterable, Type
 
 import zmq
@@ -29,7 +30,7 @@ class Process:
         retry_args: tuple = None,
         retry_kwargs: dict = None,
         backend: Callable = multiprocessing.Process,
-        namespace: str = DEFAULT_NAMESPACE
+        namespace: str = DEFAULT_NAMESPACE,
     ) -> None:
         """
         Provides a higher level interface to :py:class:`multiprocessing.Process`.
@@ -264,15 +265,23 @@ class Process:
         if self._has_returned:
             return self._result
 
-        self.child.join(timeout)
-        if self.is_alive:
-            raise TimeoutError(
-                "Timed-out while waiting for Process to return. -- %s" % repr(self)
-            )
+        if timeout is not None:
+            target = time.time() + timeout
+            while time.time() < target:
+                self.child.join(timeout)
+
+            if self.is_alive:
+                raise TimeoutError(
+                    f"Timed-out while waiting for Process to return. -- {self!r}"
+                )
+        else:
+            self.child.join()
+            if self.is_alive:
+                return None
         exitcode = self.exitcode
         if exitcode != 0:
             raise exceptions.ProcessWaitError(
-                "Process finished with a non-zero exitcode (%d)." % exitcode,
+                f"Process finished with a non-zero exitcode ({exitcode}). -- {self!r}",
                 exitcode,
                 self,
             )

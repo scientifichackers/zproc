@@ -6,7 +6,7 @@ import time
 from functools import wraps
 from pprint import pformat
 from textwrap import indent
-from typing import Hashable, Any, Callable, Dict, List, Generator
+from typing import Hashable, Any, Callable, Dict, List, Generator, Mapping, Sequence
 
 import zmq
 
@@ -60,8 +60,8 @@ class State(_type.StateDictMethodStub, metaclass=_type.StateType):
         self.namespace = namespace
 
         self._zmq_ctx = util.create_zmq_ctx()
-        self._s_dealer = self._create_state_dealer()
-        self._w_dealer = self._create_watcher_dealer()
+        self._s_dealer = self._create_s_dealer()
+        self._w_dealer = self._create_w_dealer()
 
     def __str__(self):
         return "\n".join(
@@ -135,7 +135,7 @@ class State(_type.StateDictMethodStub, metaclass=_type.StateType):
     # state access
     #
 
-    def _create_state_dealer(self) -> zmq.Socket:
+    def _create_s_dealer(self) -> zmq.Socket:
         sock = self._zmq_ctx.socket(zmq.DEALER)
         self._identity = os.urandom(ZMQ_IDENTITY_LENGTH)
         sock.setsockopt(zmq.IDENTITY, self._identity)
@@ -143,7 +143,7 @@ class State(_type.StateDictMethodStub, metaclass=_type.StateType):
         self._server_meta = util.req_server_meta(sock)
         return sock
 
-    def _request_reply(self, request: Dict[int, Any]):
+    def _s_request_reply(self, request: Dict[int, Any]):
         request[Msgs.namespace] = self._namespace_bytes
         msg = serializer.dumps(request)
         return serializer.loads(
@@ -162,7 +162,7 @@ class State(_type.StateDictMethodStub, metaclass=_type.StateType):
 
             Use the :py:func:`atomic` deocrator if you're feeling anxious.
         """
-        self._request_reply({Msgs.cmd: Cmds.set_state, Msgs.info: value})
+        self._s_request_reply({Msgs.cmd: Cmds.set_state, Msgs.info: value})
 
     def copy(self) -> dict:
         """
@@ -170,7 +170,7 @@ class State(_type.StateDictMethodStub, metaclass=_type.StateType):
 
         (Unlike the shallow-copy returned by the inbuilt :py:meth:`dict.copy`).
         """
-        return self._request_reply({Msgs.cmd: Cmds.get_state})
+        return self._s_request_reply({Msgs.cmd: Cmds.get_state})
 
     def keys(self):
         return self.copy().keys()
@@ -194,18 +194,19 @@ class State(_type.StateDictMethodStub, metaclass=_type.StateType):
     # state watcher
     #
 
-    def _create_watcher_dealer(self) -> zmq.Socket:
+    def _create_w_dealer(self) -> zmq.Socket:
         sock = self._zmq_ctx.socket(zmq.DEALER)
         sock.connect(self._server_meta.watcher_router)
         return sock
 
-    def _watcher_request_reply(
+    def _w_request_reply(
         self, request: List[bytes], only_after: float
-    ) -> List[bytes]:
+    ) -> StateUpdate:
         request[-1] = struct.pack("d", only_after)
-        return util.strict_request_reply(
+        response = util.strict_request_reply(
             request, self._w_dealer.send_multipart, self._w_dealer.recv_multipart
         )
+        return StateUpdate(*serializer.loads(response[0]), bool(response[1]))
 
     def get_raw_update(
         self,
@@ -229,7 +230,7 @@ class State(_type.StateDictMethodStub, metaclass=_type.StateType):
 
         only_after = start_time
         if only_after is None:
-            only_after = self._request_reply({Msgs.cmd: Cmds.time})
+            only_after = self._s_request_reply({Msgs.cmd: Cmds.time})
 
         if count is None:
             counter = itertools.count()
@@ -259,15 +260,10 @@ class State(_type.StateDictMethodStub, metaclass=_type.StateType):
 
                 if live:
                     only_after = time.time()
-
                 try:
-                    response = self._watcher_request_reply(request_msg, only_after)
+                    state_update = self._w_request_reply(request_msg, only_after)
                 except zmq.error.Again:
                     raise TimeoutError("Timed-out while waiting for a state update.")
-
-                state_update = StateUpdate(
-                    *serializer.loads(response[0]), bool(response[1])
-                )
                 if not live:
                     only_after = state_update.timestamp
 
@@ -326,35 +322,39 @@ class State(_type.StateDictMethodStub, metaclass=_type.StateType):
 
         return _()
 
-    def get_when(self, test_fn, **watcher_kwargs) -> Generator[dict, None, None]:
+    def get_when(
+        self,
+        test_fn,
+        *,
+        args: Sequence = None,
+        kwargs: Mapping = None,
+        **watcher_kwargs,
+    ) -> Generator[dict, None, None]:
         """
-        Block until ``test_fn(snap)`` returns a "truthy" value,
+        Block until ``test_fn(snapshot)`` returns a "truthy" value,
         and then return a copy of the state.
 
         *Where-*
 
-        ``snap`` is a ``dict``, containing a copy of the state.
+        ``snapshot`` is a ``dict``, containing a version of the state after this update was applied.
 
         .. include:: /api/state/get_when.rst
         """
-        snap = self.copy()
-        if test_fn(snap):
+        if args is None:
+            args = []
+        if kwargs is None:
+            kwargs = {}
 
-            def _():
-                yield snap
+        count = watcher_kwargs.pop("count", math.inf)
+        it = self.get_raw_update(**watcher_kwargs)
 
-        else:
-            count = watcher_kwargs.pop("count", math.inf)
-            it = self.get_raw_update(**watcher_kwargs)
-
-            def _():
-                i = 0
-                while i < count:
-                    snap = next(it).after
-
-                    if test_fn(snap):
-                        i += 1
-                        yield snap
+        def _():
+            i = 0
+            while i < count:
+                snapshot = next(it).after
+                if test_fn(snapshot, *args, **kwargs):
+                    i += 1
+                    yield snapshot
 
         return _()
 
@@ -367,9 +367,9 @@ class State(_type.StateDictMethodStub, metaclass=_type.StateType):
         .. include:: /api/state/get_when_equality.rst
         """
 
-        def _(snap):
+        def _(snapshot):
             try:
-                return snap[key] == value
+                return snapshot[key] == value
             except KeyError:
                 return False
 
@@ -384,9 +384,9 @@ class State(_type.StateDictMethodStub, metaclass=_type.StateType):
         .. include:: /api/state/get_when_equality.rst
         """
 
-        def _(snap):
+        def _(snapshot):
             try:
-                return snap[key] != value
+                return snapshot[key] != value
             except KeyError:
                 return False
 
@@ -401,9 +401,9 @@ class State(_type.StateDictMethodStub, metaclass=_type.StateType):
         .. include:: /api/state/get_when_equality.rst
         """
 
-        def _(snap):
+        def _(snapshot):
             try:
-                return snap[key] is None
+                return snapshot[key] is None
             except KeyError:
                 return False
 
@@ -418,9 +418,9 @@ class State(_type.StateDictMethodStub, metaclass=_type.StateType):
         .. include:: /api/state/get_when_equality.rst
         """
 
-        def _(snap):
+        def _(snapshot):
             try:
-                return snap[key] is not None
+                return snapshot[key] is not None
             except KeyError:
                 return False
 
@@ -432,7 +432,7 @@ class State(_type.StateDictMethodStub, metaclass=_type.StateType):
 
         .. include:: /api/state/get_when_equality.rst
         """
-        return self.get_when(lambda snap: key in snap, **watcher_kwargs)
+        return self.get_when(lambda snapshot: key in snapshot, **watcher_kwargs)
 
     def __del__(self):
         try:
@@ -456,7 +456,7 @@ def atomic(fn: Callable) -> Callable:
 
     .. note::
         - The first argument to the wrapped function *must* be a :py:class:`State` object.
-        - The wrapped ``fn`` receives a frozen version (snap) of state,
+        - The wrapped ``fn`` receives a frozen version (snapshot) of state,
           which is a ``dict`` object, not a :py:class:`State` object.
         - It is not possible to call one atomic function from other.
 
@@ -473,8 +473,8 @@ def atomic(fn: Callable) -> Callable:
     >>> import zproc
     >>>
     >>> @zproc.atomic
-    ... def increment(snap):
-    ...     return snap['count'] + 1
+    ... def increment(snapshot):
+    ...     return snapshot['count'] + 1
     ...
     >>>
     >>> ctx = zproc.Context()
@@ -488,7 +488,7 @@ def atomic(fn: Callable) -> Callable:
 
     @wraps(fn)
     def wrapper(state: State, *args, **kwargs):
-        return state._request_reply(
+        return state._s_request_reply(
             {
                 Msgs.cmd: Cmds.run_fn_atomically,
                 Msgs.info: serialized,

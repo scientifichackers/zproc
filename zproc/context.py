@@ -201,7 +201,7 @@ class Context:
     def create_state(self, value: dict = None):
         state = State(self.server_address, namespace=self.namespace)
         if value is not None:
-            state.set(value)
+            state.update(value)
         return state
 
     def create_swarm(self, count: int = None):
@@ -210,9 +210,9 @@ class Context:
         return swarm
 
     def start_server(self) -> Tuple[multiprocessing.Process, str]:
-        ret = tools.start_server(self.server_address, backend=self.backend)
-        self.server_process, self.server_address = ret
-        return ret
+        out = tools.start_server(self.server_address, backend=self.backend)
+        self.server_process, self.server_address = out
+        return out
 
     def _process(
         self, target: Callable = None, **process_kwargs
@@ -309,181 +309,6 @@ class Context:
             map_plus(_target, map_iter, map_args, args, map_kwargs, kwargs)
         )
 
-    # def _create_call_when_xxx_decorator(
-    #     self,
-    #     get_when_xxx_fn_name: str,
-    #     process_kwargs: dict,
-    #     *state_watcher_args,
-    #     **state_watcher_kwargs
-    # ):
-    #     # can't work without the state!
-    #     pass_state = process_kwargs.pop("pass_state", True)
-    #
-    #     def decorator(wrapped_fn):
-    #         if pass_state:
-    #
-    #             def watcher_process(state, *args, **kwargs):
-    #                 get_when_xxx_fn = getattr(state, get_when_xxx_fn_name)
-    #
-    #                 while True:
-    #                     wrapped_fn(
-    #                         get_when_xxx_fn(
-    #                             *state_watcher_args, **state_watcher_kwargs
-    #                         ),
-    #                         state,
-    #                         *args,
-    #                         **kwargs
-    #                     )
-    #
-    #         else:
-    #
-    #             def watcher_process(state, *args, **kwargs):
-    #                 get_when_xxx_fn = getattr(state, get_when_xxx_fn_name)
-    #
-    #                 while True:
-    #                     wrapped_fn(
-    #                         get_when_xxx_fn(
-    #                             *state_watcher_args, **state_watcher_kwargs
-    #                         ),
-    #                         *args,
-    #                         **kwargs
-    #                     )
-    #
-    #         watcher_process = self._process(watcher_process, **process_kwargs)
-    #         functools.update_wrapper(watcher_process.target, wrapped_fn)
-    #
-    #         return watcher_process
-    #
-    #     return decorator
-    #
-    # def call_when_change(
-    #     self,
-    #     *keys: Hashable,
-    #     exclude: bool = False,
-    #     live: bool = False,
-    #     **process_kwargs
-    # ):
-    #     """
-    #     Decorator version of :py:meth:`~State.get_when_change()`.
-    #
-    #     .. include:: /api/context/call_when_change.rst
-    #
-    #     .. code-block:: python
-    #         :caption: Example
-    #
-    #         import zproc
-    #
-    #         ctx = zproc.Context()
-    #
-    #         @ctx.call_when_change('gold')
-    #         def test(snap, state):
-    #             print(snap['gold'], state)
-    #     """
-    #     return self._create_call_when_xxx_decorator(
-    #         "get_when_change", process_kwargs, *keys, exclude=exclude, live=live
-    #     )
-    #
-    # def call_when(self, test_fn: Callable, *, live: bool = False, **process_kwargs):
-    #     """
-    #     Decorator version of :py:meth:`~State.get_when()`.
-    #
-    #     .. include:: /api/context/call_when.rst
-    #
-    #     .. code-block:: python
-    #         :caption: Example
-    #
-    #         import zproc
-    #
-    #         ctx = zproc.Context()
-    #
-    #         @ctx.get_state_when(lambda state: state['trees'] == 5)
-    #         def test(snap, state):
-    #             print(snap['trees'], state)
-    #     """
-    #     return self._create_call_when_xxx_decorator(
-    #         "get_when", process_kwargs, test_fn, live=live
-    #     )
-    #
-    # def call_when_equal(
-    #     self, key: Hashable, value: Any, *, live: bool = False, **process_kwargs
-    # ):
-    #     """
-    #     Decorator version of :py:meth:`~State.get_when_equal()`.
-    #
-    #     .. include:: /api/context/call_when_equality.rst
-    #
-    #     .. code-block:: python
-    #         :caption: Example
-    #
-    #         import zproc
-    #
-    #         ctx = zproc.Context()
-    #
-    #         @ctx.call_when_equal('oranges', 5)
-    #         def test(snap, state):
-    #             print(snap['oranges'], state)
-    #     """
-    #     return self._create_call_when_xxx_decorator(
-    #         "get_when_equal", process_kwargs, key, value, live=live
-    #     )
-    #
-    # def call_when_not_equal(
-    #     self, key: Hashable, value: Any, *, live: bool = False, **process_kwargs
-    # ):
-    #     """
-    #     Decorator version of :py:meth:`~State.get_when_not_equal()`.
-    #
-    #     .. include:: /api/context/call_when_equality.rst
-    #
-    #     .. code-block:: python
-    #         :caption: Example
-    #
-    #         import zproc
-    #
-    #         ctx = zproc.Context()
-    #
-    #         @ctx.call_when_not_equal('apples', 5)
-    #         def test(snap, state):
-    #             print(snap['apples'], state)
-    #     """
-    #     return self._create_call_when_xxx_decorator(
-    #         "get_when_not_equal", process_kwargs, key, value, live=live
-    #     )
-    #
-    # def call_when_none(self, key: Hashable, *, live: bool = False, **process_kwargs):
-    #     """
-    #     Decorator version of :py:meth:`~State.get_when_none()`.
-    #
-    #     .. include:: /api/context/call_when_equality.rst
-    #     """
-    #     return self._create_call_when_xxx_decorator(
-    #         "get_when_none", process_kwargs, key, live=live
-    #     )
-    #
-    # def call_when_not_none(
-    #     self, key: Hashable, *, live: bool = False, **process_kwargs
-    # ):
-    #     """
-    #     Decorator version of :py:meth:`~State.get_when_not_none()`.
-    #
-    #     .. include:: /api/context/call_when_equality.rst
-    #     """
-    #     return self._create_call_when_xxx_decorator(
-    #         "get_when_not_none", process_kwargs, key, live=live
-    #     )
-    #
-    # def call_when_available(
-    #     self, key: Hashable, *, live: bool = False, **process_kwargs
-    # ):
-    #     """
-    #     Decorator version of :py:meth:`~State.get_when_available()`.
-    #
-    #     .. include:: /api/context/call_when_equality.rst
-    #     """
-    #     return self._create_call_when_xxx_decorator(
-    #         "get_when_available", process_kwargs, key, live=live
-    #     )
-
     def wait(
         self, timeout: Union[int, float] = None, safe: bool = False
     ) -> List[Union[Any, Exception]]:
@@ -496,13 +321,13 @@ class Context:
         """
         alias for :py:meth:`ProcessList.start_all()`
         """
-        return self.process_list.stop_all()
+        return self.process_list.start()
 
     def stop_all(self):
         """
         alias for :py:meth:`ProcessList.stop_all()`
         """
-        return self.process_list.stop_all()
+        return self.process_list.stop()
 
     def ping(self, **kwargs):
         r"""

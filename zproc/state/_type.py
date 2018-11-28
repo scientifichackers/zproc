@@ -28,7 +28,7 @@ def _create_remote_dict_method(dict_method_name: str):
     """
 
     def remote_method(self, *args, **kwargs):
-        return self._request_reply(
+        return self._s_request_reply(
             {
                 Msgs.cmd: Cmds.run_dict_method,
                 Msgs.info: dict_method_name,
