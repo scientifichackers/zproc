@@ -1,9 +1,13 @@
 <img src="https://s3.ap-south-1.amazonaws.com/saral-data-bucket/misc/logo%2Btype%2Bnocatch.svg" />
 
-ZProc is a though experiment, to make multi-tasking easier and accessible to everyone.
+ZProc is a thought experiment, in making multi-tasking easier and accessible to everyone.
 
-It focuses on automating various tasks related to message passing systems, for Pythonistas.
+It focuses on automating various tasks related to message passing systems, for pythonistas.
 The eventual goal is to make Python a first-class language for doing multi-tasking.
+
+So that _you_ don't have to think about arcane details, 
+like request-reply loops, reliable pub-sub, that kind of thing...  
+
 
 **Behold, the power of ZProc:**
 
