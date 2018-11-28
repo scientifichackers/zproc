@@ -6,7 +6,7 @@ It focuses on automating various tasks related to message passing systems, for p
 The eventual goal is to make Python a first-class language for doing multi-tasking.
 
 So that _you_ don't have to think about arcane details, 
-like request-reply loops, reliable pub-sub, that kind of thing...  
+like request-reply loops, reliable pub-sub, worker management, task distributiom, exception propagation, that kind of thing...  
 
 
 **Behold, the power of ZProc:**
@@ -15,24 +15,32 @@ like request-reply loops, reliable pub-sub, that kind of thing...
 import zproc
 
 
+#
+# define "atomic" operations
+#
+
 @zproc.atomic
-def eat_cookie(snap):
-    snap["cookies"] -= 1
+def eat_cookie(snapshot):
+    snapshot["cookies"] -= 1
     print("nom nom nom")
 
 
 @zproc.atomic
-def bake_cookie(snap):
-    snap["cookies"] += 1
+def bake_cookie(snapshot):
+    snapshot["cookies"] += 1
     print("Here's a cookie!")
 
 
+#
+# specify a process
+#
+
+
 def cookie_eater(ctx):
-    state = ctx.create_state()
-    it = state.get_when_change("cookies", count=5)
-    state['ready'] = True
+    state = ctx.create_state({'ready': True})
     
-    for _ in it:
+    # `start_time=0` accesses events from the very beginning.
+    for _ in state.get_when_change("cookies", start_time=0, count=5):
         eat_cookie(state)
 
 
@@ -40,7 +48,7 @@ def cookie_eater(ctx):
 ctx = zproc.Context(wait=True)
 state = ctx.create_state({"cookies": 0})
 
-# create a ready handle
+# create a "ready" handle
 ready = state.get_when_available("ready")
 
 # spwan the process
@@ -50,7 +58,7 @@ print(proc)
 # wait for ready
 next(ready)
 
-# bake some!
+# finally, bake some cookies.
 for _ in range(5):
     bake_cookie(state)
 ```
@@ -71,7 +79,8 @@ nom nom nom
 nom nom nom
 ```
 
-(baker and eater run in different processes)
+The `cookie_eater` process is supplied with events asynchronously, as the state is updated. 
+(by the `state.get_when_change()` iterator)
 
 ## The core idea
 
@@ -80,22 +89,34 @@ Message passing is cumbersome, error prone, and tedius --
 
 The idea behind this project is to provide a pythonic API over widely accepted models in the multi-tasking realm. 
 
-It started out with embracing shared state (but not shared memory).
+It started out with _embracing_ shared state (but not shared memory).
 
-Shared state is frowned upon by almost everyone, due to the fact that memory is inherently dumb.
+Shared memory is frowned upon by almost everyone, due to the fact that memory is inherently dumb.
 Memory doesn't really care who's writing to it.
-ZProc's state keeps a track of who's doing what.
+Shared state brings it's own perils, because its really hard to keep track of changes.
+
+With the aid of the Actor Model, ZProc's state keeps a track of who's doing what. 
+Infact, it can act as a time-machine and give you state events from a defined time.
 
 It then evolved to do handle exceptions across processes, failover, worker swarms, event sourcing and other very useful features realated to multi-tasking. 
 
-Finally, this one quote from Joe Armstrong,
-
-> I want one way to program computers, not two.
-
-Inspired me to keep the underlying architecture 100% message passing based,
+The underlying architecture 100% message passing based,
 and hence scalable across many computers, 
 with minimal modifications to the user code.
 
+## Well why not just X?
+
+Each technology and solution has it's place. Here is a rundown of why you would use ZProc over X.
+
+- `X == asyncio`
+    It's kinda in the name. Asyncio is strictly for I/O based concurrency. 
+    And then there's the fact that it implies extreme levels of refactoring. 
+    
+    To quote Joe Armstrong,    
+    
+    > I want one way to program computers, not many.
+    
+    
 ## Install
 
 [![PyPI](https://img.shields.io/pypi/pyversions/zproc.svg?style=for-the-badge)](https://pypi.org/project/zproc/)
@@ -178,18 +199,14 @@ Here are some of the ideas that I wish were implemented in ZProc, but currently 
 
 ## Caveats
 
--   The state only gets updated if you do it directly.<br>
-    This means that if you mutate objects inside the state,
-    they wont get reflected in the global state.
-
+-   The state only gets updated if you do it at the highest level.<br>
+    This means that if you mutate objects deep down in the dict hirearchy,
+    they wont be reflected in the global state.
 -   The state should be pickle-able.
-
--   It runs an extra Process for managing the state.<br>
-    Its fairly lightweight though, and shouldn't add too
+-   It runs an extra Processes for managing the state.<br>
+    They're fairly lightweight though, and shouldn't add too
     much weight to your application.
     
-
-
 ## FAQ
 
 -   Fast?
