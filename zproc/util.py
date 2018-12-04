@@ -10,17 +10,7 @@ from contextlib import suppress, contextmanager, ExitStack
 from itertools import islice
 from textwrap import indent
 from traceback import format_exc
-from typing import (
-    Union,
-    Iterable,
-    Generator,
-    Callable,
-    Tuple,
-    Sequence,
-    Optional,
-    Type,
-    List,
-)
+from typing import Union, Iterable, Generator, Callable, Tuple, Sequence, Optional, Type
 
 import psutil
 import zmq
@@ -42,6 +32,10 @@ from zproc.consts import (
 IPC_BASE_DIR = pathlib.Path.home() / ".tmp" / "zproc"
 if not IPC_BASE_DIR.exists():
     IPC_BASE_DIR.mkdir(parents=True)
+
+
+def create_ipc_address(name: str) -> str:
+    return "ipc://" + str(IPC_BASE_DIR / name)
 
 
 def get_server_meta(zmq_ctx: zmq.Context, server_address: str) -> ServerMeta:
@@ -84,7 +78,7 @@ def to_catchable_exc(
         else:
             raise ValueError(
                 "The items of `retry_for` must either be a sub-class of `BaseException`, "
-                "or an instance of `signal.Signals`. Not `%r`." % e
+                f"or an instance of `signal.Signals`. Not `{e!r}`."
             )
 
 

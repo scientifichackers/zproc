@@ -1,4 +1,3 @@
-import signal
 import struct
 from typing import NamedTuple
 
@@ -13,7 +12,6 @@ CHUNK_ID_LENGTH = TASK_ID_LENGTH + struct.calcsize(CHUNK_INFO_FMT)
 DEFAULT_ZMQ_RECVTIMEO = -1
 DEFAULT_NAMESPACE = "default"
 
-ALL_SIGNALS = set(signal.Signals) - {signal.SIGKILL, signal.SIGSTOP}
 
 EMPTY_MULTIPART = [b""]
 
