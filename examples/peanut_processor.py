@@ -137,7 +137,7 @@ def peanut_gen(state):
 print("\nConsuming LIVE events:\n")
 
 for _ in range(10):
-    num = state.get_when_change("peanuts", live=True)
+    num = state.when_change("peanuts", live=True)
     print("live consumer got:", num)
 
     sleep(2)
@@ -145,7 +145,7 @@ for _ in range(10):
 print("\nConsuming non-LIVE events:\n")
 
 for _ in range(10):
-    num = state.get_when_change("peanuts", live=False)
+    num = state.when_change("peanuts", live=False)
     print("non-live consumer got:", num)
 
     sleep(2)
@@ -153,7 +153,7 @@ for _ in range(10):
 print("\nConsuming a hybrid of LIVE and non-LIVE events:\n")
 
 for _ in range(10):
-    num = state.get_when_change("peanuts", live=False)
+    num = state.when_change("peanuts", live=False)
     print("hybrid consumer got:", num)
 
     state.go_live()

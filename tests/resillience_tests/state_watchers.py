@@ -31,7 +31,7 @@ print("LIVE:")
 def test_process(ctx):
     state = ctx.create_state()
 
-    for snap in state.get_when_change("foobar", live=True, count=MAX_ITER):
+    for snap in state.when_change("foobar", live=True, count=MAX_ITER):
         print(snap, end=",", flush=True)
 
         if SLOW:
@@ -47,7 +47,7 @@ print("BUFFERED:")
 def test_process(ctx):
     state = ctx.create_state()
 
-    for snap in state.get_when_change("foobar", live=False, count=MAX_ITER):
+    for snap in state.when_change("foobar", live=False, count=MAX_ITER):
         print(snap, end=",", flush=True)
 
         if SLOW:

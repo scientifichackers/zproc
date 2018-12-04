@@ -6,7 +6,7 @@ ctx = zproc.Context()
 def my_proc(ctx):
     state = ctx.create_state()
 
-    for snap in state.get_when_available():
+    for snap in state.when_available():
         pass
 
 

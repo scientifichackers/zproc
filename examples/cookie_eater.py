@@ -41,12 +41,12 @@ def cookie_eater(ctx):
     state = ctx.create_state()
     state["ready"] = True
 
-    for _ in state.get_when_change("cookies"):
+    for _ in state.when_change("cookies"):
         eat_cookie(state)
 
 
 # wait for that process
-next(state.get_when_available("ready"))
+next(state.when_available("ready"))
 
 # finally, get to work.
 print(cookie_eater)

@@ -79,26 +79,30 @@ nom nom nom
 nom nom nom
 ```
 
-The `cookie_eater` process is supplied with events asynchronously, as the state is updated. 
-(by the `state.get_when_change()` iterator)
+_The framework does message passing for you._
+
+The `state.get_when_change()` iterator supplies the `cookie_eater` process with events asynchronously, as the state is updated. 
+
 
 ## The core idea
 
 Message passing is cumbersome, error prone, and tedius --
  because there is a lot of manual wiring involved. 
 
-The idea behind this project is to provide a pythonic API over widely accepted models in the multi-tasking realm. 
+The idea behind this project is to provide a pythonic API over widely accepted models in the message passing realm. 
 
 It started out with _embracing_ shared state (but not shared memory).
 
 Shared memory is frowned upon by almost everyone, due to the fact that memory is inherently dumb.
 Memory doesn't really care who's writing to it.
+
 Shared state brings it's own perils, because its really hard to keep track of changes.
 
 With the aid of the Actor Model, ZProc's state keeps a track of who's doing what. 
-Infact, it can act as a time-machine and give you state events from a defined time.
+So much so, that it can act as a time-machine and give you state events from any defined time.
 
-It then evolved to do handle exceptions across processes, failover, worker swarms, event sourcing and other very useful features realated to multi-tasking. 
+It then evolved to do handle exceptions across processes, failover, worker swarms, event sourcing,
+ and other very useful features realated to multi-tasking. 
 
 The underlying architecture 100% message passing based,
 and hence scalable across many computers, 
@@ -106,7 +110,7 @@ with minimal modifications to the user code.
 
 ## Well why not just X?
 
-Each technology and solution has it's place. Here is a rundown of why you would use ZProc over X.
+Each technology solution has it's place. Here is a rundown of why you would use ZProc over X.
 
 - `X == asyncio`
     It's kinda in the name. Asyncio is strictly for I/O based concurrency. 

@@ -22,7 +22,7 @@ import zproc
 
 def num_listener(state, low, high):
     # blocks until num is between the specified range
-    state.get_when(lambda state: low < state.get("num") < high)
+    state.when(lambda state: low < state.get("num") < high)
 
     print("listener: foo is between {0} and {1}, so I awake".format(low, high))
 

@@ -21,12 +21,12 @@ def state() -> zproc.State:
 
 
 def test_not_live(state: zproc.State):
-    it = state.get_when_change("counter")
+    it = state.when_change("counter")
     sleep(0.25)
     assert next(it)["counter"] == 0
 
 
 def test_live(state: zproc.State):
-    it = state.get_when_change("counter", live=True)
+    it = state.when_change("counter", live=True)
     sleep(0.25)
     assert next(it)["counter"] > 0

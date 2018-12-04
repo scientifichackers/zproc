@@ -199,16 +199,14 @@ class State(_type.StateDictMethodStub, metaclass=_type.StateType):
         sock.connect(self._server_meta.watcher_router)
         return sock
 
-    def _w_request_reply(
-        self, request: List[bytes], only_after: float
-    ) -> StateUpdate:
+    def _w_request_reply(self, request: List[bytes], only_after: float) -> StateUpdate:
         request[-1] = struct.pack("d", only_after)
         response = util.strict_request_reply(
             request, self._w_dealer.send_multipart, self._w_dealer.recv_multipart
         )
         return StateUpdate(*serializer.loads(response[0]), bool(response[1]))
 
-    def get_raw_update(
+    def when_change_raw(
         self,
         *,
         live: bool = False,
@@ -271,7 +269,7 @@ class State(_type.StateDictMethodStub, metaclass=_type.StateType):
 
         return _(only_after)
 
-    def get_when_change(
+    def when_change(
         self, *keys: Hashable, exclude: bool = False, **watcher_kwargs
     ) -> Generator[dict, None, None]:
         """
@@ -280,13 +278,12 @@ class State(_type.StateDictMethodStub, metaclass=_type.StateType):
         .. include:: /api/state/get_when_change.rst
         """
         count = watcher_kwargs.pop("count", None)
-        it = self.get_raw_update(**watcher_kwargs)
+        it = self.when_change_raw(**watcher_kwargs)
 
         if not keys:
             if count is None:
                 return (i.after for i in it)
-            else:
-                return (next(it).after for _ in range(count))
+            return (next(it).after for _ in range(count))
 
         key_set = set(keys)
         identical_okay = watcher_kwargs.get("identical_okay", False)
@@ -322,7 +319,7 @@ class State(_type.StateDictMethodStub, metaclass=_type.StateType):
 
         return _()
 
-    def get_when(
+    def when(
         self,
         test_fn,
         *,
@@ -346,7 +343,7 @@ class State(_type.StateDictMethodStub, metaclass=_type.StateType):
             kwargs = {}
 
         count = watcher_kwargs.pop("count", math.inf)
-        it = self.get_raw_update(**watcher_kwargs)
+        it = self.when_change_raw(**watcher_kwargs)
 
         def _():
             i = 0
@@ -358,7 +355,25 @@ class State(_type.StateDictMethodStub, metaclass=_type.StateType):
 
         return _()
 
-    def get_when_equal(
+    def when_truthy(self, key: Hashable, **watcher_kwargs):
+        def _(snapshot):
+            try:
+                return snapshot[key]
+            except KeyError:
+                return False
+
+        return self.when(_, **watcher_kwargs)
+
+    def when_falsy(self, key: Hashable, **watcher_kwargs):
+        def _(snapshot):
+            try:
+                return not snapshot[key]
+            except KeyError:
+                return False
+
+        return self.when(_, **watcher_kwargs)
+
+    def when_equal(
         self, key: Hashable, value: Any, **watcher_kwargs
     ) -> Generator[dict, None, None]:
         """
@@ -373,9 +388,9 @@ class State(_type.StateDictMethodStub, metaclass=_type.StateType):
             except KeyError:
                 return False
 
-        return self.get_when(_, **watcher_kwargs)
+        return self.when(_, **watcher_kwargs)
 
-    def get_when_not_equal(
+    def when_not_equal(
         self, key: Hashable, value: Any, **watcher_kwargs
     ) -> Generator[dict, None, None]:
         """
@@ -390,9 +405,9 @@ class State(_type.StateDictMethodStub, metaclass=_type.StateType):
             except KeyError:
                 return False
 
-        return self.get_when(_, **watcher_kwargs)
+        return self.when(_, **watcher_kwargs)
 
-    def get_when_none(
+    def when_none(
         self, key: Hashable, **watcher_kwargs
     ) -> Generator[dict, None, None]:
         """
@@ -407,9 +422,9 @@ class State(_type.StateDictMethodStub, metaclass=_type.StateType):
             except KeyError:
                 return False
 
-        return self.get_when(_, **watcher_kwargs)
+        return self.when(_, **watcher_kwargs)
 
-    def get_when_not_none(
+    def when_not_none(
         self, key: Hashable, **watcher_kwargs
     ) -> Generator[dict, None, None]:
         """
@@ -424,15 +439,15 @@ class State(_type.StateDictMethodStub, metaclass=_type.StateType):
             except KeyError:
                 return False
 
-        return self.get_when(_, **watcher_kwargs)
+        return self.when(_, **watcher_kwargs)
 
-    def get_when_available(self, key: Hashable, **watcher_kwargs):
+    def when_available(self, key: Hashable, **watcher_kwargs):
         """
         Block until ``key in state``, and then return a copy of the state.
 
         .. include:: /api/state/get_when_equality.rst
         """
-        return self.get_when(lambda snapshot: key in snapshot, **watcher_kwargs)
+        return self.when(lambda snapshot: key in snapshot, **watcher_kwargs)
 
     def __del__(self):
         try:
