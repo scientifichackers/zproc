@@ -26,7 +26,7 @@ def state():
 ###
 
 
-def test_get_when_change(state):
+def test_when_change(state):
     it = state.when_change()
     assert isinstance(next(it), dict)
 
@@ -34,7 +34,7 @@ def test_get_when_change(state):
 ###
 
 
-def test_get_when(state):
+def test_when(state):
     it = state.when(lambda s: s.get("flag") is True)
     assert next(it)["flag"] is True
 
@@ -42,7 +42,7 @@ def test_get_when(state):
 ###
 
 
-def test_get_when_equal(state):
+def test_when_equal(state):
     it = state.when_equal("flag", True)
     assert next(it)["flag"]
 
@@ -50,7 +50,7 @@ def test_get_when_equal(state):
 ###
 
 
-def test_get_when_not_equal(state):
+def test_when_not_equal(state):
     it = state.when_not_equal("flag", False)
     assert next(it).get("flag") is not False
 
@@ -58,7 +58,7 @@ def test_get_when_not_equal(state):
 ###
 
 
-def test_get_when_none(state):
+def test_when_none(state):
     it = state.when_none("none")
     assert next(it).get("none") is None
 
@@ -66,7 +66,7 @@ def test_get_when_none(state):
 ###
 
 
-def test_get_when_not_none(state):
+def test_when_not_none(state):
     it = state.when_not_none("none")
     assert next(it)["none"] is not None
 
@@ -74,6 +74,6 @@ def test_get_when_not_none(state):
 ###
 
 
-def test_get_when_avail(state):
+def test_when_avail(state):
     it = state.when_available("avail")
     assert "avail" in next(it)

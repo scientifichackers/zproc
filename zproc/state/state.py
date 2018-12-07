@@ -24,6 +24,103 @@ from zproc.server import tools
 from zproc.state import _type
 
 
+class _SkipStateUpdate(Exception):
+    pass
+
+
+def _dummy_callback(_):
+    return _
+
+
+class StateWatcher:
+    _time_limit: float
+    _iters: int = 0
+
+    def __init__(
+        self,
+        state: "State",
+        live: bool,
+        timeout: float,
+        identical_okay: bool,
+        start_time: bool,
+        count: int,
+        callback: Callable[[StateUpdate], Any] = _dummy_callback,
+    ):
+        self.state = state
+        self.callback = callback
+        self.live = live
+        self.timeout = timeout
+        self.identical_okay = identical_okay
+        self.start_time = start_time
+        self.count = count
+
+        if self.timeout is None:
+            self.state._w_dealer.setsockopt(zmq.RCVTIMEO, DEFAULT_ZMQ_RECVTIMEO)
+        else:
+            self.refresh_time_limit()
+
+        if count is None:
+            self._iter_limit = math.inf
+        else:
+            self._iter_limit = count
+
+        self._only_after = self.start_time
+        if self._only_after is None:
+            self._only_after = self.state.time()
+
+        self._request_msg = [
+            self.state._identity,
+            self.state._namespace_bytes,
+            bytes(identical_okay),
+            None,
+        ]
+
+    def refresh_time_limit(self):
+        self._time_limit = time.time() + self.timeout
+
+    def refresh_timeout(self):
+        try:
+            if time.time() > self._time_limit:
+                raise TimeoutError("Timed-out while waiting for a state update.")
+
+            self.state._w_dealer.setsockopt(
+                zmq.RCVTIMEO, int((self._time_limit - time.time()) * 1000)
+            )
+        except AttributeError:  # if `timeout` is None <=> `_time_limit` is not set
+            pass
+
+    def __next__(self):
+        while self._iters < self._iter_limit:
+            self.refresh_timeout()
+
+            if self.live:
+                self._only_after = self.state.time()
+
+            try:
+                state_update = self.state._w_request_reply(
+                    self._request_msg, self._only_after
+                )
+            except zmq.error.Again:
+                self.refresh_time_limit()
+                raise TimeoutError("Timed-out while waiting for a state update.")
+
+            if not self.live:
+                self._only_after = state_update.timestamp
+
+            try:
+                value = self.callback(state_update)
+            except _SkipStateUpdate:
+                continue
+
+            self._iters += 1
+            return value
+
+        raise StopIteration
+
+    def __iter__(self):
+        return self
+
+
 class State(_type.StateDictMethodStub, metaclass=_type.StateType):
     _server_meta: ServerMeta
 
@@ -194,6 +291,9 @@ class State(_type.StateDictMethodStub, metaclass=_type.StateType):
     # state watcher
     #
 
+    def time(self) -> float:
+        return self._s_request_reply({Msgs.cmd: Cmds.time})
+
     def _create_w_dealer(self) -> zmq.Socket:
         sock = self._zmq_ctx.socket(zmq.DEALER)
         sock.connect(self._server_meta.watcher_router)
@@ -204,7 +304,8 @@ class State(_type.StateDictMethodStub, metaclass=_type.StateType):
         response = util.strict_request_reply(
             request, self._w_dealer.send_multipart, self._w_dealer.recv_multipart
         )
-        return StateUpdate(*serializer.loads(response[0]), bool(response[1]))
+        su = StateUpdate(*serializer.loads(response[0]), is_identical=bool(response[1]))
+        return su
 
     def when_change_raw(
         self,
@@ -214,110 +315,78 @@ class State(_type.StateDictMethodStub, metaclass=_type.StateType):
         identical_okay: bool = False,
         start_time: bool = None,
         count: int = None,
-    ) -> Generator[StateUpdate, None, None]:
+    ) -> StateWatcher:
         """
         A low-level hook that emits each and every state update.
         All other state watchers are built upon this only.
 
         .. include:: /api/state/get_raw_update.rst
         """
-        if timeout is None:
-            time_limit = None
-        else:
-            time_limit = time.time() + timeout
-
-        only_after = start_time
-        if only_after is None:
-            only_after = self._s_request_reply({Msgs.cmd: Cmds.time})
-
-        if count is None:
-            counter = itertools.count()
-        else:
-            counter = iter(range(count))
-
-        request_msg = [
-            self._identity,
-            self._namespace_bytes,
-            bytes(identical_okay),
-            None,
-        ]
-
-        def _(only_after):
-            for _ in counter:
-                if time_limit is None:
-                    self._w_dealer.setsockopt(zmq.RCVTIMEO, DEFAULT_ZMQ_RECVTIMEO)
-                else:
-                    if time_limit < time.time():
-                        raise TimeoutError(
-                            "Timed-out while waiting for a state update."
-                        )
-
-                    self._w_dealer.setsockopt(
-                        zmq.RCVTIMEO, int((time_limit - time.time()) * 1000)
-                    )
-
-                if live:
-                    only_after = time.time()
-                try:
-                    state_update = self._w_request_reply(request_msg, only_after)
-                except zmq.error.Again:
-                    raise TimeoutError("Timed-out while waiting for a state update.")
-                if not live:
-                    only_after = state_update.timestamp
-
-                yield state_update
-
-        return _(only_after)
+        return StateWatcher(
+            state=self,
+            live=live,
+            timeout=timeout,
+            identical_okay=identical_okay,
+            start_time=start_time,
+            count=count,
+        )
 
     def when_change(
-        self, *keys: Hashable, exclude: bool = False, **watcher_kwargs
-    ) -> Generator[dict, None, None]:
+        self,
+        *keys: Hashable,
+        exclude: bool = False,
+        live: bool = False,
+        timeout: float = None,
+        identical_okay: bool = False,
+        start_time: bool = None,
+        count: int = None,
+    ) -> StateWatcher:
         """
         Block until a change is observed, and then return a copy of the state.
 
         .. include:: /api/state/get_when_change.rst
         """
-        count = watcher_kwargs.pop("count", None)
-        it = self.when_change_raw(**watcher_kwargs)
-
         if not keys:
-            if count is None:
-                return (i.after for i in it)
-            return (next(it).after for _ in range(count))
 
-        key_set = set(keys)
-        identical_okay = watcher_kwargs.get("identical_okay", False)
-        if identical_okay:
-            raise ValueError(
-                "Passing both `identical_okay` and `keys` is not possible. "
-                "(Hint: Omit `keys`)"
-            )
+            def callback(update: StateUpdate) -> dict:
+                return update.after
 
-        if not count:
-            count = math.inf
+        else:
+            if identical_okay:
+                raise ValueError(
+                    "Passing both `identical_okay` and `keys` is not possible. "
+                    "(Hint: Omit `keys`)"
+                )
 
-        def _():
-            def select():
+            key_set = set(keys)
+
+            def select(before, after):
                 selected = {*before.keys(), *after.keys()}
                 if exclude:
                     return selected - key_set
                 else:
                     return selected & key_set
 
-            i = 0
-            while i < count:
-                update = next(it)
+            def callback(update: StateUpdate) -> dict:
                 before, after = update.before, update.after
+
                 try:
-                    if not any(before[key] != after[key] for key in select()):
-                        continue
+                    if not any(before[k] != after[k] for k in select(before, after)):
+                        raise _SkipStateUpdate
                 except KeyError:  # this indirectly implies that something has changed
                     pass
 
-                i += 1
-                yield update.after
+                return update.after
 
-        return _()
+        return StateWatcher(
+            state=self,
+            live=live,
+            timeout=timeout,
+            identical_okay=identical_okay,
+            start_time=start_time,
+            count=count,
+            callback=callback,
+        )
 
     def when(
         self,
@@ -325,8 +394,12 @@ class State(_type.StateDictMethodStub, metaclass=_type.StateType):
         *,
         args: Sequence = None,
         kwargs: Mapping = None,
-        **watcher_kwargs,
-    ) -> Generator[dict, None, None]:
+        live: bool = False,
+        timeout: float = None,
+        identical_okay: bool = False,
+        start_time: bool = None,
+        count: int = None,
+    ) -> StateWatcher:
         """
         Block until ``test_fn(snapshot)`` returns a "truthy" value,
         and then return a copy of the state.
@@ -342,40 +415,41 @@ class State(_type.StateDictMethodStub, metaclass=_type.StateType):
         if kwargs is None:
             kwargs = {}
 
-        count = watcher_kwargs.pop("count", math.inf)
-        it = self.when_change_raw(**watcher_kwargs)
+        def callback(update: StateUpdate) -> dict:
+            snapshot = update.after
+            if test_fn(snapshot, *args, **kwargs):
+                return snapshot
+            raise _SkipStateUpdate
 
-        def _():
-            i = 0
-            while i < count:
-                snapshot = next(it).after
-                if test_fn(snapshot, *args, **kwargs):
-                    i += 1
-                    yield snapshot
+        return StateWatcher(
+            state=self,
+            live=live,
+            timeout=timeout,
+            identical_okay=identical_okay,
+            start_time=start_time,
+            count=count,
+            callback=callback,
+        )
 
-        return _()
-
-    def when_truthy(self, key: Hashable, **watcher_kwargs):
+    def when_truthy(self, key: Hashable, **when_kwargs) -> StateWatcher:
         def _(snapshot):
             try:
                 return snapshot[key]
             except KeyError:
                 return False
 
-        return self.when(_, **watcher_kwargs)
+        return self.when(_, **when_kwargs)
 
-    def when_falsy(self, key: Hashable, **watcher_kwargs):
+    def when_falsy(self, key: Hashable, **when_kwargs) -> StateWatcher:
         def _(snapshot):
             try:
                 return not snapshot[key]
             except KeyError:
                 return False
 
-        return self.when(_, **watcher_kwargs)
+        return self.when(_, **when_kwargs)
 
-    def when_equal(
-        self, key: Hashable, value: Any, **watcher_kwargs
-    ) -> Generator[dict, None, None]:
+    def when_equal(self, key: Hashable, value: Any, **when_kwargs) -> StateWatcher:
         """
         Block until ``state[key] == value``, and then return a copy of the state.
 
@@ -388,11 +462,9 @@ class State(_type.StateDictMethodStub, metaclass=_type.StateType):
             except KeyError:
                 return False
 
-        return self.when(_, **watcher_kwargs)
+        return self.when(_, **when_kwargs)
 
-    def when_not_equal(
-        self, key: Hashable, value: Any, **watcher_kwargs
-    ) -> Generator[dict, None, None]:
+    def when_not_equal(self, key: Hashable, value: Any, **when_kwargs) -> StateWatcher:
         """
         Block until ``state[key] != value``, and then return a copy of the state.
 
@@ -405,11 +477,9 @@ class State(_type.StateDictMethodStub, metaclass=_type.StateType):
             except KeyError:
                 return False
 
-        return self.when(_, **watcher_kwargs)
+        return self.when(_, **when_kwargs)
 
-    def when_none(
-        self, key: Hashable, **watcher_kwargs
-    ) -> Generator[dict, None, None]:
+    def when_none(self, key: Hashable, **when_kwargs) -> StateWatcher:
         """
         Block until ``state[key] is None``, and then return a copy of the state.
 
@@ -422,11 +492,9 @@ class State(_type.StateDictMethodStub, metaclass=_type.StateType):
             except KeyError:
                 return False
 
-        return self.when(_, **watcher_kwargs)
+        return self.when(_, **when_kwargs)
 
-    def when_not_none(
-        self, key: Hashable, **watcher_kwargs
-    ) -> Generator[dict, None, None]:
+    def when_not_none(self, key: Hashable, **when_kwargs) -> StateWatcher:
         """
         Block until ``state[key] is not None``, and then return a copy of the state.
 
@@ -439,15 +507,15 @@ class State(_type.StateDictMethodStub, metaclass=_type.StateType):
             except KeyError:
                 return False
 
-        return self.when(_, **watcher_kwargs)
+        return self.when(_, **when_kwargs)
 
-    def when_available(self, key: Hashable, **watcher_kwargs):
+    def when_available(self, key: Hashable, **when_kwargs) -> StateWatcher:
         """
         Block until ``key in state``, and then return a copy of the state.
 
         .. include:: /api/state/get_when_equality.rst
         """
-        return self.when(lambda snapshot: key in snapshot, **watcher_kwargs)
+        return self.when(lambda snapshot: key in snapshot, **when_kwargs)
 
     def __del__(self):
         try:
