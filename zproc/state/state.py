@@ -3,6 +3,7 @@ import math
 import os
 import struct
 import time
+from collections import deque
 from functools import wraps
 from pprint import pformat
 from textwrap import indent
@@ -119,6 +120,10 @@ class StateWatcher:
 
     def __iter__(self):
         return self
+
+    def consume(self):
+        # consumes iterator at C speed
+        deque(iter(self), maxlen=0)
 
 
 class State(_type.StateDictMethodStub, metaclass=_type.StateType):
