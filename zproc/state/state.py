@@ -64,41 +64,45 @@ class StateWatcher:
         if self._only_after is None:
             self._only_after = self.state.time()
 
-        self._request_msg = [
-            self.state._identity,
-            self.state._namespace_bytes,
-            bytes(identical_okay),
-            None,
-        ]
+    def _settimeout(self):
+        if time.time() > self._time_limit:
+            raise TimeoutError("Timed-out while waiting for a state update.")
 
-    def refresh_time_limit(self):
-        if self.timeout is not None:
-            self._time_limit = time.time() + self.timeout
+        self.state._w_dealer.setsockopt(
+            zmq.RCVTIMEO, int((self._time_limit - time.time()) * 1000)
+        )
 
-    def refresh_timeout(self):
-        try:
-            if time.time() > self._time_limit:
-                raise TimeoutError("Timed-out while waiting for a state update.")
+    def _request_reply(self) -> StateUpdate:
+        response = util.strict_request_reply(
+            [
+                self.state._identity,
+                self.state._namespace_bytes,
+                bytes(self.identical_okay),
+                struct.pack("d", self._only_after),
+            ],
+            self.state._w_dealer.send_multipart,
+            self.state._w_dealer.recv_multipart,
+        )
+        return StateUpdate(
+            *serializer.loads(response[0]), is_identical=bool(response[1])
+        )
 
-            self.state._w_dealer.setsockopt(
-                zmq.RCVTIMEO, int((self._time_limit - time.time()) * 1000)
-            )
-        except AttributeError:
-            self.state._w_dealer.setsockopt(zmq.RCVTIMEO, DEFAULT_ZMQ_RECVTIMEO)
+    def go_live(self):
+        self._only_after = self.state.time()
 
     def __next__(self):
-        self.refresh_time_limit()
-
+        if self.timeout is None:
+            self.state._w_dealer.setsockopt(zmq.RCVTIMEO, DEFAULT_ZMQ_RECVTIMEO)
+        else:
+            self._time_limit = time.time() + self.timeout
         while self._iters < self._iter_limit:
-            self.refresh_timeout()
-
+            if self.timeout is not None:
+                self._settimeout()
             if self.live:
                 self._only_after = self.state.time()
 
             try:
-                state_update = self.state._w_request_reply(
-                    self._request_msg, self._only_after
-                )
+                state_update = self._request_reply()
             except zmq.error.Again:
                 raise TimeoutError("Timed-out while waiting for a state update.")
 
@@ -109,8 +113,8 @@ class StateWatcher:
                 value = self.callback(state_update)
             except _SkipStateUpdate:
                 continue
-
-            self._iters += 1
+            else:
+                self._iters += 1
 
             return value
 
@@ -301,14 +305,6 @@ class State(_type.StateDictMethodStub, metaclass=_type.StateType):
         sock = self._zmq_ctx.socket(zmq.DEALER)
         sock.connect(self._server_meta.watcher_router)
         return sock
-
-    def _w_request_reply(self, request: List[bytes], only_after: float) -> StateUpdate:
-        request[-1] = struct.pack("d", only_after)
-        response = util.strict_request_reply(
-            request, self._w_dealer.send_multipart, self._w_dealer.recv_multipart
-        )
-        su = StateUpdate(*serializer.loads(response[0]), is_identical=bool(response[1]))
-        return su
 
     def when_change_raw(
         self,
