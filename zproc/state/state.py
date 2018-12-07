@@ -55,11 +55,6 @@ class StateWatcher:
         self.start_time = start_time
         self.count = count
 
-        if self.timeout is None:
-            self.state._w_dealer.setsockopt(zmq.RCVTIMEO, DEFAULT_ZMQ_RECVTIMEO)
-        else:
-            self.refresh_time_limit()
-
         if count is None:
             self._iter_limit = math.inf
         else:
@@ -77,7 +72,8 @@ class StateWatcher:
         ]
 
     def refresh_time_limit(self):
-        self._time_limit = time.time() + self.timeout
+        if self.timeout is not None:
+            self._time_limit = time.time() + self.timeout
 
     def refresh_timeout(self):
         try:
@@ -87,10 +83,12 @@ class StateWatcher:
             self.state._w_dealer.setsockopt(
                 zmq.RCVTIMEO, int((self._time_limit - time.time()) * 1000)
             )
-        except AttributeError:  # if `timeout` is None <=> `_time_limit` is not set
-            pass
+        except AttributeError:
+            self.state._w_dealer.setsockopt(zmq.RCVTIMEO, DEFAULT_ZMQ_RECVTIMEO)
 
     def __next__(self):
+        self.refresh_time_limit()
+
         while self._iters < self._iter_limit:
             self.refresh_timeout()
 
@@ -102,7 +100,6 @@ class StateWatcher:
                     self._request_msg, self._only_after
                 )
             except zmq.error.Again:
-                self.refresh_time_limit()
                 raise TimeoutError("Timed-out while waiting for a state update.")
 
             if not self.live:
@@ -114,6 +111,7 @@ class StateWatcher:
                 continue
 
             self._iters += 1
+
             return value
 
         raise StopIteration
