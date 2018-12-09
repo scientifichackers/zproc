@@ -34,6 +34,7 @@ def test_infinite_retry(ctx, state):
         try:
             raise ValueError
         finally:
+            # it's okay to do this, since no other parallel processes are runing
             state["times"] += 1
 
     with pytest.raises(TimeoutError):

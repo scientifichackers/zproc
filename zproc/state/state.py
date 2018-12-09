@@ -1,4 +1,3 @@
-import itertools
 import math
 import os
 import struct
@@ -7,7 +6,7 @@ from collections import deque
 from functools import wraps
 from pprint import pformat
 from textwrap import indent
-from typing import Hashable, Any, Callable, Dict, List, Generator, Mapping, Sequence
+from typing import Hashable, Any, Callable, Dict, Mapping, Sequence
 
 import zmq
 
@@ -62,7 +61,7 @@ class StateWatcher:
 
         self._only_after = self.start_time
         if self._only_after is None:
-            self._only_after = self.state.time()
+            self._only_after = time.time()
 
     def _settimeout(self):
         if time.time() > self._time_limit:
@@ -88,34 +87,31 @@ class StateWatcher:
         )
 
     def go_live(self):
-        self._only_after = self.state.time()
+        self._only_after = time.time()
 
     def __next__(self):
         if self.timeout is None:
             self.state._w_dealer.setsockopt(zmq.RCVTIMEO, DEFAULT_ZMQ_RECVTIMEO)
         else:
             self._time_limit = time.time() + self.timeout
+
         while self._iters < self._iter_limit:
             if self.timeout is not None:
                 self._settimeout()
             if self.live:
-                self._only_after = self.state.time()
-
+                self._only_after = time.time()
             try:
                 state_update = self._request_reply()
             except zmq.error.Again:
                 raise TimeoutError("Timed-out while waiting for a state update.")
-
             if not self.live:
                 self._only_after = state_update.timestamp
-
             try:
                 value = self.callback(state_update)
             except _SkipStateUpdate:
                 continue
             else:
                 self._iters += 1
-
             return value
 
         raise StopIteration
@@ -368,13 +364,11 @@ class State(_type.StateDictMethodStub, metaclass=_type.StateType):
 
             def callback(update: StateUpdate) -> dict:
                 before, after = update.before, update.after
-
                 try:
                     if not any(before[k] != after[k] for k in select(before, after)):
                         raise _SkipStateUpdate
                 except KeyError:  # this indirectly implies that something has changed
                     pass
-
                 return update.after
 
         return StateWatcher(
@@ -565,18 +559,17 @@ def atomic(fn: Callable) -> Callable:
     >>> increment(state)
     1
     """
-
-    serialized = serializer.dumps_fn(fn)
+    msg = {
+        Msgs.cmd: Cmds.run_fn_atomically,
+        Msgs.info: serializer.dumps_fn(fn),
+        Msgs.args: (),
+        Msgs.kwargs: {},
+    }
 
     @wraps(fn)
     def wrapper(state: State, *args, **kwargs):
-        return state._s_request_reply(
-            {
-                Msgs.cmd: Cmds.run_fn_atomically,
-                Msgs.info: serialized,
-                Msgs.args: args,
-                Msgs.kwargs: kwargs,
-            }
-        )
+        msg[Msgs.args] = args
+        msg[Msgs.kwargs] = kwargs
+        return state._s_request_reply(msg)
 
     return wrapper

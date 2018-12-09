@@ -289,7 +289,7 @@ class Context:
             for target in targets
         )
 
-    def map_process(
+    def spawn_map(
         self,
         target: Callable,
         map_iter: Sequence[Any] = None,
@@ -300,13 +300,17 @@ class Context:
         kwargs: Mapping = None,
         **process_kwargs
     ):
-        process_kwargs.setdefault("pass_state", False)
-
-        def _target(*a, **k):
-            return self._process(target, args=a, kwargs=k, **process_kwargs)
-
         return ProcessList(
-            map_plus(_target, map_iter, map_args, args, map_kwargs, kwargs)
+            map_plus(
+                lambda *args, **kwargs: self._process(
+                    target, args=args, kwargs=kwargs, **process_kwargs
+                ),
+                map_iter,
+                map_args,
+                args,
+                map_kwargs,
+                kwargs,
+            )
         )
 
     def wait(

@@ -196,7 +196,7 @@ def socket_factory(*sock_types):
 
 
 @contextmanager
-def counter():
+def perf_counter():
     s = time.perf_counter()
     e = time.perf_counter()
     fr = e - s
