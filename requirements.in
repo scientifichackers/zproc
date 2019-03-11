@@ -1,0 +1,14 @@
+pyzmq
+tblib
+psutil
+cloudpickle
+sphinx-rtd-theme
+ipython
+sphinx
+twine
+pytest
+yappi
+pytest-repeat
+mypy
+-e .
+pip-tools
