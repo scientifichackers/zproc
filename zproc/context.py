@@ -198,8 +198,21 @@ class Context:
     def __repr__(self):
         return util.enclose_in_brackets(self.__str__())
 
-    def create_state(self, value: dict = None):
-        state = State(self.server_address, namespace=self.namespace)
+    def create_state(self, value: dict = None, *, namespace: str = None):
+        """
+        Creates a new :py:class:`State` object, sharing the same zproc server as this Context.
+
+        :param value:
+            If provided, call ``state.update(value)``.
+        :param namespace:
+            Use this as the namespace for the :py:class:`State` object,
+            instead of this :py:class:`Context`\ 's namespace.
+        :return:
+            A :py:class:`State` object.
+        """
+        if namespace is None:
+            namespace = self.namespace
+        state = State(self.server_address, namespace=namespace)
         if value is not None:
             state.update(value)
         return state
