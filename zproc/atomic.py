@@ -3,11 +3,11 @@ from typing import Callable, Tuple, Any
 
 import glom
 
-from . import serializer
-from .consts import Msgs, Cmds
+from zproc import serializer
+from zproc.consts import Msgs, Cmds
 
 
-def atomic(fn: Callable=None, *, path:str=None) -> Callable:
+def atomic(fn: Callable = None, *, path: str = None) -> Callable:
     """
     Wraps a function, to create an atomic operation out of it.
 
@@ -39,11 +39,11 @@ def atomic(fn: Callable=None, *, path:str=None) -> Callable:
     >>> import zproc
     >>>
     >>> @zproc.atomic
-    >>> def increment(state):
+    ... def increment(state):
     ...     state["count"] += 1
     ...     return state["count"]
     ...
-    >>> client = zproc.Client()
+    >>> client = zproc.Client(value={"count": 0})
     >>> increment(client)
     1
     """
@@ -59,7 +59,7 @@ def atomic(fn: Callable=None, *, path:str=None) -> Callable:
         def wrapper(client, *args, **kwargs):
             msg[Msgs.args] = args
             msg[Msgs.kwargs] = kwargs
-            return client._state._s_request_reply(msg)
+            return client._state.s_request_reply(msg)
 
         return wrapper
 
@@ -85,33 +85,83 @@ def items(state: dict) -> Tuple[tuple, ...]:
 
 
 @atomic
-def copy(state: dict) -> dict:
-    return state
+def call(state: dict, spec: str, method: str, *args, **kwargs) -> Any:
+    """
+    Call a ``method`` (atomically) on the object found in the state,
+    using the glom ``spec``, with ``*args`` and ``**kwargs``.
 
-
-@atomic
-def call(state: dict, path: str, method: str, *args, **kwargs) -> Any:
-    value = glom.glom(state, path)
+    >>> import zproc
+    >>> client = zproc.Client(value={'foot': {'shoes': []}})
+    >>> client.call("foot.shoes", "append", "nike")
+    >>> client.get()
+    {'foot': {'shoes': ['nike']}}
+    """
+    value = glom.glom(state, spec)
     return getattr(value, method)(*args, **kwargs)
 
 
 @atomic
-def apply(state: dict, path: str, method: str, *args, **kwargs) -> Any:
-    value = getattr(glom.glom(state, path), method)(*args, **kwargs)
-    glom.assign(state, path, value)
+def apply(state: dict, spec: str, method: str, *args, **kwargs) -> Any:
+    """
+    Similar to :py:meth:`call`,
+    but replaces the result of the ``method`` call with the object found using the glom ``spec``.
+
+    >>> import zproc
+    >>> client = zproc.Client(value={'box': {'cookies': 0}})
+    >>> client.apply("box.cookies", "__add__", 5)
+    5
+    >>> client.get('box.cookies')
+    5
+    """
+    value = getattr(glom.glom(state, spec), method)(*args, **kwargs)
+    glom.assign(state, spec, value)
     return value
 
 
 @atomic
-def get(state: dict, path: str) -> Any:
-    return glom.glom(state, path)
+def get(state: dict, spec=None) -> Any:
+    """
+    Retrieve a value from the state dict using a glom ``spec``,
+
+    >>> import zproc
+    >>> client = zproc.Client(value={'a': {'b': 'c'}})
+    >>> client.get('a.b')
+    'c'
+
+    If ``spec`` is ``None``, then this just returns the full copy of the state.
+    """
+    if spec is None:
+        return state
+    return glom.glom(state, spec)
 
 
 @atomic
 def set(state: dict, path: str, value: dict, *, missing: Callable = dict) -> None:
+    """
+    Provides convenient "deep set"
+    functionality, modifying nested data structures in-place::
+
+    >>> import zproc
+    >>> client = zproc.Client(value={'a': [{'b': 'c'}, {'d': None}]})
+    >>> client.set('a.1.d', 'e')
+    >>> client.get()
+    {'a': [{'b': 'c'}, {'d': 'e'}]}
+
+    Missing structures can also be automatically created with the ``missing`` parameter.
+    """
     glom.assign(state, path, value, missing=missing)
 
 
 @atomic
 def merge(state: dict, *others: dict) -> None:
-    glom.merge((state,) + others)
+    """
+    Merge the state :py:class:`dict` with ``others``, using :py:meth:`dict.update`.
+
+    >>> import zproc
+    >>> client = zproc.Client()
+    >>> client.merge({'a': 'alpha'}, {'b': 'B'}, {'a': 'A'})
+    >>> client.get()
+    {'a': 'A', 'b': 'B'}
+    """
+    for it in others:
+        state.update(it)

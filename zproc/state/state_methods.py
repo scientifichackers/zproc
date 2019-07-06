@@ -3,8 +3,6 @@ import os
 import struct
 import time
 from collections import deque
-from pprint import pformat
-from textwrap import indent
 from typing import Hashable, Any, Callable, Dict, Mapping, Sequence
 
 import zmq
@@ -13,7 +11,6 @@ from zproc import util, serializer
 from zproc.consts import (
     Msgs,
     Cmds,
-    DEFAULT_NAMESPACE,
     DEFAULT_ZMQ_RECVTIMEO,
     StateUpdate,
     ZMQ_IDENTITY_LENGTH,
@@ -24,10 +21,6 @@ from zproc.server import tools
 
 class _SkipStateUpdate(Exception):
     pass
-
-
-def _dummy_callback(_):
-    return _
 
 
 class StateWatcher:
@@ -42,7 +35,7 @@ class StateWatcher:
         identical_okay: bool,
         start_time: bool,
         count: int,
-        callback: Callable[[StateUpdate], Any] = _dummy_callback,
+        callback: Callable[[StateUpdate], Any] = lambda _: _,
     ):
         self.state = state
         self.callback = callback
@@ -73,7 +66,7 @@ class StateWatcher:
         response = util.strict_request_reply(
             [
                 self.state._identity,
-                self.state._namespace_bytes,
+                self.state.namespace_bytes,
                 bytes(self.identical_okay),
                 struct.pack("d", self._only_after),
             ],
@@ -125,116 +118,25 @@ class StateWatcher:
 class StateMethods:
     _server_meta: ServerMeta
 
-    def __init__(
-        self, server_address: str, *, namespace: str = DEFAULT_NAMESPACE
-    ) -> None:
-        """
-        Allows accessing the state stored on the zproc server, through a dict-like API.
-
-        Also allows changing the namespace.
-
-        Serves the following ``dict``-like members, for accessing the state:
-
-        - Magic  methods:
-            ``__contains__()``,  ``__delitem__()``, ``__eq__()``,
-            ``__getitem__()``, ``__iter__()``,
-            ``__len__()``, ``__ne__()``, ``__setitem__()``
-
-        - Methods:
-            ``clear()``, ``copy()``, ``get()``,
-            ``items()``,  ``keys()``, ``pop()``, ``popitem()``,
-            ``setdefault()``, ``update()``, ``values()``
-
-        Please don't share a State object between Processes/Threads.
-        A State object is not thread-safe.
-
-        :param server_address:
-            .. include:: /api/snippets/server_address.rst
-
-            If you are using a :py:class:`Context`, then this is automatically provided.
-        """
-        #: Passed on from constructor. This is read-only
-        self.server_address = server_address
-        self.namespace = namespace
-
+    def __init__(self, client):
+        self.client = client
         self._zmq_ctx = util.create_zmq_ctx()
-        self._s_dealer = self._create_s_dealer()
-        self._w_dealer = self._create_w_dealer()
-
-    def __str__(self):
-        return "\n".join(
-            (
-                "%s - namespace: %r server: %r at %#x"
-                % (
-                    self.__class__.__qualname__,
-                    self.namespace,
-                    self.server_address,
-                    id(self),
-                ),
-                indent("↳ " + pformat(self.copy()), " " * 2),
-            )
-        )
-
-    def __repr__(self):
-        return util.enclose_in_brackets(self.__str__())
-
-    def fork(
-        self, server_address: str = None, *, namespace: str = None
-    ) -> "StateMethods":
-        r"""
-        "Forks" this State object.
-
-        Takes the same args as the :py:class:`State` constructor,
-        except that they automatically default to the values provided during the creation of this State object.
-
-        If no args are provided to this function,
-        then it shall create a new :py:class:`State` object
-        that follows the exact same semantics as this one.
-
-        This is preferred over ``copy()``\ -ing a :py:class:`State` object.
-
-        Useful when one needs to access 2 or more namespaces from the same code.
-        """
-        if server_address is None:
-            server_address = self.server_address
-        if namespace is None:
-            namespace = self.namespace
-
-        return self.__class__(server_address, namespace=namespace)
-
-    _namespace_bytes: bytes
+        self._s_dealer = self.create_s_dealer()  # state dealer
+        self._w_dealer = self.create_w_dealer()  # watcher dealer
 
     @property
-    def namespace(self) -> str:
-        """
-        This State's current working namespace as a ``str``.
+    def server_address(self) -> str:
+        return self.client.server_address
 
-        This property is read/write,
-        such that you can switch namespaces on the fly by just setting it's value.
+    @property
+    def process_kwargs(self) -> dict:
+        return self.client.process_kwargs
 
-        .. code-block:: python
+    @property
+    def namespace_bytes(self) -> bytes:
+        return self.client.namespace.encode()
 
-            state['food'] = 'available'
-            print(state)
-
-            state.namespace = "foobar"
-
-            print(state)
-
-        """
-        return self._namespace_bytes.decode()
-
-    @namespace.setter
-    def namespace(self, namespace: str):
-        # empty namespace is reserved for use by the framework itself
-        assert len(namespace) > 0, "'namespace' cannot be empty!"
-        self._namespace_bytes = namespace.encode()
-
-    #
-    # state access
-    #
-
-    def _create_s_dealer(self) -> zmq.Socket:
+    def create_s_dealer(self) -> zmq.Socket:
         sock = self._zmq_ctx.socket(zmq.DEALER)
         self._identity = os.urandom(ZMQ_IDENTITY_LENGTH)
         sock.setsockopt(zmq.IDENTITY, self._identity)
@@ -242,8 +144,8 @@ class StateMethods:
         self._server_meta = util.req_server_meta(sock)
         return sock
 
-    def _s_request_reply(self, request: Dict[int, Any]):
-        request[Msgs.namespace] = self._namespace_bytes
+    def s_request_reply(self, request: Dict[int, Any]):
+        request[Msgs.namespace] = self.namespace_bytes
         msg = serializer.dumps(request)
         return serializer.loads(
             util.strict_request_reply(msg, self._s_dealer.send, self._s_dealer.recv)
@@ -251,21 +153,17 @@ class StateMethods:
 
     def ping(self, **kwargs):
         """
-        Ping the zproc server corresponding to this State's Context
+        Ping the zproc server connected to this Client.
 
         :param kwargs: Keyword arguments that :py:func:`ping` takes, except ``server_address``.
         :return: Same as :py:func:`ping`
         """
         return tools.ping(self.server_address, **kwargs)
 
-    #
-    # state watcher
-    #
-
     def time(self) -> float:
-        return self._s_request_reply({Msgs.cmd: Cmds.time})
+        return self.s_request_reply({Msgs.cmd: Cmds.time})
 
-    def _create_w_dealer(self) -> zmq.Socket:
+    def create_w_dealer(self) -> zmq.Socket:
         sock = self._zmq_ctx.socket(zmq.DEALER)
         sock.connect(self._server_meta.watcher_router)
         return sock
