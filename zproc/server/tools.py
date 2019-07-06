@@ -4,6 +4,7 @@ from collections import Callable
 from typing import Union, Tuple
 
 import zmq
+from decouple import config
 
 from zproc import util, serializer
 from zproc.consts import Msgs, Cmds
@@ -12,7 +13,7 @@ from zproc.server.main import main
 
 
 def start_server(
-        server_address: str = None, *, backend: Callable = multiprocessing.Process
+    server_address: str = None, *, backend: Callable = multiprocessing.Process
 ) -> Tuple[multiprocessing.Process, str]:
     """
     Start a new zproc server.
@@ -27,6 +28,9 @@ def start_server(
         containing a :py:class:`multiprocessing.Process` object for server and the server address.
     """
     recv_conn, send_conn = multiprocessing.Pipe()
+
+    if server_address is None:
+        server_address = config("ZPROC_SERVER_ADDRESS", default=None)
 
     server_process = backend(target=main, args=[server_address, send_conn])
     server_process.start()
@@ -50,7 +54,7 @@ def start_server(
 
 
 def ping(
-        server_address: str, *, timeout: float = None, payload: Union[bytes] = None
+    server_address: str, *, timeout: float = None, payload: Union[bytes] = None
 ) -> int:
     """
     Ping the zproc server.
@@ -88,9 +92,7 @@ def ping(
                 dealer_sock.setsockopt(zmq.RCVTIMEO, int(timeout * 1000))
 
             dealer_sock.send(
-                serializer.dumps(
-                    {Msgs.cmd: Cmds.ping, Msgs.info: payload}
-                )
+                serializer.dumps({Msgs.cmd: Cmds.ping, Msgs.info: payload})
             )
 
             try:
@@ -101,7 +103,7 @@ def ping(
                 )
 
             assert (
-                    recv_payload == payload
+                recv_payload == payload
             ), "Payload doesn't match! The server connection may be compromised, or unstable."
 
             return pid
