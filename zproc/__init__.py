@@ -1,6 +1,6 @@
 from .__version__ import __version__
 from .client import Client
-from .atomic import atomic
+from .atomicity import atomic
 from .exceptions import (
     ProcessWaitError,
     RemoteException,

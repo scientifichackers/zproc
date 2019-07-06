@@ -75,11 +75,12 @@ class ProcessList(list):
         return [proc.stop() for proc in self]
 
 
-class ProcessMethods:
+class ProcessAPI:
     plist: ProcessList
 
     def __init__(self, client):
         self.client = client
+        self.plist = ProcessList()
 
     @property
     def server_address(self) -> str:
@@ -87,7 +88,7 @@ class ProcessMethods:
 
     @property
     def process_kwargs(self) -> dict:
-        return  self.client.process_kwargs
+        return self.client.process_kwargs
 
     def _process(
         self, target: Callable = None, **process_kwargs
@@ -126,7 +127,7 @@ class ProcessMethods:
         :return: The :py:class:`Process` instance produced.
         """
         process = Process(
-            self.server_address, target, **{**self.process_kwargs, **process_kwargs}
+            self.client, target, **{**self.process_kwargs, **process_kwargs}
         )
         self.plist.append(process)
         return process

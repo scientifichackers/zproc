@@ -1,3 +1,4 @@
+import atexit
 import os
 import pathlib
 import signal
@@ -128,6 +129,16 @@ def clean_process_tree(*signal_handler_args):
         pass
     else:
         os._exit(signum)
+
+
+def register_atexit(wait, wait_fn, cleanup):
+    def hook():
+        if wait:
+            wait_fn()
+        if cleanup:
+            clean_process_tree()
+
+    atexit.register(hook)
 
 
 def make_chunks(seq: Optional[Sequence], length: int, num_chunks: int):

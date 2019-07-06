@@ -29,7 +29,7 @@ class StateWatcher:
 
     def __init__(
         self,
-        state: "StateMethods",
+        state: "StateAPI",
         live: bool,
         timeout: float,
         identical_okay: bool,
@@ -115,7 +115,7 @@ class StateWatcher:
         deque(iter(self), maxlen=0)
 
 
-class StateMethods:
+class StateAPI:
     _server_meta: ServerMeta
 
     def __init__(self, client):
@@ -127,10 +127,6 @@ class StateMethods:
     @property
     def server_address(self) -> str:
         return self.client.server_address
-
-    @property
-    def process_kwargs(self) -> dict:
-        return self.client.process_kwargs
 
     @property
     def namespace_bytes(self) -> bytes:

@@ -3,7 +3,9 @@ import textwrap
 import time
 import traceback
 from functools import wraps
+from typing import Callable, Union, Sequence, Mapping, Type, Optional, Tuple
 
+import psutil
 import zmq
 
 from zproc import exceptions, util, serializer
@@ -13,20 +15,34 @@ class ChildProcess:
     exitcode = 0
     retries = 0
 
-    def __init__(self, **kwargs):
-        self.kwargs = kwargs
+    target: Callable
+    client_args: Sequence
+    client_kwargs: Mapping
+    target_args: Sequence
+    target_kwargs: Mapping
+    to_catch: Tuple[Type[BaseException]]
+    retry_delay: Union[int, float]
+    max_retries: Optional[int]
+    retry_args: tuple
+    retry_kwargs: dict
+    result_address: str
 
-        self.pass_context = self.kwargs["pass_context"]
-        self.max_retries = self.kwargs["max_retries"]
-        self.retry_delay = self.kwargs["retry_delay"]
-        self.retry_args = self.kwargs["retry_args"]
-        self.retry_kwargs = self.kwargs["retry_kwargs"]
-        self.to_catch = tuple(util.to_catchable_exc(self.kwargs["retry_for"]))
-        self.target = self.kwargs["target"]
+    def __init__(self, *args):
+        (
+            self.target,
+            self.client_args,
+            self.client_kwargs,
+            self.target_args,
+            self.target_kwargs,
+            retry_for,
+            self.retry_delay,
+            self.max_retries,
+            self.retry_args,
+            self.retry_kwargs,
+            self.result_address,
+        ) = args
 
-        self.target_args = self.kwargs["target_args"]
-        self.target_kwargs = self.kwargs["target_kwargs"]
-
+        self.to_catch = tuple(util.to_catchable_exc(retry_for))
         self.basic_info = "target: %s\npid: %r\nppid: %r" % (
             util.callable_repr(self.target),
             os.getpid(),
@@ -74,27 +90,22 @@ class ChildProcess:
                     if self.retry_kwargs is not None:
                         self.target_kwargs = self.retry_kwargs
 
+        client = None
         try:
-            if self.pass_context:
-                from .context import Client  # this helps avoid a circular import
+            from .client import Client  # this helps avoid a circular import
 
-                return_value = target_wrapper(
-                    Client(
-                        self.kwargs["server_address"],
-                        namespace=self.kwargs["namespace"],
-                        start_server=False,
-                    ),
-                    *self.target_args,
-                    **self.target_kwargs
-                )
-            else:
-                return_value = target_wrapper(*self.target_args, **self.target_kwargs)
-            # print(return_value)
+            client = Client(*self.client_args, **self.client_kwargs)
+            return_value = target_wrapper(
+                client, *self.target_args, **self.target_kwargs
+            )
+
             with util.create_zmq_ctx(linger=True) as zmq_ctx:
                 with zmq_ctx.socket(zmq.PAIR) as result_sock:
-                    result_sock.connect(self.kwargs["result_address"])
+                    result_sock.connect(self.result_address)
                     result_sock.send(serializer.dumps(return_value))
         except Exception as e:
             self._handle_exc(e)
         finally:
+            if client is not None and client.wait_enabled:
+                psutil.wait_procs(psutil.Process().children())
             util.clean_process_tree(self.exitcode)

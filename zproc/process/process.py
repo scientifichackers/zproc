@@ -12,18 +12,17 @@ from zproc.consts import DEFAULT_NAMESPACE
 
 
 class Process:
-    _result = None  # type:None
+    _result = None
     _has_returned = False
 
     def __init__(
         self,
-        server_address: str,
+        client,
         target: Callable,
         *,
         args: Sequence = None,
         kwargs: Mapping = None,
         start: bool = True,
-        pass_context: bool = True,
         retry_for: Iterable[Union[signal.Signals, Type[BaseException]]] = (),
         retry_delay: Union[int, float] = 5,
         max_retries: Optional[int] = 0,
@@ -49,11 +48,11 @@ class Process:
 
             .. code-block:: python
 
-                target(state, *args, **kwargs)
+                target(client, *args, **kwargs)
 
             *Where:*
 
-            - ``state`` is a :py:class:`State` instance.
+            - ``client`` is a :py:class:`Client` instance.
             - ``args`` and ``kwargs`` are passed from the constructor.
         :param args:
             The argument tuple for ``target``.
@@ -63,54 +62,6 @@ class Process:
             A dictionary of keyword arguments for ``target``.
 
             By default, it is an empty ``dict``.
-        :param pass_state:
-            Weather this process needs to access the state.
-
-            If this is set to ``False``,
-            then the ``state`` argument won't be provided to the ``target``.
-
-            *If this is enabled, the* ``target`` *is invoked with the following signature:*
-
-            .. code-block:: python
-
-                target(*args, **kwargs)
-
-            *Where:*
-
-            - ``args`` and ``kwargs`` are passed from the constructor.
-
-            Has no effect if ``pass_context`` is set to ``True``.
-        :param pass_context:
-            Weather to pass a :py:class:`Context` to this process.
-
-            If this is set to ``True``,
-            then the first argument to ``target`` will be a new :py:class:`Context` object
-
-            This will take the place of the default - :py:class:`State`.
-
-            *If this is enabled, the* ``target`` *is invoked with the following signature*:
-
-            .. code-block:: python
-
-                target(ctx, *args, **kwargs)
-
-            *Where:*
-
-            - ``ctx`` is a :py:class:`Context` object.
-            - ``args`` and ``kwargs`` are passed from the constructor.
-
-            .. note::
-                The :py:class:`Context` object provided here,
-                will be a new object, NOT the one used to create this process.
-
-                Such that,
-                this new :py:class:`Context` can be used to spwan new processes,
-                that share the same state.
-
-                **This is the recommended way to create nested processes
-                that share the same state.**
-
-
         :param start:
             Automatically call :py:meth:`.start()` on the process.
         :param retry_for:
@@ -148,12 +99,11 @@ class Process:
         :param backend:
             .. include:: /api/snippets/backend.rst
         """
-        #: Passed on from the constructor.
-        self.server_address = server_address
-        #: Passed on from the constructor.
-        self.namespace = namespace
-        #: Passed on from the constructor.
         self.target = target
+        """Passed on from the constructor."""
+
+        self.client = client
+        """Passed on from the constructor."""
 
         if args is None:
             args = ()
@@ -170,20 +120,27 @@ class Process:
         #: The :py:class:`multiprocessing.Process` instance for the child process.
         self.child = backend(
             target=ChildProcess,
-            kwargs=dict(
-                target=self.target,
-                server_address=self.server_address,
-                namespace=self.namespace,
-                pass_context=pass_context,
-                target_args=args,
-                target_kwargs=kwargs,
-                retry_for=retry_for,
-                retry_delay=retry_delay,
-                max_retries=max_retries,
-                retry_args=retry_args,
-                retry_kwargs=retry_kwargs,
-                result_address=result_address,
-            ),
+            args=[
+                self.target,
+                (client.server_address,),
+                dict(
+                    value=None,
+                    start_server=False,
+                    backend=client.backend,
+                    wait=client.wait_enabled,
+                    cleanup=client.cleanup_enabled,
+                    namespace=client.namespace,
+                    **client.process_kwargs,
+                ),
+                args,
+                kwargs,
+                retry_for,
+                retry_delay,
+                max_retries,
+                retry_args,
+                retry_kwargs,
+                result_address,
+            ],
         )
         if start:
             self.child.start()
