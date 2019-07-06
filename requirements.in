@@ -1,7 +1,7 @@
 pyzmq
 tblib
 psutil
-cloudpickle
+cloudpickle>=1.2.1
 sphinx-rtd-theme
 ipython
 sphinx
@@ -12,3 +12,6 @@ pytest-repeat
 mypy
 -e .
 pip-tools
+click
+python-decouple
+glom

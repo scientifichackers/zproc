@@ -115,7 +115,7 @@ from time import sleep
 
 import zproc
 
-ctx = zproc.Context()
+ctx = zproc.Client()
 state = ctx.state
 
 state["peanuts"] = 0

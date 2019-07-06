@@ -3,7 +3,7 @@ import time
 
 import zproc
 
-ctx = zproc.Context()
+ctx = zproc.Client()
 ctx.workers.start()
 
 

@@ -5,7 +5,7 @@ import zproc
 
 @pytest.fixture
 def ctx():
-    return zproc.Context()
+    return zproc.Client()
 
 
 @pytest.fixture
@@ -30,7 +30,7 @@ def test_lazy(swarm):
 
 def test_nested_map(ctx):
     @ctx.spawn
-    def p1(ctx: zproc.Context):
+    def p1(ctx: zproc.Client):
         swarm = ctx.create_swarm()
         return swarm.map(pow, range(100), args=[2])
 
@@ -39,7 +39,7 @@ def test_nested_map(ctx):
 
 def test_remote_result(ctx):
     @ctx.spawn
-    def p2(ctx: zproc.Context):
+    def p2(ctx: zproc.Client):
         swarm = ctx.create_swarm()
         result = swarm.map_lazy(pow, range(100), args=[2])
         return result.task_id

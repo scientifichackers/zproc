@@ -6,7 +6,7 @@ import zproc
 MAX_ITER = 100
 SLOW = False
 
-ctx = zproc.Context()
+ctx = zproc.Client()
 state = ctx.create_state({"foobar": 0})
 
 

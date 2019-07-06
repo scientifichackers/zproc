@@ -20,7 +20,7 @@ from time import sleep
 
 import zproc
 
-ctx = zproc.Context(wait=True)
+ctx = zproc.Client(wait=True)
 ctx.state["count"] = 0
 
 

@@ -9,7 +9,7 @@ TOLERANCE = 0.1
 
 @pytest.fixture
 def ctx():
-    return zproc.Context(pass_context=False)
+    return zproc.Client(pass_context=False)
 
 
 def test_timeout_accuracy(ctx):

@@ -33,7 +33,7 @@ def num_listener(state, low, high):
 
 
 if __name__ == "__main__":
-    ctx = zproc.Context()  # create a context for us to work with
+    ctx = zproc.Client()  # create a context for us to work with
     state = ctx.state
 
     state.setdefault("num", 0)  # set the default value, just to be safe

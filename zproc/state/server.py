@@ -7,6 +7,7 @@ from contextlib import contextmanager
 from copy import deepcopy
 from typing import Any, Dict, List, Tuple
 
+import glom
 import zmq
 
 from zproc import serializer
@@ -38,9 +39,6 @@ class StateServer:
 
         self.dispatch_dict = {
             Cmds.run_fn_atomically: self.run_fn_atomically,
-            Cmds.run_dict_method: self.run_dict_method,
-            Cmds.get_state: self.send_state,
-            Cmds.set_state: self.set_state,
             Cmds.get_server_meta: self.get_server_meta,
             Cmds.ping: self.ping,
             Cmds.time: self.time,
@@ -63,29 +61,18 @@ class StateServer:
     def time(self, _):
         self.reply(time.time())
 
-    def set_state(self, request):
-        new = request[Msgs.info]
-        with self.mutate_safely():
-            self.state_map[self.namespace] = new
-            self.reply(True)
-
-    def run_dict_method(self, request):
-        """Execute a method on the state ``dict`` and reply with the result."""
-        state_method_name, args, kwargs = (
-            request[Msgs.info],
-            request[Msgs.args],
-            request[Msgs.kwargs],
-        )
-        # print(method_name, args, kwargs)
-        with self.mutate_safely():
-            self.reply(getattr(self.state, state_method_name)(*args, **kwargs))
-
     def run_fn_atomically(self, request):
         """Execute a function, atomically and reply with the result."""
-        fn = serializer.loads_fn(request[Msgs.info])
+        fn_bytes, path = request[Msgs.info]
+        fn = serializer.loads_fn(fn_bytes)
         args, kwargs = request[Msgs.args], request[Msgs.kwargs]
+
         with self.mutate_safely():
-            self.reply(fn(self.state, *args, **kwargs))
+            if path is None:
+                state = self.state
+            else:
+                state = glom.glom(self.state, path)
+            self.reply(fn(state, *args, **kwargs))
 
     def recv_request(self):
         self.identity, request = self.state_router.recv_multipart()

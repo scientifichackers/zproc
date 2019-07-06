@@ -7,7 +7,7 @@ import zproc
 
 @pytest.fixture
 def state():
-    ctx = zproc.Context()
+    ctx = zproc.Client()
 
     @ctx.spawn()
     def updater(ctx):

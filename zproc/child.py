@@ -76,10 +76,10 @@ class ChildProcess:
 
         try:
             if self.pass_context:
-                from .context import Context  # this helps avoid a circular import
+                from .context import Client  # this helps avoid a circular import
 
                 return_value = target_wrapper(
-                    Context(
+                    Client(
                         self.kwargs["server_address"],
                         namespace=self.kwargs["namespace"],
                         start_server=False,

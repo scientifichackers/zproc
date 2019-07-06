@@ -30,7 +30,7 @@ def bake_cookie(snap):
     print("Here's a cookie!")
 
 
-ctx = zproc.Context(wait=True)
+ctx = zproc.Client(wait=True)
 state = ctx.create_state()
 state["cookies"] = 0
 

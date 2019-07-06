@@ -6,21 +6,23 @@ import zmq
 from zproc import util, serializer
 from zproc.consts import EMPTY_MULTIPART
 from zproc.exceptions import RemoteException
-from zproc.state.state import State
 from .map_plus import map_plus
 
 
 def run_task(
-    target: Callable, task: Iterable, state: State
+    target: Callable, task: Iterable, server_address: str
 ) -> Union[list, RemoteException]:
-    params, pass_state, namespace = task
-    if pass_state:
-        state.namespace = namespace
+    params, pass_client, namespace = task
+    if pass_client:
+        from zproc import Client
 
-        def target_with_state(*args, **kwargs):
-            return target(state, *args, **kwargs)
+        client = Client(server_address)
+        client.namespace = namespace
 
-        target = target_with_state
+        def wrapper(*args, **kwargs):
+            return target(client, *args, **kwargs)
+
+        target = wrapper
 
     return map_plus(target, *params)
 
@@ -32,7 +34,6 @@ def worker_process(server_address: str, send_conn):
         try:
             task_pull.connect(server_meta.task_proxy_out)
             result_push.connect(server_meta.task_result_pull)
-            state = State(server_address)
         except Exception:
             with send_conn:
                 send_conn.send_bytes(serializer.dumps(RemoteException()))
@@ -51,7 +52,7 @@ def worker_process(server_address: str, send_conn):
                     task = serializer.loads(task_bytes)
                     target = serializer.loads_fn(target_bytes)
 
-                    result = run_task(target, task, state)
+                    result = run_task(target, task, server_address)
                 except KeyboardInterrupt:
                     raise
                 except Exception:

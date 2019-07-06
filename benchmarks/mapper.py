@@ -3,7 +3,7 @@ from time import perf_counter
 
 import zproc
 
-ctx = zproc.Context()
+ctx = zproc.Client()
 ctx.workers.start(2)
 
 

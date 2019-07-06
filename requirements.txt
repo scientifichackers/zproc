@@ -4,19 +4,23 @@
 #
 #    pip-compile -v requirements.in
 #
--e file:///home/dev/Projects/zproc
+-e file:///Users/dev/Projects/zproc
 alabaster==0.7.12         # via sphinx
+appnope==0.1.0            # via ipython
 atomicwrites==1.3.0       # via pytest
-attrs==19.1.0             # via pytest
+attrs==19.1.0             # via glom, pytest
 babel==2.6.0              # via sphinx
 backcall==0.1.0           # via ipython
 bleach==3.1.0             # via readme-renderer
+boltons==19.1.0           # via face, glom
 certifi==2019.3.9         # via requests
 chardet==3.0.4            # via requests
-click==7.0                # via pip-tools
-cloudpickle==0.8.0
+click==7.0
+cloudpickle==1.2.1
 decorator==4.3.2          # via ipython, traitlets
 docutils==0.14            # via readme-renderer, sphinx
+face==19.1.2              # via glom
+glom==19.2.0
 idna==2.8                 # via requests
 imagesize==1.1.0          # via sphinx
 ipython-genutils==0.2.0   # via traitlets
@@ -42,6 +46,7 @@ pygments==2.3.1           # via ipython, readme-renderer, sphinx
 pyparsing==2.3.1          # via packaging
 pytest-repeat==0.8.0
 pytest==4.3.0
+python-decouple==3.1
 pytz==2018.9              # via babel
 pyzmq==18.0.1
 readme-renderer==24.0     # via twine

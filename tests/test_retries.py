@@ -5,7 +5,7 @@ import zproc
 
 @pytest.fixture
 def ctx():
-    return zproc.Context()
+    return zproc.Client()
 
 
 @pytest.fixture

@@ -1,6 +1,6 @@
 import zproc
 
-ctx = zproc.Context()
+ctx = zproc.Client()
 
 
 def my_proc(ctx):

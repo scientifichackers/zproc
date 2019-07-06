@@ -1,20 +1,8 @@
-import pickle
 from typing import Callable, Any, Dict
 
 from cloudpickle import cloudpickle
 
 from zproc import exceptions
-
-
-def dumps(obj: Any) -> bytes:
-    return pickle.dumps(obj, protocol=pickle.HIGHEST_PROTOCOL)
-
-
-def loads(bytes_obj: bytes) -> Any:
-    rep = pickle.loads(bytes_obj)
-    if isinstance(rep, exceptions.RemoteException):
-        rep.reraise()
-    return rep
 
 
 def _get_fn_hash(fn: Callable):
@@ -48,3 +36,13 @@ def loads_fn(fn_bytes: bytes) -> Callable:
         fn = cloudpickle.loads(fn_bytes)
         _fn_load_cache[fn_bytes_hash] = fn
     return fn
+
+def dumps(obj: Any) -> bytes:
+    return cloudpickle.dumps(obj)
+
+def loads(bytes_obj: bytes) -> Any:
+    rep = cloudpickle.loads(bytes_obj)
+    if isinstance(rep, exceptions.RemoteException):
+        rep.reraise()
+    return rep
+

@@ -1,6 +1,6 @@
 import zproc
 
-swarm = zproc.Context().create_swarm()
+swarm = zproc.Client().create_swarm()
 
 fn = lambda x: x
 

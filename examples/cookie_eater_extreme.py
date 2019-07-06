@@ -47,7 +47,7 @@ def cookie_eater(ctx):
 #
 
 # boilerplate
-ctx = zproc.Context(wait=True)
+ctx = zproc.Client(wait=True)
 state = ctx.create_state({"cookies": 0, "ready": 0, "done": 0})
 
 # store a handle to receive "ready" from eater

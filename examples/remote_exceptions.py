@@ -2,7 +2,7 @@ from time import sleep
 
 import zproc
 
-ctx = zproc.Context()
+ctx = zproc.Client()
 
 
 @ctx.spawn(pass_state=False)

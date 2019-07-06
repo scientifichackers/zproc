@@ -3,7 +3,6 @@ import os
 import struct
 import time
 from collections import deque
-from functools import wraps
 from pprint import pformat
 from textwrap import indent
 from typing import Hashable, Any, Callable, Dict, Mapping, Sequence
@@ -21,7 +20,6 @@ from zproc.consts import (
     ServerMeta,
 )
 from zproc.server import tools
-from zproc.state import _type
 
 
 class _SkipStateUpdate(Exception):
@@ -38,7 +36,7 @@ class StateWatcher:
 
     def __init__(
         self,
-        state: "State",
+        state: "StateMethods",
         live: bool,
         timeout: float,
         identical_okay: bool,
@@ -124,7 +122,7 @@ class StateWatcher:
         deque(iter(self), maxlen=0)
 
 
-class State(_type.StateDictMethodStub, metaclass=_type.StateType):
+class StateMethods:
     _server_meta: ServerMeta
 
     def __init__(
@@ -180,7 +178,9 @@ class State(_type.StateDictMethodStub, metaclass=_type.StateType):
     def __repr__(self):
         return util.enclose_in_brackets(self.__str__())
 
-    def fork(self, server_address: str = None, *, namespace: str = None) -> "State":
+    def fork(
+        self, server_address: str = None, *, namespace: str = None
+    ) -> "StateMethods":
         r"""
         "Forks" this State object.
 
@@ -226,9 +226,8 @@ class State(_type.StateDictMethodStub, metaclass=_type.StateType):
 
     @namespace.setter
     def namespace(self, namespace: str):
-        # empty namespace is reserved for use by the framework iteself
+        # empty namespace is reserved for use by the framework itself
         assert len(namespace) > 0, "'namespace' cannot be empty!"
-
         self._namespace_bytes = namespace.encode()
 
     #
@@ -249,37 +248,6 @@ class State(_type.StateDictMethodStub, metaclass=_type.StateType):
         return serializer.loads(
             util.strict_request_reply(msg, self._s_dealer.send, self._s_dealer.recv)
         )
-
-    def set(self, value: dict):
-        """
-        Set the state, completely over-writing the previous value.
-
-        .. caution::
-
-            This kind of operation usually leads to a data race.
-
-            Please take good care while using this.
-
-            Use the :py:func:`atomic` deocrator if you're feeling anxious.
-        """
-        self._s_request_reply({Msgs.cmd: Cmds.set_state, Msgs.info: value})
-
-    def copy(self) -> dict:
-        """
-        Return a deep-copy of the state as a ``dict``.
-
-        (Unlike the shallow-copy returned by the inbuilt :py:meth:`dict.copy`).
-        """
-        return self._s_request_reply({Msgs.cmd: Cmds.get_state})
-
-    def keys(self):
-        return self.copy().keys()
-
-    def values(self):
-        return self.copy().values()
-
-    def items(self):
-        return self.copy().items()
 
     def ping(self, **kwargs):
         """
@@ -517,59 +485,3 @@ class State(_type.StateDictMethodStub, metaclass=_type.StateType):
             util.close_zmq_ctx(self._zmq_ctx)
         except Exception:
             pass
-
-
-def atomic(fn: Callable) -> Callable:
-    """
-    Wraps a function, to create an atomic operation out of it.
-
-    This contract guarantees, that while an atomic ``fn`` is running -
-
-    - No one, except the "callee" may access the state.
-    - If an ``Exception`` occurs while the ``fn`` is running, the state remains unaffected.
-    - | If a signal is sent to the "callee", the ``fn`` remains unaffected.
-      | (The state is not left in an incoherent state.)
-
-    .. note::
-        - The first argument to the wrapped function *must* be a :py:class:`State` object.
-        - The wrapped ``fn`` receives a frozen version (snapshot) of state,
-          which is a ``dict`` object, not a :py:class:`State` object.
-        - It is not possible to call one atomic function from other.
-
-    Please read :ref:`atomicity` for a detailed explanation.
-
-    :param fn:
-        The function to be wrapped, as an atomic function.
-
-    :returns:
-        A wrapper function.
-
-        The wrapper function returns the value returned by the wrapped ``fn``.
-
-    >>> import zproc
-    >>>
-    >>> @zproc.atomic
-    ... def increment(snapshot):
-    ...     return snapshot['count'] + 1
-    ...
-    >>>
-    >>> ctx = zproc.Context()
-    >>> state = ctx.create_state({'count': 0})
-    >>>
-    >>> increment(state)
-    1
-    """
-    msg = {
-        Msgs.cmd: Cmds.run_fn_atomically,
-        Msgs.info: serializer.dumps_fn(fn),
-        Msgs.args: (),
-        Msgs.kwargs: {},
-    }
-
-    @wraps(fn)
-    def wrapper(state: State, *args, **kwargs):
-        msg[Msgs.args] = args
-        msg[Msgs.kwargs] = kwargs
-        return state._s_request_reply(msg)
-
-    return wrapper

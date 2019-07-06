@@ -28,11 +28,7 @@ class Cmds:
     ping = 0
     get_server_meta = 1
 
-    get_state = 2
-    set_state = 3
-
     run_fn_atomically = 4
-    run_dict_method = 5
 
     time = 6
 

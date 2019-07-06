@@ -57,7 +57,7 @@ def print_result(results):
 # Zproc
 ########
 
-ctx = zproc.Context()
+ctx = zproc.Client()
 ctx.state.setdefault("results", [])
 
 

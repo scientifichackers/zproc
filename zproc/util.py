@@ -15,10 +15,9 @@ from typing import Union, Iterable, Generator, Callable, Tuple, Sequence, Option
 import psutil
 import zmq
 
-from zproc import exceptions
-from zproc import serializer
-from zproc.__version__ import __version__
-from zproc.consts import (
+from . import exceptions, serializer
+from .__version__ import __version__
+from .consts import (
     Msgs,
     Cmds,
     ServerMeta,
@@ -44,20 +43,22 @@ def get_server_meta(zmq_ctx: zmq.Context, server_address: str) -> ServerMeta:
         return req_server_meta(dealer)
 
 
-_server_meta_req_cache = serializer.dumps(
+_SERVER_META_REQUEST = serializer.dumps(
     {Msgs.cmd: Cmds.get_server_meta, Msgs.namespace: DEFAULT_NAMESPACE}
 )
 
 
 def req_server_meta(dealer: zmq.Socket) -> ServerMeta:
-    dealer.send(_server_meta_req_cache)
+    dealer.send(_SERVER_META_REQUEST)
     server_meta = serializer.loads(dealer.recv())
+
     if server_meta.version != __version__:
         raise RuntimeError(
             "The server version didn't match. "
             "Please make sure the server (%r) is using the same version of ZProc as this client (%r)."
             % (server_meta.version, __version__)
         )
+
     return server_meta
 
 

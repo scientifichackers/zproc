@@ -2,7 +2,7 @@ import time
 
 import zproc
 
-ctx = zproc.Context()
+ctx = zproc.Client()
 
 for i in range(250):
 

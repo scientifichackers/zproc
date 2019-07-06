@@ -51,7 +51,7 @@ def child6(state):
 
 
 if __name__ == "__main__":
-    ctx = zproc.Context(wait=True)
+    ctx = zproc.Client(wait=True)
 
     ctx.spawn(child1, child2, child3, child4, child5, child6)
 

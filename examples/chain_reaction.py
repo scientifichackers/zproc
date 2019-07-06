@@ -35,7 +35,7 @@ def child2(state):
 
 
 if __name__ == "__main__":
-    ctx = zproc.Context(wait=True)  # create a context for us to work with
+    ctx = zproc.Client(wait=True)  # create a context for us to work with
     ctx.spawn(child1, child2)  # give the context some processes to work with
 
     sleep(1)  # sleep for no reason

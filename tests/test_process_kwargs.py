@@ -5,7 +5,7 @@ import zproc
 
 @pytest.fixture
 def ctx():
-    return zproc.Context()
+    return zproc.Client()
 
 
 def test_not_pass_ctx(ctx):
@@ -19,7 +19,7 @@ def test_not_pass_ctx(ctx):
 def test_pass_ctx(ctx):
     @ctx.spawn(pass_context=True)
     def my_process(ctx):
-        assert isinstance(ctx, zproc.Context)
+        assert isinstance(ctx, zproc.Client)
         return 1
 
     assert my_process.wait() == 1

@@ -21,7 +21,7 @@ REQUIRES_PYTHON = ">=3.6"
 VERSION = None
 
 # What packages are required for this module to be executed?
-REQUIRED = ["pyzmq", "tblib", "psutil", "cloudpickle"]
+REQUIRED = ["pyzmq", "tblib", "psutil", "cloudpickle>=1.2.1", "click", "python-decouple", "glom"]
 
 # What packages are optional?
 EXTRA = {
@@ -98,6 +98,7 @@ setup(
     author_email=EMAIL,
     python_requires=REQUIRES_PYTHON,
     url=URL,
+    entry_points={"console_scripts": ["zproc=zproc.cli:cli"]},
     packages=find_packages(exclude=("tests", "docs", "examples", "benchmarks")),
     install_requires=REQUIRED,
     extra_require=EXTRA,

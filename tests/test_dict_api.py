@@ -8,7 +8,7 @@ import zproc
 
 @pytest.fixture
 def ctx():
-    return zproc.Context()
+    return zproc.Client()
 
 
 @pytest.fixture
@@ -17,7 +17,7 @@ def pydict() -> dict:
 
 
 @pytest.fixture
-def state(pydict, ctx) -> zproc.State:
+def state(pydict, ctx) -> zproc.StateMethods:
     return ctx.create_state(pydict)
 
 
