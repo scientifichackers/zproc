@@ -1,10 +1,11 @@
 import multiprocessing
 import os
 from collections import Callable
+from pathlib import Path
 from typing import Union, Tuple
 
 import zmq
-from decouple import config
+from decouple import config, UndefinedValueError, AutoConfig
 
 from zproc import util, serializer
 from zproc.consts import Msgs, Cmds
@@ -12,8 +13,12 @@ from zproc.consts import ServerMeta
 from zproc.server.main import main
 
 
+
 def start_server(
-    server_address: str = None, *, backend: Callable = multiprocessing.Process
+    server_address: str = None,
+    *,
+    pid_file: Path,
+    backend: Callable = multiprocessing.Process
 ) -> Tuple[multiprocessing.Process, str]:
     """
     Start a new zproc server.
@@ -31,8 +36,15 @@ def start_server(
 
     if server_address is None:
         server_address = config("ZPROC_SERVER_ADDRESS", default=None)
+    if pid_file is None:
+        try:
+            pid_file = config("ZPROC_SERVER_PID_FILE")
+        except UndefinedValueError:
+            pass
+        else:
+            pid_file = Path(pid_file).expanduser().absolute()
 
-    server_process = backend(target=main, args=[server_address, send_conn])
+    server_process = backend(target=main, args=[server_address, pid_file, send_conn])
     server_process.start()
 
     try:

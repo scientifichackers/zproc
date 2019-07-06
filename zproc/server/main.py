@@ -1,4 +1,8 @@
 import atexit
+import os
+from contextlib import contextmanager
+from pathlib import Path
+from typing import Optional
 
 import zmq
 
@@ -10,8 +14,23 @@ from zproc.state.server import StateServer
 from zproc.task.server import start_task_server, start_task_proxy
 
 
-def main(server_address: str, send_conn):
-    with util.socket_factory(zmq.ROUTER, zmq.ROUTER) as (
+@contextmanager
+def write_pid_file(pid_file: Optional[Path]):
+    if pid_file is None:
+        yield
+        return
+    try:
+        print(f"[ZProc] Storing PID file @ {str(pid_file)!r}")
+        with open(pid_file, "w") as f:
+            f.write(str(os.getpid()))
+        yield
+    finally:
+        with open(pid_file, "w") as f:
+            f.write("")
+
+
+def main(server_address: str, pid_file: Optional[Path], send_conn):
+    with write_pid_file(pid_file), util.socket_factory(zmq.ROUTER, zmq.ROUTER) as (
         zmq_ctx,
         state_router,
         watch_router,
@@ -34,7 +53,7 @@ def main(server_address: str, send_conn):
                 server_address,
                 _bind(watch_router),
                 *start_task_server(_bind),
-                *start_task_proxy(_bind)
+                *start_task_proxy(_bind),
             )
 
             state_server = StateServer(state_router, watch_router, server_meta)
