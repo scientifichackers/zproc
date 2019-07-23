@@ -37,12 +37,13 @@ def loads_fn(fn_bytes: bytes) -> Callable:
         _fn_load_cache[fn_bytes_hash] = fn
     return fn
 
+
 def dumps(obj: Any) -> bytes:
     return cloudpickle.dumps(obj)
+
 
 def loads(bytes_obj: bytes) -> Any:
     rep = cloudpickle.loads(bytes_obj)
     if isinstance(rep, exceptions.RemoteException):
         rep.reraise()
     return rep
-

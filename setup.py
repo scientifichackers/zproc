@@ -101,7 +101,7 @@ setup(
     entry_points={"console_scripts": ["zproc=zproc.cli:cli"]},
     packages=find_packages(exclude=("tests", "docs", "examples", "benchmarks")),
     install_requires=REQUIRED,
-    extra_require=EXTRA,
+    extras_require=EXTRA,
     include_package_data=True,
     license="MIT",
     classifiers=[

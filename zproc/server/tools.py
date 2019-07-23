@@ -17,7 +17,7 @@ from zproc.server.main import main
 def start_server(
     server_address: str = None,
     *,
-    pid_file: Path,
+    pid_file: Path = None,
     backend: Callable = multiprocessing.Process
 ) -> Tuple[multiprocessing.Process, str]:
     """

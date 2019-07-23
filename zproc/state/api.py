@@ -3,7 +3,7 @@ import os
 import struct
 import time
 from collections import deque
-from typing import Hashable, Any, Callable, Dict, Mapping, Sequence
+from typing import Hashable, Any, Dict, Mapping, Sequence
 
 import zmq
 
@@ -19,7 +19,11 @@ from zproc.consts import (
 from zproc.server import tools
 
 
-class _SkipStateUpdate(Exception):
+class SkipStateUpdate(Exception):
+    pass
+
+
+def dummy_callback(_):
     pass
 
 
@@ -27,28 +31,21 @@ class StateWatcher:
     _time_limit: float
     _iters: int = 0
 
-    def __init__(
-        self,
-        state: "StateAPI",
-        live: bool,
-        timeout: float,
-        identical_okay: bool,
-        start_time: bool,
-        count: int,
-        callback: Callable[[StateUpdate], Any] = lambda _: _,
-    ):
-        self.state = state
-        self.callback = callback
-        self.live = live
-        self.timeout = timeout
-        self.identical_okay = identical_okay
-        self.start_time = start_time
-        self.count = count
+    def __init__(self, *args):
+        (
+            self._state,
+            self.callback,
+            self.live,
+            self.timeout,
+            self.identical_okay,
+            self.start_time,
+            self.count,
+        ) = args
 
-        if count is None:
+        if self.count is None:
             self._iter_limit = math.inf
         else:
-            self._iter_limit = count
+            self._iter_limit = self.count
 
         self._only_after = self.start_time
         if self._only_after is None:
@@ -58,20 +55,20 @@ class StateWatcher:
         if time.time() > self._time_limit:
             raise TimeoutError("Timed-out while waiting for a state update.")
 
-        self.state._w_dealer.setsockopt(
+        self._state.watcher_dealer.setsockopt(
             zmq.RCVTIMEO, int((self._time_limit - time.time()) * 1000)
         )
 
     def _request_reply(self) -> StateUpdate:
         response = util.strict_request_reply(
             [
-                self.state._identity,
-                self.state.namespace_bytes,
+                self._state.identity,
+                self._state.namespace_bytes,
                 bytes(self.identical_okay),
                 struct.pack("d", self._only_after),
             ],
-            self.state._w_dealer.send_multipart,
-            self.state._w_dealer.recv_multipart,
+            self._state.watcher_dealer.send_multipart,
+            self._state.watcher_dealer.recv_multipart,
         )
         return StateUpdate(
             *serializer.loads(response[0]), is_identical=bool(response[1])
@@ -82,7 +79,7 @@ class StateWatcher:
 
     def __next__(self):
         if self.timeout is None:
-            self.state._w_dealer.setsockopt(zmq.RCVTIMEO, DEFAULT_ZMQ_RECVTIMEO)
+            self._state.watcher_dealer.setsockopt(zmq.RCVTIMEO, DEFAULT_ZMQ_RECVTIMEO)
         else:
             self._time_limit = time.time() + self.timeout
 
@@ -99,7 +96,7 @@ class StateWatcher:
                 self._only_after = state_update.timestamp
             try:
                 value = self.callback(state_update)
-            except _SkipStateUpdate:
+            except SkipStateUpdate:
                 continue
             else:
                 self._iters += 1
@@ -120,9 +117,9 @@ class StateAPI:
 
     def __init__(self, client):
         self.client = client
-        self._zmq_ctx = util.create_zmq_ctx()
-        self._s_dealer = self.create_s_dealer()  # state dealer
-        self._w_dealer = self.create_w_dealer()  # watcher dealer
+        self.ctx = util.create_zmq_ctx()
+        self.state_dealer = self.create_state_dealer()  # state dealer
+        self.watcher_dealer = self.create_watcher_dealer()  # watcher dealer
 
     @property
     def server_address(self) -> str:
@@ -132,19 +129,21 @@ class StateAPI:
     def namespace_bytes(self) -> bytes:
         return self.client.namespace.encode()
 
-    def create_s_dealer(self) -> zmq.Socket:
-        sock = self._zmq_ctx.socket(zmq.DEALER)
-        self._identity = os.urandom(ZMQ_IDENTITY_LENGTH)
-        sock.setsockopt(zmq.IDENTITY, self._identity)
+    def create_state_dealer(self) -> zmq.Socket:
+        sock = self.ctx.socket(zmq.DEALER)
+        self.identity = os.urandom(ZMQ_IDENTITY_LENGTH)
+        sock.setsockopt(zmq.IDENTITY, self.identity)
         sock.connect(self.server_address)
         self._server_meta = util.req_server_meta(sock)
         return sock
 
-    def s_request_reply(self, request: Dict[int, Any]):
+    def state_request_reply(self, request: Dict[int, Any]):
         request[Msgs.namespace] = self.namespace_bytes
         msg = serializer.dumps(request)
         return serializer.loads(
-            util.strict_request_reply(msg, self._s_dealer.send, self._s_dealer.recv)
+            util.strict_request_reply(
+                msg, self.state_dealer.send, self.state_dealer.recv
+            )
         )
 
     def ping(self, **kwargs):
@@ -157,10 +156,10 @@ class StateAPI:
         return tools.ping(self.server_address, **kwargs)
 
     def time(self) -> float:
-        return self.s_request_reply({Msgs.cmd: Cmds.time})
+        return self.state_request_reply({Msgs.cmd: Cmds.time})
 
-    def create_w_dealer(self) -> zmq.Socket:
-        sock = self._zmq_ctx.socket(zmq.DEALER)
+    def create_watcher_dealer(self) -> zmq.Socket:
+        sock = self.ctx.socket(zmq.DEALER)
         sock.connect(self._server_meta.watcher_router)
         return sock
 
@@ -180,12 +179,7 @@ class StateAPI:
         .. include:: /api/state/get_raw_update.rst
         """
         return StateWatcher(
-            state=self,
-            live=live,
-            timeout=timeout,
-            identical_okay=identical_okay,
-            start_time=start_time,
-            count=count,
+            self, live, dummy_callback, timeout, identical_okay, start_time, count
         )
 
     def when_change(
@@ -228,19 +222,13 @@ class StateAPI:
                 before, after = update.before, update.after
                 try:
                     if not any(before[k] != after[k] for k in select(before, after)):
-                        raise _SkipStateUpdate
+                        raise SkipStateUpdate
                 except KeyError:  # this indirectly implies that something has changed
                     pass
                 return update.after
 
         return StateWatcher(
-            state=self,
-            live=live,
-            timeout=timeout,
-            identical_okay=identical_okay,
-            start_time=start_time,
-            count=count,
-            callback=callback,
+            self, callback, live, timeout, identical_okay, start_time, count
         )
 
     def when(
@@ -274,16 +262,10 @@ class StateAPI:
             snapshot = update.after
             if test_fn(snapshot, *args, **kwargs):
                 return snapshot
-            raise _SkipStateUpdate
+            raise SkipStateUpdate
 
         return StateWatcher(
-            state=self,
-            live=live,
-            timeout=timeout,
-            identical_okay=identical_okay,
-            start_time=start_time,
-            count=count,
-            callback=callback,
+            self, callback, live, timeout, identical_okay, start_time, count
         )
 
     def when_truthy(self, key: Hashable, **when_kwargs) -> StateWatcher:
@@ -374,8 +356,8 @@ class StateAPI:
 
     def __del__(self):
         try:
-            self._s_dealer.close()
-            self._w_dealer.close()
-            util.close_zmq_ctx(self._zmq_ctx)
+            self.state_dealer.close()
+            self.watcher_dealer.close()
+            util.close_zmq_ctx(self.ctx)
         except Exception:
             pass

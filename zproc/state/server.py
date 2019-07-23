@@ -5,7 +5,7 @@ from bisect import bisect
 from collections import defaultdict
 from contextlib import contextmanager
 from copy import deepcopy
-from typing import Any, Dict, List, Tuple
+from typing import Dict, List, Tuple, Optional
 
 import glom
 import zmq
@@ -14,15 +14,13 @@ from zproc import serializer
 from zproc.consts import Cmds, ServerMeta
 from zproc.consts import Msgs
 
-RequestType = Dict[Msgs, Any]
-
 
 class StateServer:
-    identity: bytes
-    namespace: bytes
+    identity: Optional[bytes]
+    namespace: Optional[bytes]
 
     state_map: Dict[bytes, dict]
-    state: dict
+    state: Optional[dict]
 
     history: Dict[bytes, Tuple[List[float], List[List[bytes]]]]
     pending: Dict[bytes, Tuple[bytes, bytes, bool, float]]
@@ -48,9 +46,41 @@ class StateServer:
         self.history = defaultdict(lambda: ([], []))
         self.pending = {}
 
-    def send_state(self, _):
-        """reply with state to the current client"""
-        self.reply(self.state)
+    def recv_request(self):
+        self.identity, request = self.state_router.recv_multipart()
+        request = serializer.loads(request)
+        try:
+            self.namespace = request[Msgs.namespace]
+        except KeyError:
+            pass
+        else:
+            self.state = self.state_map[self.namespace]
+        self.dispatch_dict[request[Msgs.cmd]](request)
+
+    def reply(self, response):
+        self.state_router.send_multipart([self.identity, serializer.dumps(response)])
+
+    @contextmanager
+    def mutate_safely(self):
+        old = deepcopy(self.state)
+        stamp = time.time()
+
+        try:
+            yield
+        except Exception:
+            self.state = self.state_map[self.namespace] = old
+            raise
+
+        slot = self.history[self.namespace]
+        slot[0].append(stamp)
+        slot[1].append(
+            [
+                self.identity,
+                serializer.dumps((old, self.state, stamp)),
+                self.state == old,
+            ]
+        )
+        self.solve_pending_watchers()
 
     def get_server_meta(self, _):
         self.reply(self.server_meta)
@@ -74,47 +104,21 @@ class StateServer:
                 state = glom.glom(self.state, path)
             self.reply(fn(state, *args, **kwargs))
 
-    def recv_request(self):
-        self.identity, request = self.state_router.recv_multipart()
-        request = serializer.loads(request)
-        try:
-            self.namespace = request[Msgs.namespace]
-        except KeyError:
-            pass
-        else:
-            self.state = self.state_map[self.namespace]
-        self.dispatch_dict[request[Msgs.cmd]](request)
-
-    def reply(self, response):
-        # print("server rep:", self.identity, response, time.time())
-        self.state_router.send_multipart([self.identity, serializer.dumps(response)])
-
-    @contextmanager
-    def mutate_safely(self):
-        old = deepcopy(self.state)
-        stamp = time.time()
-
-        try:
-            yield
-        except Exception:
-            self.state = self.state_map[self.namespace] = old
-            raise
-
-        slot = self.history[self.namespace]
-        slot[0].append(stamp)
-        slot[1].append(
-            [
-                self.identity,
-                serializer.dumps((old, self.state, stamp)),
-                self.state == old,
-            ]
+    def recv_watcher(self):
+        watcher_id, state_id, namespace, identical_okay, only_after = (
+            self.watch_router.recv_multipart()
         )
-        self.resolve_pending()
+        self.pending[watcher_id] = (
+            state_id,
+            namespace,
+            not identical_okay,
+            *struct.unpack("d", only_after),
+        )
 
-    def resolve_watcher(
+    def solve_watcher(
         self,
-        w_ident: bytes,
-        s_ident: bytes,
+        watcher_id: bytes,
+        state_id: bytes,
         namespace: bytes,
         identical_not_okay: bool,
         only_after: float,
@@ -128,33 +132,22 @@ class StateServer:
                 ident, update, identical = history[index]
             except IndexError:
                 break
-            if ident == s_ident:
+            if ident == state_id:
                 continue
             if identical_not_okay and identical:
                 continue
-            self.watch_router.send_multipart([w_ident, update, bytes(identical)])
+            self.watch_router.send_multipart([watcher_id, update, bytes(identical)])
             return True
 
         return False
 
-    def resolve_pending(self):
+    def solve_pending_watchers(self):
         pending = self.pending
         if not pending:
             return
-        for w_ident in list(pending):
-            if self.resolve_watcher(w_ident, *pending[w_ident]):
-                del pending[w_ident]
-
-    def recv_watcher(self):
-        w_ident, s_ident, namespace, identical_okay, only_after = (
-            self.watch_router.recv_multipart()
-        )
-        self.pending[w_ident] = (
-            s_ident,
-            namespace,
-            not identical_okay,
-            *struct.unpack("d", only_after),
-        )
+        for watcher_id in list(pending):
+            if self.solve_watcher(watcher_id, *pending[watcher_id]):
+                del pending[watcher_id]
 
     def reset_internal_state(self):
         self.identity = None
@@ -162,10 +155,10 @@ class StateServer:
         self.state = None
 
     def tick(self):
-        self.resolve_pending()
+        self.solve_pending_watchers()
 
         for sock in zmq.select([self.watch_router, self.state_router], [], [])[0]:
             if sock is self.state_router:
                 self.recv_request()
-            elif sock is self.watch_router:
+            else:
                 self.recv_watcher()

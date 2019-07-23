@@ -2,6 +2,7 @@ from functools import wraps
 from typing import Callable, Tuple, Any
 
 import glom
+from glom import PathAccessError
 
 from zproc import serializer
 from zproc.consts import Msgs, Cmds
@@ -59,7 +60,7 @@ def atomic(fn: Callable = None, *, path: str = None) -> Callable:
         def wrapper(client, *args, **kwargs):
             msg[Msgs.args] = args
             msg[Msgs.kwargs] = kwargs
-            return client._state.s_request_reply(msg)
+            return client._state.state_request_reply(msg)
 
         return wrapper
 
@@ -165,3 +166,15 @@ def merge(state: dict, *others: dict) -> None:
     """
     for it in others:
         state.update(it)
+
+@atomic
+def __contains__(state: dict, spec) -> bool:
+    try:
+        glom.glom(state, spec)
+    except PathAccessError:
+        return False
+    return True
+
+@atomic
+def clear(state: dict) -> None:
+    state.clear()

@@ -4,6 +4,8 @@ import signal
 from textwrap import indent
 from typing import Callable, Any, Union, Mapping, Sequence, Hashable, List
 
+from decouple import config
+
 from zproc.process.api import ProcessAPI
 from zproc.state.api import StateAPI, StateWatcher
 from . import util, atomicity
@@ -21,6 +23,8 @@ class Client:
     get = atomicity.get
     set = atomicity.set
     merge = atomicity.merge
+    __contains__ = atomicity.__contains__
+    clear = atomicity.clear
 
     def __init__(
         self,
@@ -105,6 +109,8 @@ class Client:
         self.backend = backend
         """Passed from the constructor. (Readonly)"""
 
+        if server_address is None:
+            server_address = config("ZPROC_SERVER_ADDRESS", default=None)
         if start_server:
             self.server_process, self.server_address = tools.start_server(
                 server_address, backend=backend
