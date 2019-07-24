@@ -8,7 +8,7 @@
 
 # The idea
 
-ZProc is a thought experiment that tries to unify how we program multitasking and distributed applications.
+ZProc is an experiment that aims to unify how we program multitasking and distributed applications.
 
 If it succeeds, programmers can have a _single_ method to program in this general area of computing, at any level in the stack.
 
