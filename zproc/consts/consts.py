@@ -12,25 +12,7 @@ CHUNK_ID_LENGTH = TASK_ID_LENGTH + struct.calcsize(CHUNK_INFO_FMT)
 DEFAULT_ZMQ_RECVTIMEO = -1
 DEFAULT_NAMESPACE = "default"
 
-
 EMPTY_MULTIPART = [b""]
-
-
-class Msgs:
-    cmd = 0
-    info = 1
-    namespace = 2
-    args = 3
-    kwargs = 4
-
-
-class Cmds:
-    ping = 0
-    get_server_meta = 1
-
-    run_fn_atomically = 4
-
-    time = 6
 
 
 class ServerMeta(NamedTuple):

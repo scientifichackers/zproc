@@ -10,19 +10,20 @@ import numpy as np
 import zmq
 
 from zproc import serializer
-from zproc.consts import Cmds, ServerMeta
+from zproc.consts import ServerMeta
 from zproc.consts import Msgs
+from zproc.consts.enums cimport Cmds
 
 cimport numpy as np
 
 
 cdef class DoubleList:
-    cdef get(self):
-        return self.arr[:self.nexti]
-
     def __init__(self):
         self.nexti = 0
         self.arr = np.empty(1024)
+
+    cdef double[:] get(self):
+        return self.arr[:self.nexti]
 
     cdef append(self, double item):
         cdef double[:] copy
@@ -60,37 +61,40 @@ cdef class StateServer:
         self.watch_router = watch_router
         self.server_meta = server_meta
 
-        self.dispatch_dict = {
-            Cmds.run_fn_atomically: self.run_fn_atomically,
-            Cmds.get_server_meta: self.get_server_meta,
-            Cmds.ping: self.ping,
-            Cmds.time: self.time,
-        }
-
         self.data = ServerData()
-
-    def recv_request(self):
-        self.identity, request = self.state_router.recv_multipart()
-        request = serializer.loads(request)
-        self.data.set_namespace(request[Msgs.namespace])
-        self.dispatch_dict[request[Msgs.cmd]](request)
 
     cdef reply(self, response):
         self.state_router.send_multipart(
             [self.identity, serializer.dumps(response)]
         )
 
-    def get_server_meta(self, _):
-        self.reply(self.server_meta)
+    cdef recv_request(self):
+        cdef dict request
+        cdef bytes data
+        cdef int cmd
 
-    def ping(self, request):
-        self.reply((request[Msgs.info], os.getpid()))
+        self.identity, data = self.state_router.recv_multipart()
 
-    def time(self, _):
-        self.reply(time.time())
+        request = serializer.loads(data)
+        self.data.set_namespace(request[Msgs.namespace])
+        cmd = request[Msgs.cmd]
+
+        if cmd == Cmds.run_fn_atomically:
+            self.run_fn_atomically(request)
+        elif cmd == Cmds.ping:
+            self.reply((request[Msgs.info], os.getpid()))
+        elif cmd == Cmds.get_server_meta:
+            self.reply(self.server_meta)
+        elif cmd == Cmds.time:
+            self.reply(time.time())
+        else:
+            raise ValueError(f'Invalid command: "{cmd}"')
 
     @contextmanager
     def mutate_safely(self):
+        cdef dict old, new
+        cdef double stamp
+
         old = deepcopy(self.data.state)
         stamp = time.time()
 
@@ -100,16 +104,21 @@ cdef class StateServer:
             self.data.set_state(old)
             raise
 
+        new = self.data.state
+        if old == new:
+            return
+
         self.data.timeline.append(stamp)
         self.data.history.append(
-            (self.identity, serializer.dumps([old, self.data.state, stamp])),
+            (self.identity, serializer.dumps([old, new, stamp])),
         )
         self.solve_pending_watchers()
 
-    def run_fn_atomically(self, request):
+    cdef run_fn_atomically(self, dict request):
         """Execute a function, atomically and reply with the result."""
-        # ccdef bytes fn_bytes
-        # ccdef dict state
+        cdef bytes fn_bytes
+        cdef dict state, kwargs
+        cdef tuple args
 
         fn_bytes, path = request[Msgs.info]
         fn = serializer.loads_fn(fn_bytes)
@@ -121,7 +130,9 @@ cdef class StateServer:
                 arg = glom.glom(arg, path)
             self.reply(fn(arg, *args, **kwargs))
 
-    def recv_watcher(self):
+    cdef recv_watcher(self):
+        cdef bytes watcher_id, state_id, namespace, only_after
+
         watcher_id, state_id, namespace, only_after = (
             self.watch_router.recv_multipart()
         )
@@ -136,40 +147,41 @@ cdef class StateServer:
         bytes namespace,
         double only_after,
     ):
-        # cdef bytes ident, old, new
-        # cdef int
+        cdef int index
+        cdef bytes owner, data
+        cdef double[:] timeline
+
         timeline = self.data.timeline.get()
-        if not timeline:
+        if len(timeline) <= 0:
             return
-        index = np.searchsorted(timeline, only_after, side='right') - 1
-        # print(list(timeline), only_after, index)
-        stamp = timeline[index]
-        # timestamps, history = self.history[namespace]
-        # index = bisect(timestamps, only_after) - 1
+
+        index = np.searchsorted(timeline, only_after, side='right')
 
         while True:
-            index += 1
             try:
                 owner, data = self.data.history[index]
             except IndexError:
                 break
             if owner == state_id:
+                index += 1
                 continue
             self.watch_router.send_multipart([watcher_id, data])
             return True
 
         return False
 
-    def solve_pending_watchers(self):
-        # cdef bytes watcher_id
-        # cdef (char*, char*, float) info
+    cdef solve_pending_watchers(self):
+        cdef bytes watcher_id
+        cdef (char*, char*, double) info
+        cdef dict pending
 
-        if not self.data.pending:
+        pending = self.data.pending
+        if not pending:
             return
-        for watcher_id in list(self.data.pending):
-            info = self.data.pending[watcher_id]
+        for watcher_id in list(pending):
+            info = pending[watcher_id]
             if self.solve_watcher(watcher_id, info[0], info[1], info[2]):
-                del self.data.pending[watcher_id]
+                del pending[watcher_id]
 
     cdef tick(self):
         self.solve_pending_watchers()

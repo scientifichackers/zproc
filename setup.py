@@ -109,7 +109,7 @@ setup(
     author_email=EMAIL,
     python_requires=REQUIRES_PYTHON,
     url=URL,
-    ext_modules=cythonize(["zproc/**/*.pyx"]),
+    ext_modules=cythonize(["zproc/**/*.pyx"], annotate=True),
     include_dirs=[numpy.get_include()],
     entry_points={"console_scripts": ["zproc=zproc.cli:cli"]},
     packages=find_packages(exclude=("tests", "docs", "examples", "benchmarks")),
