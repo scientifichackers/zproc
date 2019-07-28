@@ -8,7 +8,6 @@ import zmq
 
 from zproc import util, exceptions, serializer
 from zproc.child import ChildProcess
-from zproc.consts import DEFAULT_NAMESPACE
 
 
 class Process:
@@ -33,7 +32,7 @@ class Process:
         retry_kwargs: dict = None,
         backend: Callable = multiprocessing.Process,
         namespace: str = None,
-        wait_until_ready: bool = False,
+        wait_ready: bool = False,
     ) -> None:
         """
         Provides a higher level interface to :py:class:`multiprocessing.Process`.
@@ -157,8 +156,8 @@ class Process:
         )
         if start:
             self.child.start()
-        if wait_until_ready:
-            self.wait_until_ready()
+        if wait_ready:
+            self.wait_ready()
 
     def __str__(self):
         try:
@@ -197,7 +196,7 @@ class Process:
         self.child.start()
         return self.pid
 
-    def wait_until_ready(self):
+    def wait_ready(self):
         if not self._is_ready:
             self._ready_value = serializer.loads(self._ready_conn.recv_bytes())
         return self._ready_value
