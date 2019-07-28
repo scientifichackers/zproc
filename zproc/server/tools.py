@@ -13,7 +13,6 @@ from zproc.consts import ServerMeta
 from zproc.server.main import main
 
 
-
 def start_server(
     server_address: str = None,
     *,

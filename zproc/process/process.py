@@ -15,6 +15,9 @@ class Process:
     _result = None
     _has_returned = False
 
+    _ready_value = None
+    _is_ready = False
+
     def __init__(
         self,
         client,
@@ -29,7 +32,8 @@ class Process:
         retry_args: tuple = None,
         retry_kwargs: dict = None,
         backend: Callable = multiprocessing.Process,
-        namespace: str = DEFAULT_NAMESPACE,
+        namespace: str = None,
+        wait_until_ready: bool = False,
     ) -> None:
         """
         Provides a higher level interface to :py:class:`multiprocessing.Process`.
@@ -111,39 +115,50 @@ class Process:
             kwargs = {}
 
         self._zmq_ctx = util.create_zmq_ctx()
-
         self._result_sock = self._zmq_ctx.socket(zmq.PAIR)
-        # The result socket is meant to be used only after the process completes (after `join()`).
-        # That implies -- we shouldn't need to wait for the result message.
-        self._result_sock.setsockopt(zmq.RCVTIMEO, 0)
         result_address = util.bind_to_random_address(self._result_sock)
+
+        # The result socket is meant to be used only after the process completes (after `join()`).
+        #
+        # Which implies that in an ideal world,
+        # zeromq shouldn't need to wait for the result message at all.
+        self._result_sock.setsockopt(zmq.RCVTIMEO, 0)
+
+        self._ready_conn, send_conn = multiprocessing.Pipe()
+
+        if namespace is None:
+            namespace = client.namespace
+
         #: The :py:class:`multiprocessing.Process` instance for the child process.
         self.child = backend(
             target=ChildProcess,
             args=[
                 self.target,
-                (client.server_address,),
+                args,
+                kwargs,
+                [client.server_address],
                 dict(
                     value=None,
                     start_server=False,
                     backend=client.backend,
                     wait=client.wait_enabled,
                     cleanup=client.cleanup_enabled,
-                    namespace=client.namespace,
+                    namespace=namespace,
                     **client.process_kwargs,
                 ),
-                args,
-                kwargs,
                 retry_for,
                 retry_delay,
                 max_retries,
                 retry_args,
                 retry_kwargs,
                 result_address,
+                send_conn,
             ],
         )
         if start:
             self.child.start()
+        if wait_until_ready:
+            self.wait_until_ready()
 
     def __str__(self):
         try:
@@ -181,6 +196,11 @@ class Process:
         """
         self.child.start()
         return self.pid
+
+    def wait_until_ready(self):
+        if not self._is_ready:
+            self._ready_value = serializer.loads(self._ready_conn.recv_bytes())
+        return self._ready_value
 
     def _cleanup(self):
         self._result_sock.close()

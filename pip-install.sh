@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
 
-pip install pip-tools
+pip install -U pip-tools
 pip-compile -v requirements.in
 pip-sync

@@ -37,7 +37,6 @@ class StateWatcher:
             self.callback,
             self.live,
             self.timeout,
-            self.identical_okay,
             self.start_time,
             self.count,
         ) = args
@@ -63,16 +62,13 @@ class StateWatcher:
         response = util.strict_request_reply(
             [
                 self._state.identity,
-                self._state.namespace_bytes,
-                bytes(self.identical_okay),
+                self._state.namespace,
                 struct.pack("d", self._only_after),
             ],
             self._state.watcher_dealer.send_multipart,
-            self._state.watcher_dealer.recv_multipart,
+            self._state.watcher_dealer.recv,
         )
-        return StateUpdate(
-            *serializer.loads(response[0]), is_identical=bool(response[1])
-        )
+        return StateUpdate(*serializer.loads(response))
 
     def go_live(self):
         self._only_after = time.time()
@@ -88,10 +84,12 @@ class StateWatcher:
                 self._settimeout()
             if self.live:
                 self._only_after = time.time()
+
             try:
                 state_update = self._request_reply()
             except zmq.error.Again:
                 raise TimeoutError("Timed-out while waiting for a state update.")
+
             if not self.live:
                 self._only_after = state_update.timestamp
             try:
@@ -100,6 +98,7 @@ class StateWatcher:
                 continue
             else:
                 self._iters += 1
+
             return value
 
         raise StopIteration
@@ -126,8 +125,8 @@ class StateAPI:
         return self.client.server_address
 
     @property
-    def namespace_bytes(self) -> bytes:
-        return self.client.namespace.encode()
+    def namespace(self) -> bytes:
+        return self.client._namespace
 
     def create_state_dealer(self) -> zmq.Socket:
         sock = self.ctx.socket(zmq.DEALER)
@@ -138,7 +137,7 @@ class StateAPI:
         return sock
 
     def state_request_reply(self, request: Dict[int, Any]):
-        request[Msgs.namespace] = self.namespace_bytes
+        request[Msgs.namespace] = self.namespace
         msg = serializer.dumps(request)
         return serializer.loads(
             util.strict_request_reply(
@@ -168,7 +167,6 @@ class StateAPI:
         *,
         live: bool = False,
         timeout: float = None,
-        identical_okay: bool = False,
         start_time: bool = None,
         count: int = None,
     ) -> StateWatcher:
@@ -178,9 +176,7 @@ class StateAPI:
 
         .. include:: /api/state/get_raw_update.rst
         """
-        return StateWatcher(
-            self, live, dummy_callback, timeout, identical_okay, start_time, count
-        )
+        return StateWatcher(self, live, dummy_callback, timeout, start_time, count)
 
     def when_change(
         self,
@@ -188,7 +184,6 @@ class StateAPI:
         exclude: bool = False,
         live: bool = False,
         timeout: float = None,
-        identical_okay: bool = False,
         start_time: bool = None,
         count: int = None,
     ) -> StateWatcher:
@@ -203,12 +198,6 @@ class StateAPI:
                 return update.after
 
         else:
-            if identical_okay:
-                raise ValueError(
-                    "Passing both `identical_okay` and `keys` is not possible. "
-                    "(Hint: Omit `keys`)"
-                )
-
             key_set = set(keys)
 
             def select(before, after):
@@ -227,9 +216,7 @@ class StateAPI:
                     pass
                 return update.after
 
-        return StateWatcher(
-            self, callback, live, timeout, identical_okay, start_time, count
-        )
+        return StateWatcher(self, callback, live, timeout, start_time, count)
 
     def when(
         self,
@@ -239,7 +226,6 @@ class StateAPI:
         kwargs: Mapping = None,
         live: bool = False,
         timeout: float = None,
-        identical_okay: bool = False,
         start_time: bool = None,
         count: int = None,
     ) -> StateWatcher:
@@ -264,9 +250,7 @@ class StateAPI:
                 return snapshot
             raise SkipStateUpdate
 
-        return StateWatcher(
-            self, callback, live, timeout, identical_okay, start_time, count
-        )
+        return StateWatcher(self, callback, live, timeout, start_time, count)
 
     def when_truthy(self, key: Hashable, **when_kwargs) -> StateWatcher:
         def _(snapshot):

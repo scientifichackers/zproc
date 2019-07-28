@@ -154,7 +154,7 @@ def set(state: dict, path: str, value: dict, *, missing: Callable = dict) -> Non
 
 
 @atomic
-def merge(state: dict, *others: dict) -> None:
+def update(state: dict, *others: dict) -> None:
     """
     Merge the state :py:class:`dict` with ``others``, using :py:meth:`dict.update`.
 

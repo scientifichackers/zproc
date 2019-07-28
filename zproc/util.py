@@ -45,7 +45,7 @@ def get_server_meta(zmq_ctx: zmq.Context, server_address: str) -> ServerMeta:
 
 
 _SERVER_META_REQUEST = serializer.dumps(
-    {Msgs.cmd: Cmds.get_server_meta, Msgs.namespace: DEFAULT_NAMESPACE}
+    {Msgs.cmd: Cmds.get_server_meta, Msgs.namespace: DEFAULT_NAMESPACE.encode()}
 )
 
 

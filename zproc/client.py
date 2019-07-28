@@ -2,7 +2,7 @@ import multiprocessing
 import pprint
 import signal
 from textwrap import indent
-from typing import Callable, Any, Union, Mapping, Sequence, Hashable, List
+from typing import Callable, Any, Union, Mapping, Sequence, Hashable, List, Optional
 
 from decouple import config
 
@@ -22,9 +22,11 @@ class Client:
     apply = atomicity.apply
     get = atomicity.get
     set = atomicity.set
-    merge = atomicity.merge
+    update = atomicity.update
     __contains__ = atomicity.__contains__
     clear = atomicity.clear
+
+    _namespace: bytes
 
     def __init__(
         self,
@@ -90,8 +92,7 @@ class Client:
             If provided,
             these will be used while creating processes using this Context.
         """
-        self.namespace: str = namespace
-        """The namespace to use while communicating with the server."""
+        self.namespace = namespace
 
         self.process_kwargs: dict = process_kwargs
         """Passed from the constructor."""
@@ -99,7 +100,7 @@ class Client:
         self.server_address: str = server_address
         """The server's address. (Readonly)"""
 
-        self.server_process: multiprocessing.Process = None
+        self.server_process: Optional[multiprocessing.Process] = None
         """The :py:class:`multiprocessing.Process` object for the server. (Readonly)"""
 
         self.wait_enabled = wait
@@ -125,11 +126,20 @@ class Client:
         self._state = StateAPI(self)
 
         if value is not None:
-            self.merge(value)
+            self.update(value)
 
         if cleanup and util.is_main_thread():
             signal.signal(signal.SIGTERM, util.clean_process_tree)
         util.register_atexit(wait, self._process.wait, cleanup)
+
+    @property
+    def namespace(self) -> str:
+        """The namespace to use while communicating with the server."""
+        return self._namespace.decode()
+
+    @namespace.setter
+    def namespace(self, value: str):
+        self._namespace = value.encode()
 
     def __str__(self):
         pretty = "↳" + indent(pprint.pformat(self.get()), " " * 2)[1:]
@@ -137,6 +147,26 @@ class Client:
 
     def __repr__(self):
         return util.enclose_in_brackets(self.__str__())
+
+    def ready(self, value):
+        pass
+
+    def fork(self, *, update=None, namespace: str = None):
+        if update is None:
+            update = {}
+        if namespace is None:
+            namespace = self.namespace
+
+        return Client(
+            server_address=self.server_address,
+            value=self.get().update(update),
+            start_server=False,
+            backend=self.backend,
+            wait=self.wait_enabled,
+            cleanup=self.cleanup_enabled,
+            namespace=namespace,
+            **self.process_kwargs,
+        )
 
     def create_swarm(self, count: int = None):
         swarm = Swarm(self.server_address, namespace=self.namespace)
@@ -168,7 +198,6 @@ class Client:
         kwargs: Mapping = None,
         live: bool = False,
         timeout: float = None,
-        identical_okay: bool = False,
         start_time: bool = None,
         count: int = None,
     ) -> StateWatcher:
@@ -188,7 +217,6 @@ class Client:
             kwargs=kwargs,
             live=live,
             timeout=timeout,
-            identical_okay=identical_okay,
             start_time=start_time,
             count=count,
         )
@@ -207,7 +235,6 @@ class Client:
         exclude: bool = False,
         live: bool = False,
         timeout: float = None,
-        identical_okay: bool = False,
         start_time: bool = None,
         count: int = None,
     ) -> StateWatcher:
@@ -220,7 +247,6 @@ class Client:
             exclude=exclude,
             live=live,
             timeout=timeout,
-            identical_okay=identical_okay,
             start_time=start_time,
             count=count,
             *keys,
@@ -231,7 +257,6 @@ class Client:
         *,
         live: bool = False,
         timeout: float = None,
-        identical_okay: bool = False,
         start_time: bool = None,
         count: int = None,
     ) -> StateWatcher:
@@ -242,11 +267,7 @@ class Client:
         .. include:: /api/state/get_raw_update.rst
         """
         return self._state.when_change_raw(
-            live=live,
-            timeout=timeout,
-            identical_okay=identical_okay,
-            start_time=start_time,
-            count=count,
+            live=live, timeout=timeout, start_time=start_time, count=count
         )
 
     def when_equal(self, key: Hashable, value: Any, **when_kwargs) -> StateWatcher:

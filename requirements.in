@@ -15,3 +15,5 @@ pip-tools
 click
 python-decouple
 glom
+numpy
+cython

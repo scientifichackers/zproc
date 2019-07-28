@@ -10,7 +10,7 @@ from zproc import exceptions, serializer, util
 from zproc.__version__ import __version__
 from zproc.consts import ServerMeta
 from zproc.exceptions import RemoteException
-from zproc.state.server import StateServer
+from zproc.state.server cimport StateServer
 from zproc.task.server import start_task_server, start_task_proxy
 
 
@@ -30,8 +30,10 @@ def write_pid_file(pid_file: Optional[Path]):
 
 
 def main(server_address: str, pid_file: Optional[Path], send_conn):
+    cdef StateServer state_server
+
     with write_pid_file(pid_file), util.socket_factory(zmq.ROUTER, zmq.ROUTER) as (
-        zmq_ctx,
+        ctx,
         state_router,
         watch_router,
     ):
@@ -76,5 +78,3 @@ def main(server_address: str, pid_file: Optional[Path], send_conn):
                     util.log_internal_crash("State server")
                 else:
                     state_server.reply(RemoteException())
-            finally:
-                state_server.reset_internal_state()

@@ -9,7 +9,9 @@ import os
 import sys
 from shutil import rmtree
 
+import numpy
 from setuptools import find_packages, Command, setup
+from Cython.Build import cythonize
 
 # Package meta-data.
 NAME = "zproc"
@@ -21,7 +23,16 @@ REQUIRES_PYTHON = ">=3.6"
 VERSION = None
 
 # What packages are required for this module to be executed?
-REQUIRED = ["pyzmq", "tblib", "psutil", "cloudpickle>=1.2.1", "click", "python-decouple", "glom"]
+REQUIRED = [
+    "pyzmq",
+    "tblib",
+    "psutil",
+    "cloudpickle>=1.2.1",
+    "click",
+    "python-decouple",
+    "glom",
+    "numpy",
+]
 
 # What packages are optional?
 EXTRA = {
@@ -98,6 +109,8 @@ setup(
     author_email=EMAIL,
     python_requires=REQUIRES_PYTHON,
     url=URL,
+    ext_modules=cythonize(["zproc/**/*.pyx"]),
+    include_dirs=[numpy.get_include()],
     entry_points={"console_scripts": ["zproc=zproc.cli:cli"]},
     packages=find_packages(exclude=("tests", "docs", "examples", "benchmarks")),
     install_requires=REQUIRED,

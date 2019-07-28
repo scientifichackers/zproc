@@ -30,16 +30,17 @@ class ChildProcess:
     def __init__(self, *args):
         (
             self.target,
-            self.client_args,
-            self.client_kwargs,
             self.target_args,
             self.target_kwargs,
+            self.client_args,
+            self.client_kwargs,
             retry_for,
             self.retry_delay,
             self.max_retries,
             self.retry_args,
             self.retry_kwargs,
             self.result_address,
+            self.ready_conn,
         ) = args
 
         self.to_catch = tuple(util.to_catchable_exc(retry_for))
@@ -72,6 +73,9 @@ class ChildProcess:
         if handle_retry:
             time.sleep(self.retry_delay)
 
+    def ready(self, value=None):
+        self.ready_conn.send_bytes(serializer.dumps(value))
+
     def main(self):
         @wraps(self.target)
         def target_wrapper(*args, **kwargs):
@@ -95,6 +99,8 @@ class ChildProcess:
             from .client import Client  # this helps avoid a circular import
 
             client = Client(*self.client_args, **self.client_kwargs)
+            client.ready = self.ready
+
             return_value = target_wrapper(
                 client, *self.target_args, **self.target_kwargs
             )

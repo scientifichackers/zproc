@@ -50,4 +50,3 @@ class StateUpdate(NamedTuple):
     before: dict
     after: dict
     timestamp: float
-    is_identical: bool
