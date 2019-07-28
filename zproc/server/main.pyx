@@ -13,6 +13,8 @@ from zproc.exceptions import RemoteException
 from zproc.state.server cimport StateServer
 from zproc.task.server import start_task_server, start_task_proxy
 
+from zmq.backend.cython.socket cimport Socket
+
 
 @contextmanager
 def write_pid_file(pid_file: Optional[Path]):
@@ -31,9 +33,10 @@ def write_pid_file(pid_file: Optional[Path]):
 
 def main(server_address: str, pid_file: Optional[Path], send_conn):
     cdef StateServer state_server
+    cdef Socket state_router, watch_router
 
     with write_pid_file(pid_file), util.socket_factory(zmq.ROUTER, zmq.ROUTER) as (
-        ctx,
+        _,
         state_router,
         watch_router,
     ):

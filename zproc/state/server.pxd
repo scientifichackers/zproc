@@ -32,7 +32,7 @@ cdef class StateServer:
     cdef dict dispatch_dict
 
     cdef recv_request(self)
-    cdef reply(self, response)
+    cdef reply(self, object response)
     cdef run_fn_atomically(self, dict request)
     cdef recv_watcher(self)
     cdef solve_watcher(

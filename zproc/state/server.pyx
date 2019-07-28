@@ -26,7 +26,7 @@ cdef class DoubleList:
         return self.arr[:self.nexti]
 
     cdef append(self, double item):
-        cdef double[:] copy
+        cdef double[:] arr
 
         if self.nexti >= len(self.arr):
             arr = np.empty(2 * self.nexti)
@@ -60,13 +60,10 @@ cdef class StateServer:
         self.state_router = state_router
         self.watch_router = watch_router
         self.server_meta = server_meta
-
         self.data = ServerData()
 
-    cdef reply(self, response):
-        self.state_router.send_multipart(
-            [self.identity, serializer.dumps(response)]
-        )
+    cdef reply(self, object response):
+        self.state_router.send_multipart([self.identity, serializer.dumps(response)])
 
     cdef recv_request(self):
         cdef dict request

@@ -151,15 +151,15 @@ class Client:
     def ready(self, value):
         pass
 
-    def fork(self, *, update=None, namespace: str = None):
-        if update is None:
-            update = {}
+    def fork(self, *, value=None, namespace: str = None):
+        if value is None:
+            value = {}
         if namespace is None:
             namespace = self.namespace
 
         return Client(
             server_address=self.server_address,
-            value=self.get().update(update),
+            value=self.get().update(value),
             start_server=False,
             backend=self.backend,
             wait=self.wait_enabled,
