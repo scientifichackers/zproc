@@ -10,8 +10,8 @@ import sys
 from shutil import rmtree
 
 import numpy
-from setuptools import find_packages, Command, setup
 from Cython.Build import cythonize
+from setuptools import find_packages, Command, setup
 
 # Package meta-data.
 NAME = "zproc"
@@ -32,6 +32,7 @@ REQUIRED = [
     "python-decouple",
     "glom",
     "numpy",
+    "cython",
 ]
 
 # What packages are optional?
