@@ -1,7 +1,7 @@
 import pickle
 from typing import Callable, Any, Dict
 
-from cloudpickle import cloudpickle
+import cloudpickle
 
 from zproc import exceptions
 
